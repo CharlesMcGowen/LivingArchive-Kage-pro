@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # Django Server - Port 9000
+  django-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.django
+    container_name: recon-django
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    networks:
+      - recon-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DJANGO_SETTINGS_MODULE=ryu_project.settings
+      - PORT=9000
+      - DEBUG=True
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-ryu-cybersecurity-key-change-in-production}
+      # Database connection (REQUIRED - PostgreSQL is default, no SQLite)
+      # Use host.docker.internal to connect to host PostgreSQL from container
+      - DB_HOST=${DB_HOST:-host.docker.internal}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - CUSTOMER_EGGS_DB_NAME=${CUSTOMER_EGGS_DB_NAME:-customer_eggs}
+      - CUSTOMER_EGGS_DB_PORT=${CUSTOMER_EGGS_DB_PORT:-15440}
+      - EGG_DB_NAME=${EGG_DB_NAME:-customer_eggs}
+      - EGG_DB_PORT=${EGG_DB_PORT:-15440}
+      - OAK_DB_NAME=${OAK_DB_NAME:-customer_eggs}
+      - OAK_DB_PORT=${OAK_DB_PORT:-15440}
+    volumes:
+      # Mount static files directory
+      - ../staticfiles:/app/staticfiles:rw
+      # Mount config directory if needed
+      - ../config:/app/config:ro
+      # Mount ryu_app for live code updates
+      - ../ryu_app:/app/ryu_app:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/reconnaissance/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Kage Daemon - Port Scanner
+  kage-daemon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recon-kage
+    command: python3 /app/daemons/kage_daemon.py
+    restart: unless-stopped
+    depends_on:
+      - django-server
+    networks:
+      - recon-network
+    environment:
+      - DJANGO_API_BASE=http://django-server:9000
+      - KAGE_SCAN_INTERVAL=30
+      - KAGE_MAX_SCANS=5
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kage/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # No volumes needed for isolated version
+    pid: host  # Use host PID namespace for better signal handling
+
+  # Kumo Daemon - HTTP Spider
+  kumo-daemon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recon-kumo
+    command: python3 /app/daemons/kumo_daemon.py
+    restart: unless-stopped
+    depends_on:
+      - django-server
+    networks:
+      - recon-network
+    environment:
+      - DJANGO_API_BASE=http://django-server:9000
+      - KUMO_SPIDER_INTERVAL=45
+      - KUMO_MAX_SPIDERS=3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kumo/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+    pid: host
+
+  # Ryu Daemon - Threat Assessment
+  ryu-daemon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recon-ryu
+    command: python3 /app/daemons/ryu_daemon.py
+    restart: unless-stopped
+    depends_on:
+      - django-server
+    networks:
+      - recon-network
+    environment:
+      - DJANGO_API_BASE=http://django-server:9000
+      - RYU_SCAN_INTERVAL=30
+      - RYU_ASSESSMENT_INTERVAL=60
+      - RYU_MAX_SCANS=5
+      - RYU_MAX_ASSESSMENTS=2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/ryu/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+    pid: host
+
+networks:
+  recon-network:
+    driver: bridge
+

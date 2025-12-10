@@ -1,0 +1,369 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Suzu Dashboard{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🔔</div>
+    <div>
+        <h2>Suzu Dashboard</h2>
+        <p class="subtitle">Directory Enumerator - Wordlist-based path discovery with pattern learning</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Database Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Paths Discovered</div>
+        <div class="value">{{ enumeration_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Enumerations</div>
+        <div class="value">{{ total_enumerations|default:enumeration_count }}</div>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #f59e0b;">📊 Directory Enumeration Results</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Scan Type</th>
+                <th>Status</th>
+                <th>Port</th>
+                <th>Service</th>
+                <th>Open Ports</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in enumeration_results %}
+            <tr class="clickable-row" data-row-index="{{ forloop.counter0 }}" style="cursor: pointer;">
+                <td>{{ result.target|truncatechars:40 }}</td>
+                <td>{{ result.path|truncatechars:60 }}</td>
+                <td>
+                    <span class="status-badge {% if result.status == 200 %}success{% elif result.status == 403 %}warning{% elif result.status >= 400 %}error{% else %}info{% endif %}">
+                        {{ result.status }}
+                    </span>
+                </td>
+                <td>{{ result.tool|default:"unknown" }}</td>
+                <td>{{ result.enumeration_type|default:"wordlist" }}</td>
+                <td>{{ result.created_at }}</td>
+                <td><button onclick="showJsonModal({{ forloop.counter0 }})" style="padding: 4px 8px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer;">View</button></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="text-align: center; color: #94a3b8;">No enumeration data available</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if enumeration_results.has_other_pages %}
+<div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+    {% if enumeration_results.has_previous %}
+        <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">« First</a>
+        <a href="?page={{ enumeration_results.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+    {% endif %}
+    
+    <span style="color: #94a3b8; padding: 8px 12px;">
+        Page {{ enumeration_results.number }} of {{ enumeration_results.paginator.num_pages }} ({{ enumeration_count }} total)
+    </span>
+    
+    {% if enumeration_results.has_next %}
+        <a href="?page={{ enumeration_results.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Next ›</a>
+        <a href="?page={{ enumeration_results.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Last »</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">Suzu's Enumeration Tools</h4>
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🔍</div>
+            <div class="label">ffuf</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Fast Fuzzer</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">⚡</div>
+            <div class="label">gobuster</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Go-based Scanner</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🐍</div>
+            <div class="label">dirsearch</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Python Scanner</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🧠</div>
+            <div class="label">Pattern Learner</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Smart Wordlists</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">📚</div>
+            <div class="label">Wordlist Manager</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Seclist Integration</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🌊</div>
+            <div class="label">Kumo Integration</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Learn from Spidering</div>
+        </div>
+    </div>
+</div>
+
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">API Endpoints</h4>
+    <ul style="color: #64748b; list-style: none;">
+        <li>📡 <a href="/reconnaissance/api/daemon/suzu/eggrecords/" style="color: #3b82f6;">/reconnaissance/api/daemon/suzu/eggrecords/</a> - Get eggrecords for enumeration</li>
+        <li>🔔 <a href="/reconnaissance/api/suzu/enumerations/" style="color: #3b82f6;">/reconnaissance/api/suzu/enumerations/</a> - Get enumeration results</li>
+        <li>🔔 <a href="/reconnaissance/suzu/" style="color: #3b82f6;">/reconnaissance/suzu/</a> - Suzu dashboard</li>
+    </ul>
+</div>
+
+<!-- Store JSON data in JavaScript variable -->
+<script>
+const enumerationData = [
+    {% for result in enumeration_results %}
+    {
+        full_data_json: {% if result.full_data_json %}{{ result.full_data_json|safe }}{% else %}'{}'{% endif %}
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+];
+</script>
+
+<!-- JSON Modal Popup -->
+<div id="jsonModal" class="json-modal" style="display: none;">
+    <div class="json-modal-content">
+        <div class="json-modal-header">
+            <h3>JSON Data</h3>
+            <button class="json-modal-close" onclick="closeJsonModal()">&times;</button>
+        </div>
+        <div class="json-modal-body">
+            <pre id="jsonContent"></pre>
+        </div>
+        <div class="json-modal-footer">
+            <button onclick="copyJsonToClipboard()" class="json-copy-btn">Copy JSON</button>
+            <button onclick="closeJsonModal()" class="json-close-btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.json-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.json-modal-content {
+    background: #1e293b;
+    border: 2px solid #f59e0b;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.json-modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.json-modal-header h3 {
+    color: #10b981;
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.json-modal-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.json-modal-close:hover {
+    color: #10b981;
+}
+
+.json-modal-body {
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+    max-height: calc(90vh - 140px);
+}
+
+.json-modal-body pre {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 20px;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+}
+
+.json-modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.json-copy-btn, .json-close-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.json-copy-btn {
+    background: #3b82f6;
+    color: white;
+}
+
+.json-copy-btn:hover {
+    background: #2563eb;
+}
+
+.json-close-btn {
+    background: #64748b;
+    color: white;
+}
+
+.json-close-btn:hover {
+    background: #475569;
+}
+
+.clickable-row:hover {
+    background-color: rgba(245, 158, 11, 0.1);
+}
+</style>
+
+<script>
+let currentJsonData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.clickable-row');
+    rows.forEach((row, index) => {
+        row.addEventListener('click', function() {
+            const rowIndex = parseInt(this.getAttribute('data-row-index'));
+            if (rowIndex >= 0 && rowIndex < enumerationData.length) {
+                const rowData = enumerationData[rowIndex];
+                if (rowData && rowData.full_data_json) {
+                    try {
+                        // Parse the JSON string to format it nicely
+                        const parsed = typeof rowData.full_data_json === 'string' 
+                            ? JSON.parse(rowData.full_data_json) 
+                            : rowData.full_data_json;
+                        currentJsonData = parsed;
+                        displayJsonModal(JSON.stringify(parsed, null, 2));
+                    } catch (e) {
+                        // If not valid JSON, display as-is
+                        currentJsonData = rowData.full_data_json;
+                        displayJsonModal(String(rowData.full_data_json));
+                    }
+                } else {
+                    // Fallback: display the row data itself
+                    currentJsonData = rowData;
+                    displayJsonModal(JSON.stringify(rowData, null, 2));
+                }
+            }
+        });
+    });
+});
+
+function displayJsonModal(jsonString) {
+    const modal = document.getElementById('jsonModal');
+    const content = document.getElementById('jsonContent');
+    content.textContent = jsonString;
+    modal.style.display = 'flex';
+}
+
+function closeJsonModal() {
+    const modal = document.getElementById('jsonModal');
+    modal.style.display = 'none';
+    currentJsonData = null;
+}
+
+function copyJsonToClipboard() {
+    const content = document.getElementById('jsonContent');
+    const text = content.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.json-copy-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#10b981';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '#3b82f6';
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
+// Close modal when clicking outside
+document.getElementById('jsonModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeJsonModal();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeJsonModal();
+    }
+});
+</script>
+{% endblock %}
+
+

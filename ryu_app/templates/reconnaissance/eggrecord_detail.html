@@ -1,0 +1,296 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}EggRecord Details{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #8b5cf6; }
+    
+    .tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #334155;
+    }
+    
+    .tab {
+        padding: 12px 24px;
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 1rem;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: all 0.3s;
+    }
+    
+    .tab:hover {
+        color: white;
+    }
+    
+    .tab.active {
+        color: #8b5cf6;
+        border-bottom-color: #8b5cf6;
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    .model-section {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #334155;
+        margin-bottom: 30px;
+    }
+    
+    .model-section h3 {
+        color: #8b5cf6;
+        margin-bottom: 20px;
+        font-size: 1.3rem;
+    }
+    
+    .field-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+    }
+    
+    .field-item {
+        padding: 10px;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 8px;
+        border: 1px solid #1e293b;
+    }
+    
+    .field-label {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .field-value {
+        color: white;
+        font-size: 1rem;
+        word-break: break-word;
+    }
+    
+    .field-value.json {
+        font-family: monospace;
+        font-size: 0.85rem;
+        color: #a78bfa;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #94a3b8;
+    }
+    
+    .empty-state-icon {
+        font-size: 3rem;
+        margin-bottom: 10px;
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/eggrecords/" class="back-link">← Back to EggRecords List</a>
+
+<div class="page-header">
+    <div class="icon">🥚</div>
+    <div>
+        <h2>EggRecord Details</h2>
+        <p class="subtitle">Complete information with all related data</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% else %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Nmap Scans</div>
+        <div class="value">{{ nmap_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">HTTP Requests</div>
+        <div class="value">{{ request_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">DNS Queries</div>
+        <div class="value">{{ dns_count|default:0 }}</div>
+    </div>
+</div>
+
+<!-- EggRecord Model Section -->
+<div class="model-section">
+    <h3>📋 EggRecord Model - All Fields</h3>
+    <div class="field-grid">
+        {% for key, value in eggrecord.items %}
+        <div class="field-item">
+            <div class="field-label">{{ key }}</div>
+            <div class="field-value {% if value|length > 100 or value|slice:':1' == '{' or value|slice:':1' == '[' %}json{% endif %}">
+                {% if value|length > 100 or value|slice:':1' == '{' or value|slice:':1' == '[' %}
+                    {{ value|truncatechars:200 }}
+                {% else %}
+                    {{ value|default:"—" }}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Tabs for Related Data -->
+<div class="tabs">
+    <button class="tab active" onclick="showTab('nmap')">⚡ Nmap Scans ({{ nmap_count|default:0 }})</button>
+    <button class="tab" onclick="showTab('requests')">🌊 HTTP Requests ({{ request_count|default:0 }})</button>
+    <button class="tab" onclick="showTab('dns')">🔍 DNS Queries ({{ dns_count|default:0 }})</button>
+</div>
+
+<!-- Nmap Scans Tab -->
+<div id="nmap" class="tab-content active">
+    {% if nmap_scans %}
+    <div class="data-table">
+        <table>
+            <thead>
+                <tr>
+                    {% for key in nmap_scans.0.keys %}
+                    <th>{{ key }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in nmap_scans %}
+                <tr>
+                    {% for key, value in scan.items %}
+                    <td class="{% if value|length > 50 or value|slice:':1' == '{' or value|slice:':1' == '[' %}json-cell{% endif %}" title="{{ value }}">
+                        {% if value|length > 50 %}
+                            {{ value|truncatechars:50 }}
+                        {% else %}
+                            {{ value|default:"—" }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">⚡</div>
+        <p>No Nmap scans found for this EggRecord</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- HTTP Requests Tab -->
+<div id="requests" class="tab-content">
+    {% if request_metadata %}
+    <div class="data-table">
+        <table>
+            <thead>
+                <tr>
+                    {% for key in request_metadata.0.keys %}
+                    <th>{{ key }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for request in request_metadata %}
+                <tr>
+                    {% for key, value in request.items %}
+                    <td class="{% if value|length > 50 or value|slice:':1' == '{' or value|slice:':1' == '[' %}json-cell{% endif %}" title="{{ value }}">
+                        {% if value|length > 50 %}
+                            {{ value|truncatechars:50 }}
+                        {% else %}
+                            {{ value|default:"—" }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🌊</div>
+        <p>No HTTP requests found for this EggRecord</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- DNS Queries Tab -->
+<div id="dns" class="tab-content">
+    {% if dns_queries %}
+    <div class="data-table">
+        <table>
+            <thead>
+                <tr>
+                    {% for key in dns_queries.0.keys %}
+                    <th>{{ key }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for dns in dns_queries %}
+                <tr>
+                    {% for key, value in dns.items %}
+                    <td class="{% if value|length > 50 or value|slice:':1' == '{' or value|slice:':1' == '[' %}json-cell{% endif %}" title="{{ value }}">
+                        {% if value|length > 50 %}
+                            {{ value|truncatechars:50 }}
+                        {% else %}
+                            {{ value|default:"—" }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔍</div>
+        <p>No DNS queries found for this EggRecord</p>
+    </div>
+    {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
+{% endblock %}
+

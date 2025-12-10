@@ -1,0 +1,486 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}EggRecords Database{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #8b5cf6; }
+    
+    .eggrecord-layout {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 30px;
+        margin-top: 20px;
+    }
+    
+    .eggrecord-create-panel {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 25px;
+        border: 1px solid #334155;
+        height: fit-content;
+        position: sticky;
+        top: 100px;
+    }
+    
+    .eggrecord-create-panel h3 {
+        color: #8b5cf6;
+        margin-bottom: 20px;
+        font-size: 1.2rem;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+    
+    .form-group input {
+        width: 100%;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 2px solid #334155;
+        background: rgba(15, 23, 42, 0.8);
+        color: white;
+        font-size: 0.95rem;
+        transition: border-color 0.3s;
+    }
+    
+    .form-group input:focus {
+        outline: none;
+        border-color: #8b5cf6;
+    }
+    
+    .form-group input::placeholder {
+        color: #64748b;
+    }
+    
+    .form-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 25px;
+    }
+    
+    .btn-create {
+        flex: 1;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+    }
+    
+    .btn-create:hover:not(:disabled) {
+        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+    
+    .btn-create:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .btn-clear {
+        padding: 12px 20px;
+        border: 2px solid #334155;
+        border-radius: 8px;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .btn-clear:hover {
+        border-color: #64748b;
+        color: white;
+    }
+    
+    .form-message {
+        margin-top: 15px;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        display: none;
+    }
+    
+    .form-message.success {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid #10b981;
+        color: #10b981;
+        display: block;
+    }
+    
+    .form-message.error {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid #ef4444;
+        color: #fca5a5;
+        display: block;
+    }
+    
+    .eggrecord-card {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #334155;
+        margin-bottom: 20px;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+    
+    .eggrecord-card:hover {
+        border-color: #8b5cf6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    }
+    
+    .eggrecord-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    
+    .eggrecord-card-title {
+        font-size: 1.3rem;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .eggrecord-card-meta {
+        display: flex;
+        gap: 15px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+    }
+    
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+    
+    .count-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        background: rgba(139, 92, 246, 0.2);
+        color: #a78bfa;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .alive-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    
+    .alive-badge.true {
+        background: #10b981;
+        color: white;
+    }
+    
+    .alive-badge.false {
+        background: #64748b;
+        color: white;
+    }
+    
+    a.eggrecord-link {
+        text-decoration: none;
+        color: inherit;
+    }
+    
+    @media (max-width: 1200px) {
+        .eggrecord-layout {
+            grid-template-columns: 1fr;
+        }
+        
+        .eggrecord-create-panel {
+            position: static;
+        }
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🥚</div>
+    <div>
+        <h2>EggRecords Database</h2>
+        <p class="subtitle">Complete database of all EggRecords with related Nmap, RequestMetadata, and DNSQueries</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Database Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Total EggRecords</div>
+        <div class="value">{{ total_eggrecords|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Alive Records</div>
+        <div class="value">{{ alive_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Displayed</div>
+        <div class="value">{{ total_count|default:0 }}</div>
+    </div>
+</div>
+
+<div class="eggrecord-layout">
+    <!-- Left Sidebar: Create EggRecord Form -->
+    <div class="eggrecord-create-panel">
+        <h3>➕ Create New EggRecord</h3>
+        <form id="create-eggrecord-form">
+            <div class="form-group">
+                <label for="eggname">Egg Name (optional)</label>
+                <input type="text" id="eggname" name="eggname" placeholder="Customer name or identifier" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Customer name - will be obfuscated with project egg
+                </small>
+            </div>
+            
+            <div class="form-group" id="projectegg-display" style="display: none;">
+                <label>Project Egg (auto-generated)</label>
+                <input type="text" id="projectegg" name="projectegg" readonly style="background: rgba(100, 116, 139, 0.3); cursor: not-allowed;" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Code name selected from phase list
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label for="domain">Domain Name</label>
+                <input type="text" id="domain" name="domain" placeholder="example.com" />
+            </div>
+            
+            <div class="form-group">
+                <label for="subdomain">Subdomain (optional)</label>
+                <input type="text" id="subdomain" name="subdomain" placeholder="subdomain.example.com" />
+            </div>
+            
+            <div class="form-group">
+                <label for="ip_address">IP Address (optional)</label>
+                <input type="text" id="ip_address" name="ip_address" placeholder="192.168.1.1" />
+            </div>
+            
+            <div class="form-group">
+                <label for="cidr">CIDR Range (optional)</label>
+                <input type="text" id="cidr" name="cidr" placeholder="192.168.1.0/24" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Limited to first 100 IPs
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="alive" name="alive" checked style="width: auto; cursor: pointer;" />
+                    <span>Mark as alive</span>
+                </label>
+            </div>
+            
+            <div class="form-message" id="form-message"></div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn-create" id="create-btn">Create EggRecord</button>
+                <button type="button" class="btn-clear" onclick="clearForm()">Clear</button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Right Side: EggRecord List -->
+    <div>
+        <h3 style="margin-bottom: 20px; color: #8b5cf6;">📋 All EggRecords</h3>
+
+{% for eggrecord in eggrecords %}
+<a href="/reconnaissance/eggrecords/{{ eggrecord.id }}/" class="eggrecord-link">
+    <div class="eggrecord-card">
+        <div class="eggrecord-card-header">
+            <div>
+                <div class="eggrecord-card-title">
+                    {{ eggrecord.subDomain|default:eggrecord.domainname|default:"Unknown" }}
+                </div>
+                <div style="color: #64748b; font-size: 0.85rem; margin-top: 5px;">
+                    {{ eggrecord.domainname|default:"" }}
+                </div>
+            </div>
+            <span class="alive-badge {{ eggrecord.alive|yesno:'true,false' }}">
+                {{ eggrecord.alive|yesno:"Alive,Dead" }}
+            </span>
+        </div>
+        
+        <div class="eggrecord-card-meta">
+            <div class="meta-item">
+                <span>📅 Created:</span>
+                <span>{{ eggrecord.created_at|date:"Y-m-d H:i" }}</span>
+            </div>
+            <div class="meta-item">
+                <span>🔄 Updated:</span>
+                <span>{{ eggrecord.updated_at|date:"Y-m-d H:i" }}</span>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+            <span class="count-badge">
+                ⚡ {{ eggrecord.nmap_count|default:0 }} Nmap Scans
+            </span>
+            <span class="count-badge">
+                🌊 {{ eggrecord.request_count|default:0 }} HTTP Requests
+            </span>
+            <span class="count-badge">
+                🔍 {{ eggrecord.dns_count|default:0 }} DNS Queries
+            </span>
+        </div>
+    </div>
+</a>
+{% empty %}
+<div class="error-message" style="background: rgba(100, 116, 139, 0.2); border-color: #64748b; color: #94a3b8;">
+    No EggRecords found in database.
+</div>
+{% endfor %}
+    </div>
+</div>
+
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showMessage(message, type) {
+    const messageDiv = document.getElementById('form-message');
+    messageDiv.textContent = message;
+    messageDiv.className = 'form-message ' + type;
+    messageDiv.style.display = 'block';
+    
+    if (type === 'success') {
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+            if (message.includes('Created')) {
+                // Reload page after 1 second to show new record
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            }
+        }, 3000);
+    }
+}
+
+function clearForm() {
+    document.getElementById('create-eggrecord-form').reset();
+    document.getElementById('form-message').style.display = 'none';
+    document.getElementById('projectegg-display').style.display = 'none';
+}
+
+async function generateProjectEgg() {
+    try {
+        const response = await fetch('/reconnaissance/api/projectegg/generate/', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('projectegg').value = data.projectegg;
+            document.getElementById('projectegg-display').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error generating project egg:', error);
+    }
+}
+
+// Auto-generate projectegg when eggname is entered
+document.getElementById('eggname').addEventListener('input', function() {
+    if (this.value.trim()) {
+        generateProjectEgg();
+    } else {
+        document.getElementById('projectegg-display').style.display = 'none';
+        document.getElementById('projectegg').value = '';
+    }
+});
+
+// Generate on page load if eggname has value
+if (document.getElementById('eggname').value.trim()) {
+    generateProjectEgg();
+}
+
+document.getElementById('create-eggrecord-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const createBtn = document.getElementById('create-btn');
+    const originalText = createBtn.textContent;
+    createBtn.disabled = true;
+    createBtn.textContent = 'Creating...';
+    
+    const formData = {
+        domain: document.getElementById('domain').value.trim(),
+        subdomain: document.getElementById('subdomain').value.trim(),
+        ip_address: document.getElementById('ip_address').value.trim(),
+        cidr: document.getElementById('cidr').value.trim(),
+        alive: document.getElementById('alive').checked,
+        eggname: document.getElementById('eggname').value.trim(),
+        projectegg: document.getElementById('projectegg').value.trim()
+    };
+    
+    try {
+        const response = await fetch('/reconnaissance/api/eggrecords/create/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage(data.message || 'EggRecord created successfully!', 'success');
+            clearForm();
+        } else {
+            showMessage(data.error || 'Failed to create EggRecord', 'error');
+        }
+    } catch (error) {
+        showMessage('Error: ' + error.message, 'error');
+    } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = originalText;
+    }
+});
+</script>
+
+{% endblock %}
+

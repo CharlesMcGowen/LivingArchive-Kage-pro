@@ -1,0 +1,354 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Reconnaissance Monitoring{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #3b82f6; }
+    
+    .monitoring-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+    
+    .personality-monitor {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        border-left: 4px solid var(--accent-color);
+    }
+    
+    .personality-monitor.kage { border-left-color: #f59e0b; }
+    .personality-monitor.kumo { border-left-color: #06b6d4; }
+    .personality-monitor.ryu { border-left-color: #10b981; }
+    
+    .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    
+    .status-indicator.running { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .status-indicator.paused { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .status-indicator.stopped { background: #ef4444; }
+    .status-indicator.unknown { background: #64748b; }
+    
+    .activity-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin: 15px 0;
+    }
+    
+    .metric-card {
+        background: rgba(15, 23, 42, 0.5);
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 3px solid #3b82f6;
+    }
+    
+    .metric-value {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #3b82f6;
+        margin: 5px 0;
+    }
+    
+    .metric-label {
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+    
+    .warnings-list, .errors-list, .fallbacks-list {
+        margin-top: 15px;
+    }
+    
+    .warning-item, .error-item, .fallback-item {
+        background: rgba(245, 158, 11, 0.1);
+        border-left: 3px solid #f59e0b;
+        padding: 10px;
+        margin: 8px 0;
+        border-radius: 6px;
+        font-size: 0.9rem;
+    }
+    
+    .error-item {
+        background: rgba(239, 68, 68, 0.1);
+        border-left-color: #ef4444;
+    }
+    
+    .fallback-item {
+        background: rgba(59, 130, 246, 0.1);
+        border-left-color: #3b82f6;
+    }
+    
+    .health-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+    }
+    
+    .refresh-button {
+        background: #3b82f6;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1rem;
+        margin-top: 20px;
+        transition: background 0.3s;
+    }
+    
+    .refresh-button:hover {
+        background: #2563eb;
+    }
+    
+    .auto-refresh {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+    }
+    
+    .auto-refresh input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+    
+    .timestamp {
+        color: #64748b;
+        font-size: 0.85rem;
+        margin-top: 5px;
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">📊</div>
+    <div>
+        <h2>Reconnaissance Monitoring</h2>
+        <p class="subtitle">Real-time monitoring: Exceptions, warnings, fallbacks, and activity</p>
+    </div>
+</div>
+
+<div class="auto-refresh">
+    <input type="checkbox" id="autoRefresh" checked>
+    <label for="autoRefresh">Auto-refresh every 5 seconds</label>
+    <button class="refresh-button" onclick="refreshData()">🔄 Refresh Now</button>
+</div>
+
+<div class="monitoring-grid">
+    {% for personality, data in monitoring_data.items %}
+    <div class="personality-monitor {{ personality }}">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+            <h3 style="margin: 0; display: flex; align-items: center;">
+                {% if personality == 'kage' %}⚡{% elif personality == 'kumo' %}🌊{% else %}🛡️{% endif %}
+                {{ personality|capfirst }} Monitoring
+            </h3>
+            {% if data.success %}
+                <div class="health-status">
+                    <span class="status-indicator {{ data.service_status.status|default:'unknown' }}"></span>
+                    <strong>{{ data.service_status.status|default:'unknown'|upper }}</strong>
+                </div>
+            {% else %}
+                <div class="health-status">
+                    <span class="status-indicator unknown"></span>
+                    <strong>ERROR</strong>
+                </div>
+            {% endif %}
+        </div>
+        
+        {% if data.success %}
+            <!-- Service Status -->
+            <div class="metric-card">
+                <div class="metric-label">Service Status</div>
+                <div class="metric-value" style="font-size: 1.2rem;">
+                    <span class="status-indicator {{ data.service_status.status|default:'unknown' }}"></span>
+                    {{ data.service_status.status|default:'unknown'|upper }}
+                </div>
+                {% if data.service_status.timestamp %}
+                    <div class="timestamp">Updated: {{ data.service_status.timestamp|slice:":19" }}</div>
+                {% endif %}
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="activity-metrics">
+                {% if personality == 'kage' %}
+                    <div class="metric-card">
+                        <div class="metric-label">Scans (Last 5min)</div>
+                        <div class="metric-value">{{ data.recent_activity.scans_last_5min|default:0 }}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Scans</div>
+                        <div class="metric-value">{{ data.recent_activity.total_scans|default:0 }}</div>
+                    </div>
+                {% elif personality == 'kumo' %}
+                    <div class="metric-card">
+                        <div class="metric-label">Requests (Last 5min)</div>
+                        <div class="metric-value">{{ data.recent_activity.requests_last_5min|default:0 }}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Requests</div>
+                        <div class="metric-value">{{ data.recent_activity.total_requests|default:0 }}</div>
+                    </div>
+                {% elif personality == 'ryu' %}
+                    <div class="metric-card">
+                        <div class="metric-label">Scans (Last 5min)</div>
+                        <div class="metric-value">{{ data.recent_activity.scans_last_5min|default:0 }}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Assessments (Last 5min)</div>
+                        <div class="metric-value">{{ data.recent_activity.assessments_last_5min|default:0 }}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Scans</div>
+                        <div class="metric-value">{{ data.recent_activity.total_scans|default:0 }}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Assessments</div>
+                        <div class="metric-value">{{ data.recent_activity.total_assessments|default:0 }}</div>
+                    </div>
+                {% endif %}
+            </div>
+            
+            <!-- Last Activity -->
+            {% if personality == 'kage' and data.recent_activity.last_scan %}
+                <div class="timestamp" style="margin-top: 10px;">
+                    Last scan: {{ data.recent_activity.last_scan|slice:":19" }}
+                </div>
+            {% elif personality == 'kumo' and data.recent_activity.last_request %}
+                <div class="timestamp" style="margin-top: 10px;">
+                    Last request: {{ data.recent_activity.last_request|slice:":19" }}
+                </div>
+            {% elif personality == 'ryu' %}
+                {% if data.recent_activity.last_scan %}
+                    <div class="timestamp" style="margin-top: 10px;">
+                        Last scan: {{ data.recent_activity.last_scan|slice:":19" }}
+                    </div>
+                {% endif %}
+                {% if data.recent_activity.last_assessment %}
+                    <div class="timestamp">
+                        Last assessment: {{ data.recent_activity.last_assessment|slice:":19" }}
+                    </div>
+                {% endif %}
+            {% endif %}
+            
+            <!-- Database Health -->
+            <div style="margin-top: 15px; padding: 10px; background: rgba(15, 23, 42, 0.5); border-radius: 8px;">
+                <strong style="color: #3b82f6;">Database Health:</strong>
+                <span class="status-indicator {{ data.database_health.status|default:'unknown' }}"></span>
+                <span>{{ data.database_health.status|default:'unknown'|upper }}</span>
+                {% if data.database_health.error %}
+                    <div style="color: #ef4444; font-size: 0.85rem; margin-top: 5px;">
+                        {{ data.database_health.error }}
+                    </div>
+                {% endif %}
+            </div>
+            
+            <!-- Warnings -->
+            {% if data.warnings %}
+                <div class="warnings-list">
+                    <strong style="color: #f59e0b; display: block; margin-bottom: 10px;">⚠️ Warnings ({{ data.warnings|length }})</strong>
+                    {% for warning in data.warnings %}
+                        <div class="warning-item">
+                            <strong>{{ warning.type|default:'warning' }}:</strong> {{ warning.message }}
+                            {% if warning.timestamp %}
+                                <div class="timestamp">{{ warning.timestamp|slice:":19" }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            
+            <!-- Errors -->
+            {% if data.errors %}
+                <div class="errors-list">
+                    <strong style="color: #ef4444; display: block; margin-bottom: 10px;">❌ Errors ({{ data.errors|length }})</strong>
+                    {% for error in data.errors %}
+                        <div class="error-item">
+                            <strong>{{ error.type|default:'error' }}:</strong> {{ error.message }}
+                            {% if error.timestamp %}
+                                <div class="timestamp">{{ error.timestamp|slice:":19" }}</div>
+                            {% endif %}
+                            {% if error.traceback %}
+                                <details style="margin-top: 5px;">
+                                    <summary style="cursor: pointer; color: #94a3b8;">Show traceback</summary>
+                                    <pre style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-size: 0.8rem; margin-top: 5px; overflow-x: auto;">{{ error.traceback }}</pre>
+                                </details>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            
+            <!-- Fallbacks Used -->
+            {% if data.fallbacks_used %}
+                <div class="fallbacks-list">
+                    <strong style="color: #3b82f6; display: block; margin-bottom: 10px;">🔄 Fallbacks Used ({{ data.fallbacks_used|length }})</strong>
+                    {% for fallback in data.fallbacks_used %}
+                        <div class="fallback-item">
+                            <strong>{{ fallback.type|default:'fallback' }}:</strong> {{ fallback.message }}
+                            {% if fallback.timestamp %}
+                                <div class="timestamp">{{ fallback.timestamp|slice:":19" }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            
+            <!-- No Issues -->
+            {% if not data.warnings and not data.errors and not data.fallbacks_used %}
+                <div style="margin-top: 15px; padding: 15px; background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981; border-radius: 6px;">
+                    <span style="color: #10b981;">✅ No issues detected</span>
+                </div>
+            {% endif %}
+            
+        {% else %}
+            <!-- Error State -->
+            <div class="error-item">
+                <strong>Error:</strong> {{ data.error|default:'Unknown error' }}
+                {% if data.traceback %}
+                    <details style="margin-top: 5px;">
+                        <summary style="cursor: pointer; color: #94a3b8;">Show traceback</summary>
+                        <pre style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-size: 0.8rem; margin-top: 5px; overflow-x: auto;">{{ data.traceback }}</pre>
+                    </details>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+let autoRefreshInterval = null;
+
+function refreshData() {
+    window.location.reload();
+}
+
+document.getElementById('autoRefresh').addEventListener('change', function(e) {
+    if (e.target.checked) {
+        autoRefreshInterval = setInterval(refreshData, 5000);
+    } else {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+});
+
+// Start auto-refresh if checked
+if (document.getElementById('autoRefresh').checked) {
+    autoRefreshInterval = setInterval(refreshData, 5000);
+}
+</script>
+{% endblock %}
+

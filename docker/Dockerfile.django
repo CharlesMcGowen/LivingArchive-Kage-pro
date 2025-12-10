@@ -1,0 +1,66 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    nmap \
+    curl \
+    postgresql-client \
+    wget \
+    git \
+    golang-go \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install directory enumeration tools for Suzu
+# Install ffuf (Fast web fuzzer)
+RUN FFUF_VERSION=$(curl -s https://api.github.com/repos/ffuf/ffuf/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/') \
+    && wget -q "https://github.com/ffuf/ffuf/releases/download/${FFUF_VERSION}/ffuf_${FFUF_VERSION#v}_linux_amd64.tar.gz" \
+    && tar -xzf ffuf_*.tar.gz \
+    && mv ffuf /usr/local/bin/ \
+    && chmod +x /usr/local/bin/ffuf \
+    && rm -f ffuf_*.tar.gz || echo "ffuf installation failed, continuing..."
+
+# Install gobuster (Directory/file brute-forcing tool)
+RUN go install github.com/OJ/gobuster/v3@latest \
+    && cp /root/go/bin/gobuster /usr/local/bin/ \
+    && chmod +x /usr/local/bin/gobuster || echo "gobuster installation failed, continuing..."
+
+# Install dirsearch (Python-based web path scanner)
+RUN git clone --depth 1 https://github.com/maurosoria/dirsearch.git /opt/dirsearch \
+    && chmod +x /opt/dirsearch/dirsearch.py \
+    && ln -sf /opt/dirsearch/dirsearch.py /usr/local/bin/dirsearch || echo "dirsearch installation failed, continuing..."
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Django (uncomment from requirements.txt)
+RUN pip install --no-cache-dir django>=4.2.0
+
+# Copy all Django project files
+COPY manage.py ./
+COPY ryu_project/ ./ryu_project/
+COPY ryu_app/ ./ryu_app/
+# Note: config/ and staticfiles/ are mounted as volumes in docker-compose.yml
+
+# Collect static files (will be done at runtime if needed)
+# RUN python manage.py collectstatic --noinput || true
+
+# Expose port 9000
+EXPOSE 9000
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV DJANGO_SETTINGS_MODULE=ryu_project.settings
+ENV PORT=9000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:9000/reconnaissance/ || exit 1
+
+# Run Django development server on port 9000
+CMD ["python", "manage.py", "runserver", "0.0.0.0:9000"]
+

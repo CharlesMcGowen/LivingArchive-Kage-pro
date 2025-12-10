@@ -1,0 +1,435 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Kage Scout Database{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">⚡</div>
+    <div>
+        <h2>Kage Scout Database</h2>
+        <p class="subtitle">Port scanning, Nmap results, WAF detection, and learning database</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Database Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Recent Scans</div>
+        <div class="value">{{ recent_scans_24h|default:0 }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Scans</div>
+        <div class="value">{{ total_scans|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">WAF Detections</div>
+        <div class="value">{{ waf_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Learned Techniques</div>
+        <div class="value">{{ technique_count|default:0 }}</div>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #f59e0b;">📊 Recent Nmap Scans</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Scan Type</th>
+                <th>Status</th>
+                <th>Port</th>
+                <th>Service</th>
+                <th>Open Ports</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for scan in scans %}
+            <tr class="clickable-row" data-row-index="{{ forloop.counter0 }}" style="cursor: pointer;">
+                <td>{{ scan.target|truncatechars:40 }}</td>
+                <td>{{ scan.scan_type }}</td>
+                <td>
+                    <span class="status-badge {% if scan.scan_status == 'completed' %}success{% elif scan.scan_status == 'failed' %}error{% else %}info{% endif %}">
+                        {{ scan.scan_status }}
+                    </span>
+                </td>
+                <td>{{ scan.port }}</td>
+                <td>{{ scan.service_name }}</td>
+                <td class="json-cell" title="{{ scan.open_ports }}">{{ scan.open_ports|truncatechars:50 }}</td>
+                <td>{{ scan.created_at }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="text-align: center; color: #94a3b8;">No scan data available</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if scans.has_other_pages %}
+<div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+    {% if scans.has_previous %}
+        <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">« First</a>
+        <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+    {% endif %}
+    
+    <span style="color: #94a3b8; padding: 8px 12px;">
+        Page {{ scans.number }} of {{ scans.paginator.num_pages }} ({{ scan_count }} total)
+    </span>
+    
+    {% if scans.has_next %}
+        <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Next ›</a>
+        <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Last »</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">Kage's Pokémon Team</h4>
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">⚡</div>
+            <div class="label">Pikachu</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Speed Scanner</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🔥</div>
+            <div class="label">Charizard</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Aggressive Scan</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🦉</div>
+            <div class="label">Noctowl</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Stealth Recon</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">😴</div>
+            <div class="label">Snorlax</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Deep Analysis</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🪲</div>
+            <div class="label">Heracross</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Brute Force</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🐵</div>
+            <div class="label">Infernape</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Quick Recon</div>
+        </div>
+    </div>
+</div>
+
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">📋 Recent Activity Log</h4>
+    <div id="activityLog" style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85rem;">
+        <div style="color: #64748b; text-align: center;">Loading activity log...</div>
+    </div>
+    <button onclick="refreshActivityLog()" style="margin-top: 10px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">🔄 Refresh Log</button>
+</div>
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">API Endpoints</h4>
+    <ul style="color: #64748b; list-style: none;">
+        <li>📡 <a href="/reconnaissance/api/kage/scans/" style="color: #3b82f6;">/reconnaissance/api/kage/scans/</a> - Get all scans</li>
+        <li>🛡️ <a href="/reconnaissance/api/kage/waf/" style="color: #3b82f6;">/reconnaissance/api/kage/waf/</a> - WAF detections</li>
+        <li>🧠 <a href="/reconnaissance/api/kage/learning/" style="color: #3b82f6;">/reconnaissance/api/kage/learning/</a> - Technique effectiveness</li>
+        <li>📋 <a href="/reconnaissance/api/kage/logs/" style="color: #3b82f6;">/reconnaissance/api/kage/logs/</a> - Activity logs</li>
+    </ul>
+</div>
+
+<!-- Store JSON data in JavaScript variable -->
+<script>
+const scansData = [
+    {% for scan in scans %}
+    {
+        full_data_json: {% if scan.full_data_json %}{{ scan.full_data_json|safe }}{% else %}'{}'{% endif %}
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+];
+</script>
+
+<!-- JSON Modal Popup -->
+<div id="jsonModal" class="json-modal" style="display: none;">
+    <div class="json-modal-content">
+        <div class="json-modal-header">
+            <h3>JSON Data</h3>
+            <button class="json-modal-close" onclick="closeJsonModal()">&times;</button>
+        </div>
+        <div class="json-modal-body">
+            <pre id="jsonContent"></pre>
+        </div>
+        <div class="json-modal-footer">
+            <button onclick="copyJsonToClipboard()" class="json-copy-btn">Copy JSON</button>
+            <button onclick="closeJsonModal()" class="json-close-btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.json-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.json-modal-content {
+    background: #1e293b;
+    border: 2px solid #f59e0b;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.json-modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.json-modal-header h3 {
+    color: #f59e0b;
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.json-modal-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.json-modal-close:hover {
+    color: #f59e0b;
+}
+
+.json-modal-body {
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+    max-height: calc(90vh - 140px);
+}
+
+.json-modal-body pre {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 20px;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+}
+
+.json-modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.json-copy-btn, .json-close-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.json-copy-btn {
+    background: #3b82f6;
+    color: white;
+}
+
+.json-copy-btn:hover {
+    background: #2563eb;
+}
+
+.json-close-btn {
+    background: #64748b;
+    color: white;
+}
+
+.json-close-btn:hover {
+    background: #475569;
+}
+
+.clickable-row:hover {
+    background-color: rgba(245, 158, 11, 0.1);
+}
+</style>
+
+<script>
+let currentJsonData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.clickable-row');
+    rows.forEach((row, index) => {
+        row.addEventListener('click', function() {
+            const rowIndex = parseInt(this.getAttribute('data-row-index'));
+            if (rowIndex >= 0 && rowIndex < scansData.length) {
+                const rowData = scansData[rowIndex];
+                if (rowData && rowData.full_data_json) {
+                    try {
+                        // Parse the JSON string to format it nicely
+                        const parsed = typeof rowData.full_data_json === 'string' 
+                            ? JSON.parse(rowData.full_data_json) 
+                            : rowData.full_data_json;
+                        currentJsonData = parsed;
+                        displayJsonModal(JSON.stringify(parsed, null, 2));
+                    } catch (e) {
+                        // If not valid JSON, display as-is
+                        currentJsonData = rowData.full_data_json;
+                        displayJsonModal(String(rowData.full_data_json));
+                    }
+                } else {
+                    // Fallback: display the row data itself
+                    currentJsonData = rowData;
+                    displayJsonModal(JSON.stringify(rowData, null, 2));
+                }
+            }
+        });
+    });
+});
+
+function displayJsonModal(jsonString) {
+    const modal = document.getElementById('jsonModal');
+    const content = document.getElementById('jsonContent');
+    content.textContent = jsonString;
+    modal.style.display = 'flex';
+}
+
+function closeJsonModal() {
+    const modal = document.getElementById('jsonModal');
+    modal.style.display = 'none';
+    currentJsonData = null;
+}
+
+function copyJsonToClipboard() {
+    const content = document.getElementById('jsonContent');
+    const text = content.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.json-copy-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#f59e0b';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '#3b82f6';
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
+// Close modal when clicking outside
+document.getElementById('jsonModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeJsonModal();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeJsonModal();
+    }
+});
+
+// Activity Log Functions
+function loadActivityLog() {
+    const logContainer = document.getElementById('activityLog');
+    fetch('/reconnaissance/api/kage/logs/?limit=50')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data && data.data.length > 0) {
+                let html = '';
+                data.data.forEach(entry => {
+                    const level = entry.level || 'INFO';
+                    const message = entry.message || entry.raw || '';
+                    const timestamp = entry.timestamp || '';
+                    
+                    // Color code by level
+                    let color = '#94a3b8'; // default gray
+                    if (level === 'ERROR') color = '#ef4444';
+                    else if (level === 'WARNING') color = '#f59e0b';
+                    else if (level === 'INFO' && message.includes('✅')) color = '#10b981';
+                    else if (level === 'INFO' && message.includes('🔍')) color = '#3b82f6';
+                    else if (level === 'INFO') color = '#94a3b8';
+                    
+                    html += `<div style="color: ${color}; margin-bottom: 4px; line-height: 1.4;">
+                        <span style="color: #64748b;">[${timestamp}]</span> ${message}
+                    </div>`;
+                });
+                logContainer.innerHTML = html;
+                // Auto-scroll to bottom (most recent)
+                logContainer.scrollTop = logContainer.scrollHeight;
+            } else {
+                logContainer.innerHTML = '<div style="color: #64748b; text-align: center;">No recent activity</div>';
+            }
+        })
+        .catch(error => {
+            logContainer.innerHTML = `<div style="color: #ef4444; text-align: center;">Error loading log: ${error.message}</div>`;
+        });
+}
+
+function refreshActivityLog() {
+    loadActivityLog();
+}
+
+// Load log on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadActivityLog();
+    // Auto-refresh every 10 seconds
+    setInterval(loadActivityLog, 10000);
+});
+</script>
+{% endblock %}
+
+

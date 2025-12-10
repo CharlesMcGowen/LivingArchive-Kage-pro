@@ -1,0 +1,512 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Network Mapping Visualizer{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #8b5cf6; }
+    #cy {
+        width: 100%;
+        height: calc(100vh - 350px);
+        min-height: 600px;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        background: #0f172a;
+    }
+    .controls-panel {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #334155;
+    }
+    .control-group {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 15px;
+    }
+    .control-group label {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        min-width: 100px;
+    }
+    .control-group select,
+    .control-group input {
+        padding: 8px 12px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        color: #e2e8f0;
+        font-size: 0.9rem;
+    }
+    .control-group button {
+        padding: 8px 16px;
+        background: #8b5cf6;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    .control-group button:hover {
+        background: #7c3aed;
+    }
+    .stats-panel {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        margin-bottom: 15px;
+    }
+    .stat-item {
+        padding: 10px 15px;
+        background: rgba(59, 130, 246, 0.1);
+        border-radius: 6px;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .stat-item .label {
+        color: #94a3b8;
+        font-size: 0.8rem;
+    }
+    .stat-item .value {
+        color: #3b82f6;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🗺️</div>
+    <div>
+        <h2>Network Mapping Visualizer</h2>
+        <p class="subtitle">Interactive visualization of IP addresses, CIDR blocks, and ASN relationships with Egg IP mapping</p>
+    </div>
+</div>
+
+<div class="controls-panel">
+    <div class="stats-panel" id="stats-panel">
+        <div class="stat-item">
+            <div class="label">Nodes</div>
+            <div class="value" id="stat-nodes">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">Edges</div>
+            <div class="value" id="stat-edges">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">IP Nodes</div>
+            <div class="value" id="stat-ip-nodes">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">CIDR Blocks</div>
+            <div class="value" id="stat-cidr-nodes">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">ASNs</div>
+            <div class="value" id="stat-asn-nodes">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">Scanned IPs</div>
+            <div class="value" id="stat-scanned-ips">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="label">Unscanned IPs</div>
+            <div class="value" id="stat-unscanned-ips">0</div>
+        </div>
+    </div>
+    
+    <div class="control-group">
+        <label>Egg Name:</label>
+        <select id="eggname-select">
+            <option value="">All Eggs</option>
+        </select>
+        
+        <label>Project Egg:</label>
+        <select id="projectegg-select">
+            <option value="">All Projects</option>
+        </select>
+        
+        <label>View Level:</label>
+        <select id="level-select">
+            <option value="all">All (IP → CIDR → ASN)</option>
+            <option value="ip">IP Addresses Only</option>
+            <option value="cidr">CIDR Blocks Only</option>
+            <option value="asn">ASNs Only</option>
+        </select>
+        
+        <label>Filter ASN:</label>
+        <input type="text" id="asn-filter" placeholder="e.g., 13335" style="width: 120px;">
+        
+        <label>
+            <input type="checkbox" id="only-scanned-eggs"> Only Scanned Eggs
+        </label>
+        
+        <button onclick="loadGraph()">🔄 Refresh Graph</button>
+        <button onclick="resetView()">🎯 Reset View</button>
+    </div>
+</div>
+
+<div id="cy"></div>
+
+<div style="margin-top: 20px; padding: 15px; background: rgba(30, 41, 59, 0.8); border-radius: 8px; border: 1px solid #334155;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">📖 Legend</h4>
+    <div style="display: flex; gap: 30px; flex-wrap: wrap; color: #64748b; font-size: 0.9rem;">
+        <div><span style="color: #3b82f6;">●</span> Scanned IP Address</div>
+        <div><span style="color: #94a3b8;">●</span> Unscanned IP Address (Grey)</div>
+        <div><span style="color: #10b981;">●</span> CIDR Block Node</div>
+        <div><span style="color: #f59e0b;">●</span> ASN Node</div>
+        <div style="margin-left: 20px;">
+            <span style="color: #94a3b8;">→</span> belongs to (IP → CIDR)
+        </div>
+        <div>
+            <span style="color: #94a3b8;">→</span> owned by (CIDR → ASN)
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+<script>
+let cy;
+let graphData = { nodes: [], edges: [] };
+
+// Load dropdown options
+async function loadDropdownOptions() {
+    try {
+        console.log('Loading dropdown options...');
+        const response = await fetch('/reconnaissance/api/network/options/');
+        
+        if (!response.ok) {
+            console.error('API response not OK:', response.status, response.statusText);
+            return;
+        }
+        
+        const data = await response.json();
+        console.log('Dropdown options data:', data);
+        
+        if (data.success) {
+            const eggnameSelect = document.getElementById('eggname-select');
+            const projecteggSelect = document.getElementById('projectegg-select');
+            
+            if (!eggnameSelect || !projecteggSelect) {
+                console.error('Dropdown elements not found!');
+                return;
+            }
+            
+            // Clear existing options (except "All" option)
+            while (eggnameSelect.children.length > 1) {
+                eggnameSelect.removeChild(eggnameSelect.lastChild);
+            }
+            while (projecteggSelect.children.length > 1) {
+                projecteggSelect.removeChild(projecteggSelect.lastChild);
+            }
+            
+            // Populate eggname dropdown
+            if (data.eggnames && data.eggnames.length > 0) {
+                data.eggnames.forEach(eggname => {
+                    const option = document.createElement('option');
+                    option.value = eggname;
+                    option.textContent = eggname;
+                    eggnameSelect.appendChild(option);
+                });
+                console.log(`Loaded ${data.eggnames.length} eggnames`);
+            } else {
+                console.log('No eggnames found');
+            }
+            
+            // Populate projectegg dropdown
+            if (data.projecteggs && data.projecteggs.length > 0) {
+                data.projecteggs.forEach(projectegg => {
+                    const option = document.createElement('option');
+                    option.value = projectegg;
+                    option.textContent = projectegg;
+                    projecteggSelect.appendChild(option);
+                });
+                console.log(`Loaded ${data.projecteggs.length} projecteggs`);
+            } else {
+                console.log('No projecteggs found');
+            }
+        } else {
+            console.error('API returned success=false:', data.error);
+        }
+    } catch (error) {
+        console.error('Error loading dropdown options:', error);
+    }
+}
+
+// Initialize Cytoscape
+function initCytoscape() {
+    cy = cytoscape({
+        container: document.getElementById('cy'),
+        elements: [],
+        style: [
+            {
+                selector: 'node[type="ip"][scanned="true"]',
+                style: {
+                    'background-color': '#3b82f6',
+                    'label': 'data(label)',
+                    'width': 30,
+                    'height': 30,
+                    'font-size': '10px',
+                    'color': '#e2e8f0',
+                    'text-wrap': 'wrap',
+                    'text-max-width': '100px',
+                    'text-valign': 'center',
+                    'text-halign': 'center'
+                }
+            },
+            {
+                selector: 'node[type="ip"][scanned="false"]',
+                style: {
+                    'background-color': '#94a3b8',
+                    'label': 'data(label)',
+                    'width': 30,
+                    'height': 30,
+                    'font-size': '10px',
+                    'color': '#e2e8f0',
+                    'opacity': 0.6,
+                    'text-wrap': 'wrap',
+                    'text-max-width': '100px',
+                    'text-valign': 'center',
+                    'text-halign': 'center'
+                }
+            },
+            {
+                selector: 'node[type="cidr"]',
+                style: {
+                    'background-color': '#10b981',
+                    'label': 'data(label)',
+                    'width': 50,
+                    'height': 50,
+                    'font-size': '12px',
+                    'color': '#e2e8f0',
+                    'shape': 'round-rectangle',
+                    'text-wrap': 'wrap',
+                    'text-max-width': '150px'
+                }
+            },
+            {
+                selector: 'node[type="asn"]',
+                style: {
+                    'background-color': '#f59e0b',
+                    'label': 'data(label)',
+                    'width': 70,
+                    'height': 70,
+                    'font-size': '14px',
+                    'color': '#e2e8f0',
+                    'shape': 'round-rectangle',
+                    'text-wrap': 'wrap',
+                    'text-max-width': '200px',
+                    'font-weight': 'bold'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'line-color': '#64748b',
+                    'target-arrow-color': '#64748b',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'opacity': 0.6
+                }
+            },
+            {
+                selector: 'edge[type="belongs_to"]',
+                style: {
+                    'line-color': '#3b82f6',
+                    'target-arrow-color': '#3b82f6'
+                }
+            },
+            {
+                selector: 'edge[type="owned_by"]',
+                style: {
+                    'line-color': '#10b981',
+                    'target-arrow-color': '#10b981'
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#ec4899'
+                }
+            }
+        ],
+        layout: {
+            name: 'dagre',
+            rankDir: 'TB',
+            spacingFactor: 1.5,
+            nodeSep: 50,
+            edgeSep: 20,
+            rankSep: 100
+        }
+    });
+    
+    // Add node click handler
+    cy.on('tap', 'node', function(evt) {
+        const node = evt.target;
+        const data = node.data('data');
+        
+        let info = `Type: ${node.data('type').toUpperCase()}\n`;
+        info += `Label: ${node.data('label')}\n\n`;
+        
+        if (data) {
+            if (data.scanned !== undefined) {
+                info += `Scanned: ${data.scanned ? 'Yes' : 'No'}\n`;
+            }
+            if (data.eggs && data.eggs.length > 0) {
+                info += `\nAssociated Eggs:\n`;
+                data.eggs.forEach((egg, idx) => {
+                    if (egg.eggname) info += `  ${idx + 1}. ${egg.eggname}`;
+                    if (egg.projectegg) info += ` (${egg.projectegg})`;
+                    if (egg.domainname) info += ` - ${egg.domainname}`;
+                    info += `\n`;
+                });
+            }
+            for (const [key, value] of Object.entries(data)) {
+                if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
+                    if (key === 'ports' && Array.isArray(value)) {
+                        info += `${key}: ${value.length} ports\n`;
+                    } else if (key === 'services' && Array.isArray(value)) {
+                        info += `${key}: ${value.join(', ')}\n`;
+                    } else {
+                        info += `${key}: ${value}\n`;
+                    }
+                }
+            }
+        }
+        
+        alert(info);
+    });
+    
+    // Add pan/zoom controls
+    cy.on('pan', function() {});
+    cy.on('zoom', function() {});
+}
+
+// Load graph data from API
+async function loadGraph() {
+    const level = document.getElementById('level-select').value;
+    const asnFilter = document.getElementById('asn-filter').value;
+    const onlyScannedEggs = document.getElementById('only-scanned-eggs').checked;
+    const eggname = document.getElementById('eggname-select').value;
+    const projectegg = document.getElementById('projectegg-select').value;
+    
+    const params = new URLSearchParams({
+        level: level,
+        only_scanned_eggs: onlyScannedEggs
+    });
+    
+    if (asnFilter) {
+        params.append('filter_asn', asnFilter);
+    }
+    if (eggname) {
+        params.append('eggname', eggname);
+    }
+    if (projectegg) {
+        params.append('projectegg', projectegg);
+    }
+    
+    try {
+        const response = await fetch(`/reconnaissance/api/network/graph/?${params}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            graphData = data;
+            updateGraph();
+            updateStats(data.stats);
+        } else {
+            alert('Error loading graph: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error loading graph:', error);
+        alert('Error loading graph: ' + error.message);
+    }
+}
+
+// Update graph visualization
+function updateGraph() {
+    if (!cy) return;
+    
+    const elements = [];
+    
+    for (const node of graphData.nodes) {
+        elements.push({
+            data: {
+                id: node.id,
+                label: node.label,
+                type: node.type,
+                scanned: node.data?.scanned ? 'true' : 'false',
+                data: node.data
+            }
+        });
+    }
+    
+    for (const edge of graphData.edges) {
+        elements.push({
+            data: {
+                id: edge.id || `edge_${edge.source}_${edge.target}`,
+                source: edge.source,
+                target: edge.target,
+                type: edge.type,
+                label: edge.label
+            }
+        });
+    }
+    
+    cy.elements().remove();
+    cy.add(elements);
+    
+    // Apply layout
+    cy.layout({
+        name: 'dagre',
+        rankDir: 'TB',
+        spacingFactor: 1.5,
+        nodeSep: 50,
+        edgeSep: 20,
+        rankSep: 100
+    }).run();
+}
+
+// Update statistics panel
+function updateStats(stats) {
+    document.getElementById('stat-nodes').textContent = stats.total_nodes || 0;
+    document.getElementById('stat-edges').textContent = stats.total_edges || 0;
+    document.getElementById('stat-ip-nodes').textContent = stats.ip_nodes || 0;
+    document.getElementById('stat-cidr-nodes').textContent = stats.cidr_nodes || 0;
+    document.getElementById('stat-asn-nodes').textContent = stats.asn_nodes || 0;
+    document.getElementById('stat-scanned-ips').textContent = stats.scanned_ips || 0;
+    document.getElementById('stat-unscanned-ips').textContent = stats.unscanned_ips || 0;
+}
+
+// Reset view
+function resetView() {
+    if (cy) {
+        cy.fit();
+        cy.center();
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initCytoscape();
+    loadDropdownOptions().then(() => {
+        // Add change handlers to reload graph when dropdowns change
+        document.getElementById('eggname-select').addEventListener('change', loadGraph);
+        document.getElementById('projectegg-select').addEventListener('change', loadGraph);
+        document.getElementById('level-select').addEventListener('change', loadGraph);
+        document.getElementById('asn-filter').addEventListener('change', loadGraph);
+        document.getElementById('only-scanned-eggs').addEventListener('change', loadGraph);
+    });
+    loadGraph();
+});
+</script>
+
+{% endblock %}

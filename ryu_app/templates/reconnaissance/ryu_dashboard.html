@@ -1,0 +1,546 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Ryu Cybersecurity Database{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #10b981; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🛡️</div>
+    <div>
+        <h2>Ryu Cybersecurity Database</h2>
+        <p class="subtitle">Vulnerability analysis, threat assessment, and security audits</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Database Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Port Scans</div>
+        <div class="value">{{ scan_count|default:0 }}</div>
+        {% if scan_count_24h %}
+        <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
+            {{ scan_count_24h }} in last 24h
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="label">Security Assessments</div>
+        <div class="value">{{ assessment_count_only|default:0 }}</div>
+        {% if assessment_count_only_24h %}
+        <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
+            {{ assessment_count_only_24h }} in last 24h
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Activities</div>
+        <div class="value">{{ assessment_count|default:0 }}</div>
+        {% if assessment_count_24h %}
+        <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
+            {{ assessment_count_24h }} in last 24h
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="label">Vulnerable Targets</div>
+        <div class="value">{{ vuln_targets|default:0 }}</div>
+    </div>
+</div>
+
+<!-- Nmap Scans Table -->
+<div style="background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%); border-radius: 12px; padding: 20px; margin-bottom: 30px; box-shadow: 0 4px 6px rgba(236, 72, 153, 0.3);">
+    <h3 style="margin-bottom: 15px; color: white; font-size: 1.3rem;">🔍 Nmap Port Scans</h3>
+    
+    <div class="data-table" style="background: #1e293b; border-radius: 8px; overflow: hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Target</th>
+                    <th>Scan Type</th>
+                    <th>Status</th>
+                    <th>Port</th>
+                    <th>Service</th>
+                    <th>Open Ports</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in scans %}
+                <tr class="clickable-row scan-row" data-row-index="{{ forloop.counter0 }}" data-type="scan" style="cursor: pointer;">
+                    <td>{{ scan.target|truncatechars:40 }}</td>
+                    <td>{{ scan.scan_type|default:"N/A" }}</td>
+                    <td>
+                        <span class="status-badge {% if scan.scan_status == 'completed' %}success{% elif scan.scan_status == 'failed' %}error{% else %}info{% endif %}">
+                            {{ scan.scan_status|default:"N/A" }}
+                        </span>
+                    </td>
+                    <td>{{ scan.port|default:"N/A" }}</td>
+                    <td>{{ scan.service_name|default:"N/A" }}</td>
+                    <td class="json-cell" title="{{ scan.open_ports }}">{{ scan.open_ports|truncatechars:50|default:"N/A" }}</td>
+                    <td>{{ scan.created_at|default:"N/A" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align: center; color: #94a3b8;">No scan data available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if scans.has_other_pages %}
+    <div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+        {% if scans.has_previous %}
+            <a href="?scans_page=1{% if assessments_page.number > 1 %}&assessments_page={{ assessments_page.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">« First</a>
+            <a href="?scans_page={{ scans.previous_page_number }}{% if assessments_page.number > 1 %}&assessments_page={{ assessments_page.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+        {% endif %}
+        
+        <span style="color: white; padding: 8px 12px;">
+            Page {{ scans.number }} of {{ scans.paginator.num_pages }} ({{ scan_count }} total)
+        </span>
+        
+        {% if scans.has_next %}
+            <a href="?scans_page={{ scans.next_page_number }}{% if assessments_page.number > 1 %}&assessments_page={{ assessments_page.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">Next ›</a>
+            <a href="?scans_page={{ scans.paginator.num_pages }}{% if assessments_page.number > 1 %}&assessments_page={{ assessments_page.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">Last »</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Security Assessments Table -->
+<div style="background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%); border-radius: 12px; padding: 20px; margin-bottom: 30px; box-shadow: 0 4px 6px rgba(236, 72, 153, 0.3);">
+    <h3 style="margin-bottom: 15px; color: white; font-size: 1.3rem;">🛡️ Security Assessments</h3>
+    
+    <div class="data-table" style="background: #1e293b; border-radius: 8px; overflow: hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Target</th>
+                    <th>Activity Type</th>
+                    <th>Status</th>
+                    <th>Vulnerabilities</th>
+                    <th>Service</th>
+                    <th>Vulnerabilities / Details</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for assessment in assessments %}
+                <tr class="clickable-row assessment-row" data-row-index="{{ forloop.counter0 }}" data-type="assessment" style="cursor: pointer;">
+                    <td>{{ assessment.target|truncatechars:40 }}</td>
+                    <td>{{ assessment.scan_type|default:"N/A" }}</td>
+                    <td>
+                        <span class="status-badge {% if assessment.scan_status == 'high' or assessment.scan_status == 'critical' %}success{% elif assessment.scan_status == 'failed' %}error{% elif assessment.scan_status == 'medium' %}warning{% else %}info{% endif %}">
+                            {{ assessment.scan_status|default:"N/A" }}
+                        </span>
+                    </td>
+                    <td>{{ assessment.port|default:"N/A" }}</td>
+                    <td>{{ assessment.service_name|default:"N/A" }}</td>
+                    <td class="json-cell" title="{{ assessment.open_ports }}">{{ assessment.open_ports|truncatechars:50|default:"N/A" }}</td>
+                    <td>{{ assessment.created_at|default:"N/A" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align: center; color: #94a3b8;">No assessment data available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if assessments.has_other_pages %}
+    <div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+        {% if assessments.has_previous %}
+            <a href="?assessments_page=1{% if scans.number > 1 %}&scans_page={{ scans.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">« First</a>
+            <a href="?assessments_page={{ assessments.previous_page_number }}{% if scans.number > 1 %}&scans_page={{ scans.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+        {% endif %}
+        
+        <span style="color: white; padding: 8px 12px;">
+            Page {{ assessments.number }} of {{ assessments.paginator.num_pages }} ({{ assessment_count_only }} total)
+        </span>
+        
+        {% if assessments.has_next %}
+            <a href="?assessments_page={{ assessments.next_page_number }}{% if scans.number > 1 %}&scans_page={{ scans.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">Next ›</a>
+            <a href="?assessments_page={{ assessments.paginator.num_pages }}{% if scans.number > 1 %}&scans_page={{ scans.number }}{% endif %}" style="padding: 8px 12px; background: #1e293b; color: #ec4899; border-radius: 4px; text-decoration: none;">Last »</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">Ryu's Pokémon Team</h4>
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🔮</div>
+            <div class="label">Porygon-Z</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Data Analyzer</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">⚙️</div>
+            <div class="label">Metagross</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Defensive Monitor</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">💜</div>
+            <div class="label">Gardevoir</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Threat Assessment AI</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🦅</div>
+            <div class="label">Xatu</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Network Guardian</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">🥄</div>
+            <div class="label">Alakazam</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Vulnerability Scanner</div>
+        </div>
+        <div class="stat-card" style="text-align: center;">
+            <div style="font-size: 2rem;">💎</div>
+            <div class="label">Sableye</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Decoy Defender</div>
+        </div>
+    </div>
+</div>
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">API Endpoints</h4>
+    <ul style="color: #64748b; list-style: none;">
+        <li>📡 <a href="/reconnaissance/api/ryu/assessments/" style="color: #3b82f6;">/reconnaissance/api/ryu/assessments/</a> - Get all security assessments</li>
+    </ul>
+</div>
+
+<!-- Store JSON data for scans -->
+{% for scan in scans %}
+<script type="application/json" id="scan-json-{{ forloop.counter0 }}" class="scan-json-data">
+{{ scan.full_data_json|default:"{}"|safe }}
+</script>
+{% endfor %}
+
+<!-- Store JSON data for assessments -->
+{% for assessment in assessments %}
+<script type="application/json" id="assessment-json-{{ forloop.counter0 }}" class="assessment-json-data">
+{{ assessment.full_data_json|default:"{}"|safe }}
+</script>
+{% endfor %}
+
+<script>
+// Parse JSON data from separate script tags (safer than embedding in JS string)
+const scansData = [];
+const assessmentsData = [];
+
+// Load scans data
+document.querySelectorAll('script.scan-json-data').forEach((script) => {
+    try {
+        let jsonText = script.textContent.trim();
+        if (jsonText.includes('&quot;') || jsonText.includes('&amp;') || jsonText.includes('&lt;') || jsonText.includes('&gt;')) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = jsonText;
+            jsonText = tempDiv.textContent || tempDiv.innerText || jsonText;
+        }
+        try {
+            JSON.parse(jsonText);
+            scansData.push({
+                full_data_json: jsonText || '{}'
+            });
+        } catch (parseError) {
+            console.error('Invalid JSON in scan script tag:', parseError, jsonText.substring(0, 100));
+            scansData.push({
+                full_data_json: '{}'
+            });
+        }
+    } catch (e) {
+        console.error('Error reading scan data from script tag:', e);
+        scansData.push({
+            full_data_json: '{}'
+        });
+    }
+});
+
+// Load assessments data
+document.querySelectorAll('script.assessment-json-data').forEach((script) => {
+    try {
+        let jsonText = script.textContent.trim();
+        if (jsonText.includes('&quot;') || jsonText.includes('&amp;') || jsonText.includes('&lt;') || jsonText.includes('&gt;')) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = jsonText;
+            jsonText = tempDiv.textContent || tempDiv.innerText || jsonText;
+        }
+        try {
+            JSON.parse(jsonText);
+            assessmentsData.push({
+                full_data_json: jsonText || '{}'
+            });
+        } catch (parseError) {
+            console.error('Invalid JSON in assessment script tag:', parseError, jsonText.substring(0, 100));
+            assessmentsData.push({
+                full_data_json: '{}'
+            });
+        }
+    } catch (e) {
+        console.error('Error reading assessment data from script tag:', e);
+        assessmentsData.push({
+            full_data_json: '{}'
+        });
+    }
+});
+
+console.log(`Loaded ${scansData.length} scans and ${assessmentsData.length} assessments into JavaScript`);
+</script>
+
+<!-- JSON Modal Popup -->
+<div id="jsonModal" class="json-modal" style="display: none;">
+    <div class="json-modal-content">
+        <div class="json-modal-header">
+            <h3>JSON Data</h3>
+            <button class="json-modal-close" onclick="closeJsonModal()">&times;</button>
+        </div>
+        <div class="json-modal-body">
+            <pre id="jsonContent"></pre>
+        </div>
+        <div class="json-modal-footer">
+            <button onclick="copyJsonToClipboard()" class="json-copy-btn">Copy JSON</button>
+            <button onclick="closeJsonModal()" class="json-close-btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.json-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.json-modal-content {
+    background: #1e293b;
+    border: 2px solid #10b981;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.json-modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.json-modal-header h3 {
+    color: #10b981;
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.json-modal-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.json-modal-close:hover {
+    color: #10b981;
+}
+
+.json-modal-body {
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+    max-height: calc(90vh - 140px);
+}
+
+.json-modal-body pre {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 20px;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+}
+
+.json-modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.json-copy-btn, .json-close-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.json-copy-btn {
+    background: #3b82f6;
+    color: white;
+}
+
+.json-copy-btn:hover {
+    background: #2563eb;
+}
+
+.json-close-btn {
+    background: #64748b;
+    color: white;
+}
+
+.json-close-btn:hover {
+    background: #475569;
+}
+
+.clickable-row:hover {
+    background-color: rgba(16, 185, 129, 0.1);
+}
+
+.scan-row:hover {
+    background-color: rgba(236, 72, 153, 0.1);
+}
+
+.assessment-row:hover {
+    background-color: rgba(236, 72, 153, 0.1);
+}
+</style>
+
+<script>
+let currentJsonData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.clickable-row');
+    rows.forEach((row, index) => {
+        row.addEventListener('click', function() {
+            const rowIndex = parseInt(this.getAttribute('data-row-index'));
+            const dataType = this.getAttribute('data-type');
+            
+            // Select the appropriate data array based on type
+            const dataArray = dataType === 'scan' ? scansData : assessmentsData;
+            
+            if (rowIndex >= 0 && rowIndex < dataArray.length) {
+                const rowData = dataArray[rowIndex];
+                if (rowData && rowData.full_data_json) {
+                    try {
+                        let jsonString = rowData.full_data_json;
+                        if (typeof jsonString === 'string') {
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = jsonString;
+                            const decodedString = tempDiv.textContent || tempDiv.innerText || jsonString;
+                            const parsed = JSON.parse(decodedString);
+                            currentJsonData = parsed;
+                            displayJsonModal(JSON.stringify(parsed, null, 2));
+                        } else {
+                            currentJsonData = jsonString;
+                            displayJsonModal(JSON.stringify(jsonString, null, 2));
+                        }
+                    } catch (e) {
+                        console.error('Error parsing JSON:', e);
+                        console.error('JSON string:', rowData.full_data_json);
+                        try {
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = rowData.full_data_json;
+                            const decodedString = tempDiv.textContent || tempDiv.innerText;
+                            const parsed = JSON.parse(decodedString);
+                            currentJsonData = parsed;
+                            displayJsonModal(JSON.stringify(parsed, null, 2));
+                        } catch (e2) {
+                            currentJsonData = rowData.full_data_json;
+                            displayJsonModal(rowData.full_data_json);
+                        }
+                    }
+                } else {
+                    currentJsonData = rowData;
+                    displayJsonModal(JSON.stringify(rowData, null, 2));
+                }
+            }
+        });
+    });
+});
+
+function displayJsonModal(jsonString) {
+    const modal = document.getElementById('jsonModal');
+    const content = document.getElementById('jsonContent');
+    content.textContent = jsonString;
+    modal.style.display = 'flex';
+}
+
+function closeJsonModal() {
+    const modal = document.getElementById('jsonModal');
+    modal.style.display = 'none';
+    currentJsonData = null;
+}
+
+function copyJsonToClipboard() {
+    const content = document.getElementById('jsonContent');
+    const text = content.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.json-copy-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#10b981';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '#3b82f6';
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
+// Close modal when clicking outside
+document.getElementById('jsonModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeJsonModal();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeJsonModal();
+    }
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,391 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Nmap Learning & Heuristics{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #8b5cf6; }
+    
+    .heuristic-card {
+        background: rgba(30, 41, 59, 0.8);
+        border-left: 4px solid #8b5cf6;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .heuristic-condition {
+        color: #3b82f6;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    
+    .heuristic-recommendations {
+        margin-top: 15px;
+    }
+    
+    .recommendation-item {
+        background: rgba(59, 130, 246, 0.1);
+        padding: 10px;
+        border-radius: 6px;
+        margin: 8px 0;
+        border-left: 3px solid #3b82f6;
+    }
+    
+    .recommendation-flag {
+        font-family: monospace;
+        color: #f59e0b;
+        font-weight: bold;
+    }
+    
+    .recommendation-reason {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin-top: 5px;
+    }
+    
+    .avoid-flags {
+        color: #ef4444;
+        margin-top: 10px;
+        font-size: 0.9rem;
+    }
+    
+    .decision-flow {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 30px;
+    }
+    
+    .flow-step {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 8px;
+        margin: 10px 0;
+    }
+    
+    .flow-arrow {
+        color: #8b5cf6;
+        font-size: 1.5rem;
+        margin: 0 10px;
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🧠</div>
+    <div>
+        <h2>Nmap Learning & Heuristics</h2>
+        <p class="subtitle">Collective intelligence: How Ash & Jade make decisions</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Heuristics Rules</div>
+        <div class="value">{{ heuristics_rules|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Nmap Arguments</div>
+        <div class="value">{{ arguments_count }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Learned Techniques</div>
+        <div class="value">{{ techniques|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">WAF Types Detected</div>
+        <div class="value">{{ waf_patterns|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">IP-Based Patterns</div>
+        <div class="value">{{ ip_techniques|length }}</div>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6;">🎯 Heuristics Rules (Backend-Calculated from Scans)</h3>
+
+<div>
+    {% for rule in heuristics_rules %}
+    <div class="heuristic-card">
+        <div class="heuristic-condition">
+            📋 Pattern: <span style="color: #10b981; font-weight: bold;">{{ rule.rule_pattern|default:"Unknown" }}</span>
+            {% if rule.confidence_score %}
+                <span class="status-badge {% if rule.confidence_score >= 0.7 %}success{% elif rule.confidence_score >= 0.4 %}warning{% else %}error{% endif %}" style="margin-left: 15px;">
+                    Confidence: {{ rule.confidence_score|floatformat:2 }}
+                </span>
+            {% endif %}
+            {% if rule.sample_count %}
+                <span style="color: #94a3b8; margin-left: 10px;">({{ rule.sample_count }} samples)</span>
+            {% endif %}
+        </div>
+        
+        <div class="heuristic-recommendations" style="margin-top: 15px;">
+            <strong style="color: #10b981;">✅ Recommended Nmap Arguments:</strong>
+            {% if rule.nmap_arguments %}
+                {% for arg in rule.nmap_arguments %}
+                <div class="recommendation-item">
+                    <span class="recommendation-flag">{{ arg }}</span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div style="color: #94a3b8; padding: 10px;">No specific arguments recommended</div>
+            {% endif %}
+        </div>
+        
+        {% if rule.recommended_technique %}
+        <div style="margin-top: 15px;">
+            <strong style="color: #3b82f6;">🎯 Recommended Technique:</strong>
+            <span class="status-badge info" style="margin-left: 10px;">{{ rule.recommended_technique }}</span>
+        </div>
+        {% endif %}
+        
+        {% if rule.success_rate %}
+        <div style="margin-top: 15px;">
+            <strong style="color: #f59e0b;">📊 Success Rate:</strong>
+            <span class="status-badge {% if rule.success_rate >= 70 %}success{% elif rule.success_rate >= 40 %}warning{% else %}error{% endif %}" style="margin-left: 10px;">
+                {{ rule.success_rate }}%
+            </span>
+        </div>
+        {% endif %}
+        
+        {% if rule.last_updated %}
+        <div style="margin-top: 10px; color: #94a3b8; font-size: 0.9rem;">
+            Last Updated: {{ rule.last_updated }}
+        </div>
+        {% endif %}
+    </div>
+    {% empty %}
+    <div class="heuristic-card">
+        <p style="color: #94a3b8;">
+            No heuristics rules calculated yet. Rules are generated from successful scan patterns.
+            <br>They will appear here once enough scan data has been collected and analyzed.
+        </p>
+    </div>
+    {% endfor %}
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6; margin-top: 40px;">📊 Technique Effectiveness (Learning Database)</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Target Pattern</th>
+                <th>WAF Type</th>
+                <th>Technique</th>
+                <th>Success Rate</th>
+                <th>Success</th>
+                <th>Failure</th>
+                <th>Last Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tech in techniques %}
+            <tr>
+                <td>{{ tech.target_pattern }}</td>
+                <td>{{ tech.waf_type|default:"None" }}</td>
+                <td><span class="status-badge info">{{ tech.technique_name }}</span></td>
+                <td>
+                    <span class="status-badge {% if tech.success_rate >= 70 %}success{% elif tech.success_rate >= 40 %}warning{% else %}error{% endif %}">
+                        {{ tech.success_rate }}%
+                    </span>
+                </td>
+                <td>{{ tech.success_count }}</td>
+                <td>{{ tech.failure_count }}</td>
+                <td>{{ tech.last_updated }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="text-align: center; color: #94a3b8;">No learning data yet</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6; margin-top: 40px;">🛡️ WAF Detection Patterns</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>WAF Type</th>
+                <th>Version</th>
+                <th>Product</th>
+                <th>Detections</th>
+                <th>Unique Targets</th>
+                <th>Avg Confidence</th>
+                <th>Last Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for waf in waf_patterns %}
+            <tr>
+                <td><strong>{{ waf.waf_type }}</strong></td>
+                <td>{% if waf.waf_version %}<code style="color: #3b82f6;">{{ waf.waf_version }}</code>{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{% if waf.waf_product %}{{ waf.waf_product }}{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{{ waf.detection_count|default:waf.detection_count }}</td>
+                <td>{% if waf.unique_targets %}{{ waf.unique_targets }}{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>
+                    <span class="status-badge {% if waf.avg_confidence >= 0.8 %}success{% elif waf.avg_confidence >= 0.6 %}warning{% else %}error{% endif %}">
+                        {{ waf.avg_confidence|default:waf.avg_confidence }}%
+                    </span>
+                </td>
+                <td>{{ waf.last_detected }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="text-align: center; color: #94a3b8;">No WAF patterns detected yet</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6; margin-top: 40px;">🌐 IP-Based Technique Effectiveness (ASN/CIDR/IPv6)</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>ASN</th>
+                <th>CIDR Block</th>
+                <th>IPv6 Prefix</th>
+                <th>WAF Type</th>
+                <th>Technique</th>
+                <th>Success Rate</th>
+                <th>Success</th>
+                <th>Failure</th>
+                <th>Avg Duration</th>
+                <th>Last Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ip_tech in ip_techniques %}
+            <tr>
+                <td>{% if ip_tech.asn %}AS{{ ip_tech.asn }}{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{% if ip_tech.cidr_block %}<code style="color: #3b82f6;">{{ ip_tech.cidr_block }}</code>{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{% if ip_tech.ipv6_prefix %}<code style="color: #10b981;">{{ ip_tech.ipv6_prefix }}</code>{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{{ ip_tech.waf_type|default:"None" }}</td>
+                <td><span class="status-badge info">{{ ip_tech.technique_name }}</span></td>
+                <td>
+                    <span class="status-badge {% if ip_tech.success_rate >= 70 %}success{% elif ip_tech.success_rate >= 40 %}warning{% else %}error{% endif %}">
+                        {{ ip_tech.success_rate }}%
+                    </span>
+                </td>
+                <td>{{ ip_tech.success_count }}</td>
+                <td>{{ ip_tech.failure_count }}</td>
+                <td>{% if ip_tech.avg_scan_duration %}{{ ip_tech.avg_scan_duration|floatformat:2 }}s{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{{ ip_tech.last_updated }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="10" style="text-align: center; color: #94a3b8;">
+                    No IP-based effectiveness data yet. This will populate as agents submit scans with IP information (ASN, CIDR, IPv6).
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6; margin-top: 40px;">🔍 Technology Fingerprints (Oak Curated)</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Product</th>
+                <th>Version</th>
+                <th>Detections</th>
+                <th>Unique Targets</th>
+                <th>Last Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tech in tech_fingerprints %}
+            <tr>
+                <td><span class="status-badge info">{{ tech.technology_type }}</span></td>
+                <td><strong>{{ tech.product }}</strong></td>
+                <td>{% if tech.version and tech.version != 'unknown' %}<code style="color: #3b82f6;">{{ tech.version }}</code>{% else %}<span style="color: #94a3b8;">—</span>{% endif %}</td>
+                <td>{{ tech.count }}</td>
+                <td>{{ tech.unique_targets }}</td>
+                <td>{{ tech.last_detected }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: #94a3b8;">
+                    No technology fingerprints yet. Run <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">python manage.py oak_curate</code> to curate scan data.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #8b5cf6; margin-top: 40px;">🔄 Recent Decision Examples</h3>
+
+<div class="decision-flow">
+    <p style="color: #94a3b8; margin-bottom: 20px;">
+        These are recent scans showing how Ash/Jade selected techniques based on context:
+    </p>
+    
+    {% for decision in recent_decisions %}
+    <div class="flow-step">
+        <div style="flex: 1;">
+            <strong style="color: #3b82f6;">Target:</strong> {{ decision.target }}<br>
+            <strong style="color: #f59e0b;">Technique:</strong> <code>{{ decision.technique_used }}</code><br>
+            {% if decision.waf_detected %}
+                <span class="status-badge warning">WAF: {{ decision.waf_type }}</span>
+                {% if decision.bypass_successful %}
+                    <span class="status-badge success">Bypassed ✓</span>
+                {% else %}
+                    <span class="status-badge error">Bypass Failed ✗</span>
+                {% endif %}
+            {% endif %}
+            <span style="color: #94a3b8; font-size: 0.9rem;">{{ decision.scanned_at }}</span>
+        </div>
+        <div style="text-align: right;">
+            <div style="color: #10b981; font-size: 1.2rem;">{{ decision.open_ports_found }} ports</div>
+            <div style="color: #94a3b8; font-size: 0.9rem;">{{ decision.scan_duration|floatformat:2 }}s</div>
+        </div>
+    </div>
+    {% empty %}
+    <div style="text-align: center; color: #94a3b8; padding: 40px;">
+        No recent decisions recorded yet
+    </div>
+    {% endfor %}
+</div>
+
+<div style="margin-top: 30px;">
+    <h4 style="color: #94a3b8; margin-bottom: 10px;">API Endpoints</h4>
+    <ul style="color: #64748b; list-style: none;">
+        <li>🧠 <a href="/reconnaissance/api/learning/heuristics/" style="color: #3b82f6;">/reconnaissance/api/learning/heuristics/</a> - Get all heuristics rules</li>
+        <li>📊 <a href="/reconnaissance/api/learning/techniques/" style="color: #3b82f6;">/reconnaissance/api/learning/techniques/</a> - Get technique effectiveness</li>
+        <li>🌐 <a href="/reconnaissance/api/learning/ip-effectiveness/" style="color: #3b82f6;">/reconnaissance/api/learning/ip-effectiveness/</a> - Get IP-based effectiveness (ASN/CIDR/IPv6)</li>
+    </ul>
+</div>
+
+<div style="margin-top: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 4px solid #8b5cf6;">
+    <h4 style="color: #8b5cf6; margin-bottom: 10px;">🌳 Oak Coordinator</h4>
+    <p style="color: #94a3b8; margin-bottom: 10px;">
+        Oak curates scan data from Kage, Kaze, and Ryu to extract detailed technology, WAF, and IP information.
+    </p>
+    <p style="color: #64748b; font-size: 0.9rem;">
+        Run <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">python manage.py oak_curate --all</code> to process recent scans and enhance learning data.
+    </p>
+</div>
+{% endblock %}
+

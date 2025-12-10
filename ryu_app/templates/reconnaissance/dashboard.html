@@ -1,0 +1,41 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Reconnaissance Dkageboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="icon">🔍</div>
+    <div>
+        <h2>Reconnaissance Team Overview</h2>
+        <p class="subtitle">Database access for Kage, Kumo, and Ryu</p>
+    </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(5, 1fr);">
+    <a href="/reconnaissance/general/" class="stat-card" style="text-decoration: none; cursor: pointer; transition: transform 0.2s; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+        <div style="font-size: 3rem; margin-bottom: 10px;">🔍</div>
+        <div class="value" style="color: white;">Overview</div>
+        <div class="label">All Activities</div>
+    </a>
+    {% for p in personalities %}
+    <a href="{{ p.url }}" class="stat-card" style="text-decoration: none; cursor: pointer; transition: transform 0.2s;">
+        <div style="font-size: 3rem; margin-bottom: 10px;">{{ p.icon }}</div>
+        <div class="value" style="color: white;">{{ p.name }}</div>
+        <div class="label">{{ p.description }}</div>
+    </a>
+    {% endfor %}
+    <a href="/reconnaissance/network/" class="stat-card" style="text-decoration: none; cursor: pointer; transition: transform 0.2s; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+        <div style="font-size: 3rem; margin-bottom: 10px;">🗺️</div>
+        <div class="value" style="color: white;">Network</div>
+        <div class="label">Mapping Visualizer</div>
+    </a>
+</div>
+
+<style>
+    .stats-grid a.stat-card:hover {
+        transform: translateY(-5px);
+        border-color: #3b82f6;
+    }
+</style>
+{% endblock %}
+
