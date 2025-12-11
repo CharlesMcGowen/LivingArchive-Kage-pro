@@ -42,11 +42,15 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'ryu_app.middleware.DisableCSRFForDaemonAPI',  # Disable CSRF for daemon API endpoints (before CSRF middleware)
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# CSRF settings - API endpoints don't need CSRF protection
+CSRF_TRUSTED_ORIGINS = []  # Daemon API endpoints bypass CSRF via middleware
 
 ROOT_URLCONF = 'ryu_project.urls'
 

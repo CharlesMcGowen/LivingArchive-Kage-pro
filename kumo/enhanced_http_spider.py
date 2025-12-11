@@ -3,7 +3,7 @@
 Enhanced HTTP Spider - Comprehensive Web Scraping
 =================================================
 
-Enhanced version of MistyHttpSpider with comprehensive metadata capture:
+Enhanced version of KumoHttpSpider with comprehensive metadata capture:
 - Headers: All request/response headers
 - Protocols: HTTP version, TLS version, cipher suites
 - Schemes: http/https detection and redirect chains
@@ -64,7 +64,7 @@ class EnhancedHttpSpider:
         # Session configuration
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Enhanced-Misty-Spider/2.0 (EGO Security Scanner)',
+            'User-Agent': 'Enhanced-Kumo-Spider/2.0 (EGO Security Scanner)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
@@ -75,7 +75,7 @@ class EnhancedHttpSpider:
         # SSL context for TLS information
         self.ssl_context = ssl.create_default_context()
         
-        logger.info(f"🌊 Enhanced Misty spider initialized ({'Parallel' if self.parallel_enabled else 'Sequential'} mode, {self.max_workers} workers)")
+        logger.info(f"🌊 Enhanced Kumo spider initialized ({'Parallel' if self.parallel_enabled else 'Sequential'} mode, {self.max_workers} workers)")
     
     def spider_egg_record(self, egg_record_id: str, depth: int = None) -> Dict[str, Any]:
         """
@@ -104,7 +104,7 @@ class EnhancedHttpSpider:
         target = egg_record.sub_domain or egg_record.domain_name
         spider_depth = depth or self.spider_depth
         
-        logger.info(f"🌊 Enhanced Misty spidering {target} (depth: {spider_depth})")
+        logger.info(f"🌊 Enhanced Kumo spidering {target} (depth: {spider_depth})")
         
         start_time = time.time()
         
@@ -133,7 +133,7 @@ class EnhancedHttpSpider:
         
         duration = time.time() - start_time
         
-        logger.info(f"🌊 Enhanced Misty spider complete: {len(pages_spidered)} pages, "
+        logger.info(f"🌊 Enhanced Kumo spider complete: {len(pages_spidered)} pages, "
                    f"{metadata_entries_created} RequestMetaData entries created in {duration:.2f}s")
         
         return {

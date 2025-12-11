@@ -123,6 +123,32 @@ services:
       - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
     pid: host
 
+  # Suzu Daemon - Directory Enumeration
+  suzu-daemon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recon-suzu
+    command: python3 /app/daemons/suzu_daemon.py
+    restart: unless-stopped
+    depends_on:
+      - django-server
+    networks:
+      - recon-network
+    environment:
+      - DJANGO_API_BASE=http://django-server:9000
+      - SUZU_ENUM_INTERVAL=60
+      - SUZU_MAX_ENUMS=2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/suzu/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+    pid: host
+
 networks:
   recon-network:
     driver: bridge

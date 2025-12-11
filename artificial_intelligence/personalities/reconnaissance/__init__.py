@@ -15,8 +15,8 @@ from pathlib import Path
 
 # Try to find ROOT_DIR (may not exist in kage-pro standalone)
 try:
-    ROOT_DIR = Path(__file__).resolve().parents[4]
-    EGOQT_SRC = ROOT_DIR / "EgoQT" / "src"
+ROOT_DIR = Path(__file__).resolve().parents[4]
+EGOQT_SRC = ROOT_DIR / "EgoQT" / "src"
     if not EGOQT_SRC.exists():
         EGOQT_SRC = None
 except (IndexError, AttributeError):

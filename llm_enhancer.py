@@ -447,7 +447,7 @@ Format response as JSON:
             request = CodeGenerationRequest(
                 prompt=prompt,
                 language="json",
-                personality="kumo",  # Use Misty's perspective
+                personality="kumo",  # Use Kumo's perspective
                 max_tokens=1000,
                 temperature=0.3,
                 context=f"URL: {url}\nStatus: {status_code}",
@@ -487,7 +487,7 @@ Format response as JSON:
         additional_context: Optional[Dict[str, Any]] = None
     ) -> Optional[ThreatAssessment]:
         """
-        Use LLM to correlate findings from Kage and Misty into comprehensive threat assessment.
+        Use LLM to correlate findings from Kage and Kumo into comprehensive threat assessment.
         
         Args:
             target: Target being assessed
@@ -518,7 +518,7 @@ Target: {target}
 Port Scan Findings (Ash):
 {safe_json_dumps(kage_findings[:5], indent=2)}
 
-HTTP/Content Findings (Misty):
+HTTP/Content Findings (Kumo):
 {safe_json_dumps(kumo_findings[:5], indent=2)}
 
 Additional Context:

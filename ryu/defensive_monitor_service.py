@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jade's Metagross: Defensive Monitor Service
+Ryu's Metagross: Defensive Monitor Service
 Keeps an eye on defenses, evaluating threats and weaknesses
 """
 

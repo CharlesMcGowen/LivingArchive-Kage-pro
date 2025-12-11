@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ash Scan Learning Service - SQLAlchemy + Redis
-===============================================
+Kage Scan Learning Service - SQLAlchemy + Redis
+================================================
 
 Service for learning from scan results with Redis caching.
 Uses PostgreSQL via SQLAlchemy and Redis for fast lookups.

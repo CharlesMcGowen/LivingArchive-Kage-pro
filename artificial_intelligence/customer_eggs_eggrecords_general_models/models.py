@@ -160,7 +160,7 @@ class RequestMetaData(models.Model):
     """
     RequestMetaData model - stores HTTP request/response metadata.
     
-    Created by Misty's HTTP spidering service.
+    Created by Kumo's HTTP spidering service.
     Converted from SQLAlchemy to Django ORM.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -291,11 +291,11 @@ class Eggs(models.Model):
         return f"Eggs: {self.domainname}"
 
 
-class JadeAssessment(models.Model):
+class RyuAssessment(models.Model):
     """
-    JadeAssessment model - stores security threat assessments by Jade.
+    RyuAssessment model - stores security threat assessments by Ryu.
     
-    Each assessment correlates findings from Ash (Nmap scans) and Misty (HTTP spidering)
+    Each assessment correlates findings from Kage (Nmap scans) and Kumo (HTTP spidering)
     to provide comprehensive security analysis.
     Converted from SQLAlchemy to Django ORM.
     """
@@ -312,6 +312,7 @@ class JadeAssessment(models.Model):
     
     class Meta:
         app_label = 'customer_eggs_eggrecords_general_models'
+        # LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
         db_table = 'customer_eggs_eggrecords_general_models_jadeassessment'
         managed = False  # Table exists, don't create migrations
         indexes = [
@@ -319,11 +320,11 @@ class JadeAssessment(models.Model):
             models.Index(fields=['risk_level']),
             models.Index(fields=['record_id_id', 'risk_level']),  # Combined index
         ]
-        verbose_name = 'Jade Assessment'
-        verbose_name_plural = 'Jade Assessments'
+        verbose_name = 'Ryu Assessment'
+        verbose_name_plural = 'Ryu Assessments'
     
     def __str__(self):
-        return f"JadeAssessment: {self.record_id_id} (risk: {self.risk_level})"
+        return f"RyuAssessment: {self.record_id_id} (risk: {self.risk_level})"
 
 
 class HTTPRequestResponse(models.Model):

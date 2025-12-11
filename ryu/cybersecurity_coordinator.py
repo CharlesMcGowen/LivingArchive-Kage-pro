@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Jade's Cybersecurity Coordinator Service
-Coordinates all cybersecurity operations between Jade's Pokémon team
+Ryu's Cybersecurity Coordinator Service
+Coordinates all cybersecurity operations between Ryu's Pokémon team
 """
 
 import logging
@@ -58,9 +58,9 @@ class SecurityTask:
         if self.pokemon_team is None:
             self.pokemon_team = []
 
-class JadeCybersecurityCoordinator:
+class RyuCybersecurityCoordinator:
     """
-    Jade's Cybersecurity Coordinator
+    Ryu's Cybersecurity Coordinator
     Coordinates cybersecurity operations between all Pokémon team members
     """
     
@@ -87,13 +87,13 @@ class JadeCybersecurityCoordinator:
         # Load Nmap knowledge base
         self.nmap_knowledge = self._load_nmap_knowledge()
         
-        # Initialize Nmap argument inference engine for Jade
+        # Initialize Nmap argument inference engine for Ryu
         try:
             from artificial_intelligence.personalities.reconnaissance.ash.nmap_argument_inference import (
                 NmapArgumentInference, ScanScenario
             )
             self.argument_inference = NmapArgumentInference(knowledge_base=self.nmap_knowledge)
-            logger.info(f"🧠 Jade's Nmap argument inference engine initialized ({len(self.argument_inference.arguments)} arguments available)")
+            logger.info(f"🧠 Ryu's Nmap argument inference engine initialized ({len(self.argument_inference.arguments)} arguments available)")
         except Exception as e:
             logger.warning(f"⚠️  Argument inference not available: {e}")
             self.argument_inference = None
@@ -118,14 +118,14 @@ class JadeCybersecurityCoordinator:
             self.learning_db = None
             self.host_discovery = None
         
-        logger.info("Jade's Cybersecurity Coordinator initialized")
+        logger.info("Ryu's Cybersecurity Coordinator initialized")
         if self.nmap_knowledge:
             logger.info(f"📚 Loaded Nmap knowledge base ({self.nmap_knowledge.get('total_pages', 0)} pages)")
     
     def start(self):
-        """Start Jade's cybersecurity coordinator service"""
+        """Start Ryu's cybersecurity coordinator service"""
         if self.running:
-            logger.warning("Jade's coordinator is already running")
+            logger.warning("Ryu's coordinator is already running")
             return
         
         self.running = True
@@ -134,18 +134,18 @@ class JadeCybersecurityCoordinator:
         for i in range(self.max_concurrent_assessments):
             worker = threading.Thread(
                 target=self._worker_loop,
-                name=f"JadeSecurityWorker-{i}",
+                name=f"RyuSecurityWorker-{i}",
                 daemon=True
             )
             worker.start()
             self.worker_threads.append(worker)
         
-        logger.info(f"Jade's Cybersecurity Coordinator started with {self.max_concurrent_assessments} workers")
+        logger.info(f"Ryu's Cybersecurity Coordinator started with {self.max_concurrent_assessments} workers")
     
     def stop(self):
-        """Stop Jade's cybersecurity coordinator service"""
+        """Stop Ryu's cybersecurity coordinator service"""
         if not self.running:
-            logger.warning("Jade's coordinator is not running")
+            logger.warning("Ryu's coordinator is not running")
             return
         
         self.running = False
@@ -154,7 +154,7 @@ class JadeCybersecurityCoordinator:
         for worker in self.worker_threads:
             worker.join(timeout=5)
         
-        logger.info("Jade's Cybersecurity Coordinator stopped")
+        logger.info("Ryu's Cybersecurity Coordinator stopped")
     
     def queue_security_assessment(self, target_url: str, assessment_type: AssessmentType, priority: int = 1) -> str:
         """
@@ -250,7 +250,7 @@ class JadeCybersecurityCoordinator:
                 # No tasks in queue, continue
                 continue
             except Exception as e:
-                logger.error(f"Jade's security worker thread error: {e}")
+                logger.error(f"Ryu's security worker thread error: {e}")
     
     def _execute_vulnerability_scan(self, task: SecurityTask):
         """Execute vulnerability scan using Porygon-Z and Alakazam"""
@@ -416,7 +416,7 @@ class JadeCybersecurityCoordinator:
                 except Exception as e:
                     logger.warning(f"Failed to load Nmap knowledge from {knowledge_path}: {e}")
         
-        logger.debug("No Nmap knowledge base found - Jade will use default security techniques")
+        logger.debug("No Nmap knowledge base found - Ryu will use default security techniques")
         return None
     
     def get_security_scanning_advice(self, assessment_type: AssessmentType, target_url: str = None) -> Dict[str, Any]:
@@ -564,19 +564,19 @@ class JadeCybersecurityCoordinator:
         return strategy
 
 # Global coordinator instance
-jade_coordinator = JadeCybersecurityCoordinator()
+ryu_coordinator = RyuCybersecurityCoordinator()
 
-def get_jade_coordinator() -> JadeCybersecurityCoordinator:
-    """Get Jade's cybersecurity coordinator instance"""
-    return jade_coordinator
+def get_ryu_coordinator() -> RyuCybersecurityCoordinator:
+    """Get Ryu's cybersecurity coordinator instance"""
+    return ryu_coordinator
 
-def start_jade_coordinator():
-    """Start Jade's cybersecurity coordinator"""
-    jade_coordinator.start()
+def start_ryu_coordinator():
+    """Start Ryu's cybersecurity coordinator"""
+    ryu_coordinator.start()
 
-def stop_jade_coordinator():
-    """Stop Jade's cybersecurity coordinator"""
-    jade_coordinator.stop()
+def stop_ryu_coordinator():
+    """Stop Ryu's cybersecurity coordinator"""
+    ryu_coordinator.stop()
 
 def queue_cybersecurity_assessment(target_url: str, assessment_type: str = "full_security_audit", priority: int = 1) -> str:
     """
@@ -591,6 +591,6 @@ def queue_cybersecurity_assessment(target_url: str, assessment_type: str = "full
         Task ID for tracking
     """
     assessment_type_enum = AssessmentType(assessment_type)
-    return jade_coordinator.queue_security_assessment(target_url, assessment_type_enum, priority)
+    return ryu_coordinator.queue_security_assessment(target_url, assessment_type_enum, priority)
 
 

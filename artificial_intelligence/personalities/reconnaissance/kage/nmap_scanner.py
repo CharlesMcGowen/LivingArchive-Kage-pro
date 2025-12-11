@@ -209,7 +209,7 @@ class KageNmapScanner:
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'kage_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
             write_to_db: If False, return results without writing to database (for REST API mode)
             egg_record_data: Optional dict with eggrecord data (subDomain, domainname, etc.) to avoid DB lookup
         
@@ -237,7 +237,7 @@ class KageNmapScanner:
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'kage_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
             write_to_db: If False, return results without writing to database (for REST API mode)
             egg_record_data: Optional dict with eggrecord data (subDomain, domainname, etc.) to avoid DB lookup
             

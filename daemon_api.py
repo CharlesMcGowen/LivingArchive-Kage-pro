@@ -92,6 +92,7 @@ def daemon_get_eggrecords(request, personality):
                         )
                     )
                     AND NOT EXISTS (
+                        -- LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
                         SELECT 1 FROM customer_eggs_eggrecords_general_models_jadeassessment j
                         WHERE j.record_id_id = e.id
                         AND j.created_at > NOW() - INTERVAL '7 days'
@@ -316,6 +317,7 @@ def daemon_submit_assessment(request):
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
             # Insert assessment
+            # LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
             cursor.execute("""
                 INSERT INTO customer_eggs_eggrecords_general_models_jadeassessment (
                     id, record_id_id, risk_level, threat_summary,

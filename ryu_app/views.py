@@ -4,6 +4,7 @@ Views for ryu_app.
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.contrib import messages
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.utils import timezone
@@ -17,13 +18,264 @@ from pathlib import Path
 from .models import Project, Customer, EggRecord
 from .postgres_models import PostgresEggRecord, PostgresNmap, PostgresRequestMetadata, PostgresDNSQuery
 from .eggrecords_models import (
-    AshWAFDetection, AshTechniqueEffectiveness, CalculatedHeuristicsRule,
-    WAFDetectionDetail, IPTechniqueEffectiveness, TechnologyFingerprint, AshScanResult
+    KageWAFDetection, KageTechniqueEffectiveness, CalculatedHeuristicsRule,
+    WAFDetectionDetail, IPTechniqueEffectiveness, TechnologyFingerprint, KageScanResult
 )
 from django.db import connections
 from django.db.models import Count, Q, F, Avg, Max, Case, When, IntegerField
 
 logger = logging.getLogger(__name__)
+
+
+@csrf_exempt
+def oak_nuclei_templates_api(request, egg_record_id):
+    """
+    API endpoint for Surge to query recommended Nuclei templates for an EggRecord.
+    
+    GET /api/oak/nuclei-templates/<egg_record_id>/
+    
+    Query params:
+        - status: Filter by status ('pending', 'scanned', 'failed') - default: 'pending'
+        - limit: Maximum number of templates to return - default: 20
+    
+    Returns:
+        JSON with recommended templates and metadata including template_path for Surge
+    """
+    try:
+        from artificial_intelligence.personalities.reconnaissance.oak.nmap_coordination_service import (
+            OakNmapCoordinationService
+        )
+        from artificial_intelligence.personalities.reconnaissance.oak.template_registry_service import (
+            OakTemplateRegistryService
+        )
+        
+        status = request.GET.get('status', 'pending')
+        limit = int(request.GET.get('limit', 20))
+        
+        nmap_coord = OakNmapCoordinationService()
+        
+        # Get recommended templates
+        templates = nmap_coord.get_recommended_templates_for_egg_record(
+            egg_record_id=str(egg_record_id),
+            status=status
+        )
+        
+        # Enrich templates with template_path from registry
+        registry = OakTemplateRegistryService()
+        enriched_templates = []
+        
+        for template in templates:
+            template_id = template.get('template_id')
+            if template_id and registry:
+                # Get full template info from registry
+                template_info = registry.get_template_by_id(template_id)
+                if template_info:
+                    template['template_path'] = template_info.get('template_path')
+                    template['template_name'] = template_info.get('template_name')
+                    template['severity'] = template_info.get('severity', template.get('severity', 'info'))
+                    template['cve_id'] = template_info.get('cve_id')
+                    template['technology'] = template_info.get('technology')
+                else:
+                    # Template not in registry, use template_id as path pattern
+                    template['template_path'] = None
+            else:
+                template['template_path'] = None
+            
+            enriched_templates.append(template)
+        
+        # Limit results
+        enriched_templates = enriched_templates[:limit]
+        
+        return JsonResponse({
+            'success': True,
+            'egg_record_id': str(egg_record_id),
+            'status_filter': status,
+            'templates': enriched_templates,
+            'template_count': len(enriched_templates),
+            'message': f'Found {len(enriched_templates)} recommended templates'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in oak_nuclei_templates_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'templates': []
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def oak_curate_sample_api(request):
+    """
+    API endpoint to force-curate a sample of random EggRecords with Oak.
+    
+    POST /api/oak/curate-sample/
+    
+    Body params (optional):
+        - count: Number of EggRecords to curate (default: 10)
+        - alive_only: Only curate alive EggRecords (default: false)
+    
+    Returns:
+        JSON with curation results for each EggRecord
+    """
+    try:
+        import json
+        from django.db import connections
+        import random
+        from artificial_intelligence.personalities.reconnaissance.oak.target_curation.target_curation_service import (
+            OakTargetCurationService
+        )
+        
+        body = json.loads(request.body) if request.body else {}
+        count = int(body.get('count', 10))
+        alive_only = body.get('alive_only', False)
+        
+        # Get random EggRecords
+        try:
+            db = connections['customer_eggs']
+        except KeyError:
+            db = connections['default']
+        
+        with db.cursor() as cursor:
+            where_clause = "WHERE 1=1"
+            if alive_only:
+                where_clause += " AND alive = true"
+            
+            cursor.execute(f"""
+                SELECT id, "subDomain", domainname, alive
+                FROM customer_eggs_eggrecords_general_models_eggrecord
+                {where_clause}
+                ORDER BY RANDOM()
+                LIMIT %s
+            """, [count])
+            
+            egg_records = cursor.fetchall()
+            
+            if not egg_records:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No EggRecords found matching criteria',
+                    'count': 0
+                })
+            
+            # Perform curation
+            curation_service = OakTargetCurationService()
+            results = []
+            
+            for egg_id, subdomain, domainname, alive in egg_records:
+                subdomain_name = subdomain or domainname or str(egg_id)
+                
+                # Create simple object for EggRecord
+                class SimpleEggRecord:
+                    def __init__(self, egg_id, subdomain, domainname, alive):
+                        self.id = egg_id
+                        self.subDomain = subdomain
+                        self.domainname = domainname
+                        self.alive = alive
+                
+                egg_record = SimpleEggRecord(egg_id, subdomain, domainname, alive)
+                
+                try:
+                    result = curation_service.curate_subdomain(egg_record)
+                    
+                    curation_result = {
+                        'egg_record_id': str(egg_id),
+                        'subdomain': subdomain_name,
+                        'alive': alive,
+                        'success': result.get('success', False),
+                        'fingerprints_created': result.get('fingerprints_created', 0),
+                        'cve_matches': result.get('cve_matches', 0),
+                        'recommendations': result.get('recommendations', 0),
+                        'confidence_score': result.get('confidence_score', 0.0),
+                        'templates_selected': result.get('templates_selected', 0),
+                        'steps_completed': result.get('steps_completed', []),
+                        'nuclei_templates': result.get('nuclei_templates', {}),
+                        'nmap_scan_status': result.get('nmap_scan_status', {}),
+                        'error': result.get('error') if not result.get('success') else None
+                    }
+                    
+                    results.append(curation_result)
+                    
+                except Exception as e:
+                    results.append({
+                        'egg_record_id': str(egg_id),
+                        'subdomain': subdomain_name,
+                        'success': False,
+                        'error': str(e)
+                    })
+            
+            # Calculate summary
+            successful = sum(1 for r in results if r.get('success'))
+            total_fingerprints = sum(r.get('fingerprints_created', 0) for r in results)
+            total_cves = sum(r.get('cve_matches', 0) for r in results)
+            total_templates = sum(r.get('templates_selected', 0) for r in results)
+            avg_confidence = sum(r.get('confidence_score', 0.0) for r in results) / len(results) if results else 0.0
+            
+            return JsonResponse({
+                'success': True,
+                'count': len(results),
+                'summary': {
+                    'successful': successful,
+                    'failed': len(results) - successful,
+                    'total_fingerprints': total_fingerprints,
+                    'total_cve_matches': total_cves,
+                    'total_templates_selected': total_templates,
+                    'average_confidence_score': round(avg_confidence, 2)
+                },
+                'results': results
+            })
+        
+    except Exception as e:
+        logger.error(f"Error in oak_curate_sample_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def oak_refresh_templates_api(request):
+    """
+    API endpoint to refresh/scan Nuclei template registry.
+    
+    POST /api/oak/refresh-templates/
+    
+    Body params (optional):
+        - force_rescan: If true, re-index existing templates (default: false)
+    
+    Returns:
+        JSON with scan statistics
+    """
+    try:
+        from artificial_intelligence.personalities.reconnaissance.oak.template_registry_service import (
+            OakTemplateRegistryService
+        )
+        import json
+        
+        body = json.loads(request.body) if request.body else {}
+        force_rescan = body.get('force_rescan', False)
+        
+        registry = OakTemplateRegistryService()
+        result = registry.scan_and_index_templates(force_rescan=force_rescan)
+        
+        return JsonResponse({
+            'success': result.get('success', False),
+            'scanned': result.get('scanned', 0),
+            'indexed': result.get('indexed', 0),
+            'updated': result.get('updated', 0),
+            'errors': result.get('errors', 0),
+            'total_templates': result.get('total_templates', 0),
+            'message': f"Scanned {result.get('scanned', 0)} templates, indexed {result.get('indexed', 0)} new, updated {result.get('updated', 0)} existing"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in oak_refresh_templates_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 def get_projectegg_phases():
@@ -436,8 +688,8 @@ def kaze_dashboard(request):
     context['technique_count'] = 0
     if 'eggrecords' in connections.databases:
         try:
-            context['waf_count'] = AshWAFDetection.objects.using('eggrecords').count()
-            context['technique_count'] = AshTechniqueEffectiveness.objects.using('eggrecords').count()
+            context['waf_count'] = KageWAFDetection.objects.using('eggrecords').count()
+            context['technique_count'] = KageTechniqueEffectiveness.objects.using('eggrecords').count()
         except Exception as e:
             logger.debug(f"Could not query eggrecords stats: {e}")
     
@@ -533,7 +785,7 @@ def learning_dashboard(request):
     # Get technique effectiveness (learning data) using Django ORM
     if 'eggrecords' in connections.databases:
         try:
-            techniques_qs = AshTechniqueEffectiveness.objects.using('eggrecords').annotate(
+            techniques_qs = KageTechniqueEffectiveness.objects.using('eggrecords').annotate(
                 total_attempts=F('success_count') + F('failure_count')
             ).order_by('-total_attempts', '-success_count')[:50]
             
@@ -586,8 +838,8 @@ def learning_dashboard(request):
                     }
                     waf_patterns.append(_serialize_row(pattern_dict))
             else:
-                # Use AshWAFDetection with aggregations
-                waf_patterns_qs = AshWAFDetection.objects.using('eggrecords').filter(
+                # Use KageWAFDetection with aggregations
+                waf_patterns_qs = KageWAFDetection.objects.using('eggrecords').filter(
                     waf_type__isnull=False
                 ).values('waf_type').annotate(
                     detection_count=Count('id'),
@@ -663,7 +915,7 @@ def learning_dashboard(request):
             
             # Get recent decision examples using Django ORM
             try:
-                decisions_qs = AshScanResult.objects.using('eggrecords').filter(
+                decisions_qs = KageScanResult.objects.using('eggrecords').filter(
                     technique_used__isnull=False
                 ).order_by('-scanned_at')[:20]
                 
@@ -682,7 +934,7 @@ def learning_dashboard(request):
                     decisions.append(_serialize_row(decision_dict))
                 context['recent_decisions'] = decisions
             except Exception as e:
-                logger.debug(f"Could not query ash_scan_results: {e}")
+                logger.debug(f"Could not query kage scan results (legacy table: ash_scan_results): {e}")
                 context['recent_decisions'] = []
                 
         except Exception as e:
@@ -792,7 +1044,7 @@ def learning_techniques_api(request):
             })
         
         limit = int(request.GET.get('limit', 100))
-        techniques_qs = AshTechniqueEffectiveness.objects.using('eggrecords').annotate(
+        techniques_qs = KageTechniqueEffectiveness.objects.using('eggrecords').annotate(
             total_attempts=F('success_count') + F('failure_count')
         ).order_by('-total_attempts')[:limit]
         
@@ -894,7 +1146,7 @@ def general_dashboard(request):
     if 'customer_eggs' in connections.databases:
         try:
             kage_scans = PostgresNmap.objects.using('customer_eggs').filter(
-                scan_type__in=['kage_port_scan', 'ash_port_scan']
+                scan_type__in=['kage_port_scan']
             ).select_related('record_id').order_by('-created_at')[:50]
             
             for scan in kage_scans:
@@ -975,7 +1227,7 @@ def kage_dashboard(request):
         try:
             # Get scans using Django ORM
             nmap_scans = PostgresNmap.objects.using('customer_eggs').filter(
-                scan_type__in=['kage_port_scan', 'ash_port_scan']
+                scan_type__in=['kage_port_scan']
             ).order_by('-created_at')
             
             total_eggrecord_scans = nmap_scans.count()
@@ -1018,7 +1270,7 @@ def kage_dashboard(request):
         try:
             recent_time = timezone.now() - timedelta(hours=24)
             recent_scans_24h = PostgresNmap.objects.using('customer_eggs').filter(
-                scan_type__in=['kage_port_scan', 'ash_port_scan'],
+                scan_type__in=['kage_port_scan'],
                 created_at__gte=recent_time
             ).count()
         except Exception as e:
@@ -1029,7 +1281,7 @@ def kage_dashboard(request):
     # Get WAF detection stats using Django ORM
     if 'eggrecords' in connections.databases:
         try:
-            context['waf_count'] = AshWAFDetection.objects.using('eggrecords').count()
+            context['waf_count'] = KageWAFDetection.objects.using('eggrecords').count()
         except Exception:
             context['waf_count'] = 0
     else:
@@ -1038,7 +1290,7 @@ def kage_dashboard(request):
     # Get learning stats using Django ORM
     if 'eggrecords' in connections.databases:
         try:
-            context['technique_count'] = AshTechniqueEffectiveness.objects.using('eggrecords').count()
+            context['technique_count'] = KageTechniqueEffectiveness.objects.using('eggrecords').count()
         except Exception:
             context['technique_count'] = 0
     else:
@@ -1062,7 +1314,7 @@ def kumo_dashboard(request):
         try:
             # Use Django ORM with Q objects for OR conditions
             kumo_requests = PostgresRequestMetadata.objects.using('customer_eggs').filter(
-                Q(user_agent__icontains='Kumo') | Q(session_id__icontains='misty')
+                Q(user_agent__icontains='Kumo') | Q(session_id__icontains='kumo')
             ).order_by('-created_at')[:50]
             
             for req in kumo_requests:
@@ -1916,9 +2168,41 @@ def personality_status_api(request, personality):
                 'error': f'Invalid personality: {personality}'
             })
         
-        # Check if daemon is running (check PID file)
-        pid_file = Path(f'/tmp/{personality}_daemon.pid')
+        # Check if daemon is running
+        # Use health API endpoint - daemons call this to register their health
         status = 'stopped'
+        try:
+            import requests
+            # Check daemon health via Django's own API endpoint
+            # Daemons that are running will have registered their health
+            health_url = f'http://localhost:9000/reconnaissance/api/daemon/{personality}/health/'
+            try:
+                response = requests.get(health_url, timeout=2)
+                if response.status_code == 200:
+                    data = response.json()
+                    # Only mark as running if health check succeeds AND we have a functional daemon
+                    # For personalities without daemons (like suzu), the health endpoint will still work
+                    # but we need to check if there's actually a daemon container
+                    if data.get('status') == 'healthy' or data.get('success'):
+                        # Additional check: verify daemon container exists for personalities that should have daemons
+                        if personality in ['kage', 'kumo', 'ryu']:
+                            # These should have daemon containers - verify via health check response
+                            # If health check returns healthy, daemon is running
+                            status = 'running'
+                        elif personality == 'suzu':
+                            # Suzu doesn't have a daemon yet, so always show as stopped
+                            status = 'stopped'
+                        else:
+                            # For other personalities, trust the health check
+                            status = 'running'
+            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
+                logger.debug(f"Could not reach daemon health endpoint: {e}")
+        except Exception as e:
+            logger.debug(f"Could not check daemon status via API: {e}")
+        
+        # Fallback: check PID file (for non-Docker setups)
+        if status == 'stopped':
+            pid_file = Path(f'/tmp/{personality}_daemon.pid')
         if pid_file.exists():
             try:
                 pid = int(pid_file.read_text().strip())
@@ -1938,7 +2222,7 @@ def personality_status_api(request, personality):
             try:
                 if personality == 'kage':
                     response_data['total_scans'] = PostgresNmap.objects.using('customer_eggs').filter(
-                        scan_type__in=['kage_port_scan', 'ash_port_scan']
+                        scan_type__in=['kage_port_scan']
                     ).count()
                 elif personality == 'kaze':
                     response_data['total_scans'] = PostgresNmap.objects.using('customer_eggs').filter(

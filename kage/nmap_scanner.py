@@ -66,10 +66,10 @@ try:
 except (ImportError, ModuleNotFoundError):
     # Fallback to EgoQT settings if available
     try:
-        sys.path.insert(0, '/mnt/webapps-nvme')
-        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
-        import django
-        django.setup()
+sys.path.insert(0, '/mnt/webapps-nvme')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+import django
+django.setup()
         DJANGO_AVAILABLE = True
     except (ImportError, ModuleNotFoundError):
         DJANGO_AVAILABLE = False
@@ -218,7 +218,7 @@ class KageNmapScanner:
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'kage_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
             eggrecord_data: Optional pre-fetched eggrecord data (avoids Django model lookup)
         
         Wrapped in try-except to catch and log the exact location of 'int has no len()' errors.
@@ -245,7 +245,7 @@ class KageNmapScanner:
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'kage_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
             eggrecord_data: Optional pre-fetched eggrecord data (avoids Django model lookup)
             
         Returns:
@@ -263,53 +263,24 @@ class KageNmapScanner:
             logger.debug(f"Using provided eggrecord data for {target}")
         else:
             # Try to fetch from Django models or raw SQL
+        try:
+            EggRecord = apps.get_model('customer_eggs_eggrecords_general_models', 'EggRecord')
             try:
-                EggRecord = apps.get_model('customer_eggs_eggrecords_general_models', 'EggRecord')
-                try:
-                    egg_record = EggRecord.objects.get(id=egg_record_id)
-                    target = egg_record.subDomain or egg_record.domainname
-                    # Store full eggrecord data
+                egg_record = EggRecord.objects.get(id=egg_record_id)
+                target = egg_record.subDomain or egg_record.domainname
+                # Store full eggrecord data
                     egg_record_data_dict = {
-                        'id': str(egg_record.id),
-                        'subDomain': egg_record.subDomain,
-                        'domainname': egg_record.domainname,
-                        'alive': egg_record.alive,
-                        'created_at': egg_record.created_at,
-                        'updated_at': egg_record.updated_at,
-                    }
-                except (AttributeError, Exception) as e:
-                    # Django ORM not available, use raw SQL
-                    logger.debug(f"Django ORM not available, using raw SQL: {e}")
+                    'id': str(egg_record.id),
+                    'subDomain': egg_record.subDomain,
+                    'domainname': egg_record.domainname,
+                    'alive': egg_record.alive,
+                    'created_at': egg_record.created_at,
+                    'updated_at': egg_record.updated_at,
+                }
+            except (AttributeError, Exception) as e:
+                # Django ORM not available, use raw SQL
+                logger.debug(f"Django ORM not available, using raw SQL: {e}")
                     try:
-                        db = connections['customer_eggs']
-                        with db.cursor() as cursor:
-                            cursor.execute("""
-                                SELECT id, "subDomain", domainname, alive, created_at, updated_at
-                                FROM customer_eggs_eggrecords_general_models_eggrecord
-                                WHERE id = %s
-                                LIMIT 1
-                            """, [egg_record_id])
-                            row = cursor.fetchone()
-                            if row:
-                                columns = [col[0] for col in cursor.description]
-                                egg_record_data_dict = dict(zip(columns, row))
-                                target = egg_record_data_dict.get('subDomain') or egg_record_data_dict.get('domainname')
-                            else:
-                                logger.error(f"❌ EggRecord {egg_record_id} not found")
-                                return {
-                                    'success': False,
-                                    'error': 'EggRecord not found',
-                                    'target': egg_record_id
-                                }
-                    except Exception as db_error:
-                        logger.error(f"Database error fetching eggrecord: {db_error}")
-                        return {
-                            'success': False,
-                            'error': f'Database error: {db_error}',
-                            'target': egg_record_id
-                        }
-            except (LookupError, ValueError):
-                # Model not found, use raw SQL
                 db = connections['customer_eggs']
                 with db.cursor() as cursor:
                     cursor.execute("""
@@ -321,15 +292,44 @@ class KageNmapScanner:
                     row = cursor.fetchone()
                     if row:
                         columns = [col[0] for col in cursor.description]
-                        egg_record_data_dict = dict(zip(columns, row))
-                        target = egg_record_data_dict.get('subDomain') or egg_record_data_dict.get('domainname')
+                                egg_record_data_dict = dict(zip(columns, row))
+                                target = egg_record_data_dict.get('subDomain') or egg_record_data_dict.get('domainname')
                     else:
                         logger.error(f"❌ EggRecord {egg_record_id} not found")
                         return {
                             'success': False,
                             'error': 'EggRecord not found',
+                                    'target': egg_record_id
+                                }
+                    except Exception as db_error:
+                        logger.error(f"Database error fetching eggrecord: {db_error}")
+                        return {
+                            'success': False,
+                            'error': f'Database error: {db_error}',
                             'target': egg_record_id
                         }
+        except (LookupError, ValueError):
+            # Model not found, use raw SQL
+            db = connections['customer_eggs']
+            with db.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, "subDomain", domainname, alive, created_at, updated_at
+                    FROM customer_eggs_eggrecords_general_models_eggrecord
+                    WHERE id = %s
+                    LIMIT 1
+                """, [egg_record_id])
+                row = cursor.fetchone()
+                if row:
+                    columns = [col[0] for col in cursor.description]
+                        egg_record_data_dict = dict(zip(columns, row))
+                        target = egg_record_data_dict.get('subDomain') or egg_record_data_dict.get('domainname')
+                else:
+                    logger.error(f"❌ EggRecord {egg_record_id} not found")
+                    return {
+                        'success': False,
+                        'error': 'EggRecord not found',
+                        'target': egg_record_id
+                    }
         
         if not target:
             logger.error(f"❌ Could not determine target for EggRecord {egg_record_id}")

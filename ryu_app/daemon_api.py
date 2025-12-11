@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db import connections
 from django.utils import timezone
+from urllib.parse import urljoin
 import json
 import logging
 import uuid
@@ -28,7 +29,7 @@ def daemon_get_eggrecords(request, personality):
         scan_type: For kage/ryu - 'kage_port_scan' or 'ryu_port_scan'
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu']:
+        if personality not in ['kage', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality'}, status=400)
         
         limit = int(request.GET.get('limit', 10))
@@ -92,6 +93,7 @@ def daemon_get_eggrecords(request, personality):
                         )
                     )
                     AND NOT EXISTS (
+                        -- LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
                         SELECT 1 FROM customer_eggs_eggrecords_general_models_jadeassessment j
                         WHERE j.record_id_id = e.id
                         AND j.created_at > NOW() - INTERVAL '7 days'
@@ -99,6 +101,33 @@ def daemon_get_eggrecords(request, personality):
                     ORDER BY priority DESC, e.updated_at DESC
                     LIMIT %s
                 """, [limit])
+                
+            elif personality == 'suzu':
+                # Get eggrecords that need directory enumeration (have HTTP ports but no enumeration yet)
+                cursor.execute("""
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    FROM customer_eggs_eggrecords_general_models_eggrecord e
+                    INNER JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id
+                    WHERE e.alive = true
+                    AND n.port IS NOT NULL
+                    AND n.port != ''
+                    AND CAST(n.port AS INTEGER) IN (80, 443, 8080, 8443)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r
+                        WHERE r.record_id_id = e.id
+                        AND (r.user_agent LIKE '%%Suzu%%' OR r.session_id LIKE 'suzu-%%')
+                        AND r.timestamp > NOW() - INTERVAL '30 days'
+                    )
+                    ORDER BY e.updated_at ASC
+                    LIMIT %s
+                """, [limit])
+            
+            # Check if cursor.description exists (query might return no columns if error)
+            if cursor.description is None:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Query execution failed - no description available'
+                }, status=500)
             
             columns = [col[0] for col in cursor.description]
             results = []
@@ -291,6 +320,79 @@ def daemon_submit_spider(request):
 
 
 @csrf_exempt
+def daemon_submit_enumeration(request):
+    """
+    API: Submit directory enumeration results from Suzu daemon
+    
+    Expected JSON:
+    {
+        "eggrecord_id": "uuid",
+        "target": "url",
+        "result": {
+            "tool": "dirsearch" or "ffuf",
+            "paths_found": 10,
+            "paths": ["/admin", "/api", ...],
+            ...
+        }
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        eggrecord_id = data.get('eggrecord_id')
+        target_url = data.get('target', 'unknown')
+        result = data.get('result', {})
+        
+        if not eggrecord_id:
+            return JsonResponse({'success': False, 'error': 'eggrecord_id required'}, status=400)
+        
+        paths = result.get('paths', [])
+        if not paths:
+            return JsonResponse({'success': False, 'error': 'No paths in result'}, status=400)
+        
+        conn = connections['customer_eggs']
+        with conn.cursor() as cursor:
+            # Insert enumeration results as RequestMetadata entries
+            # Suzu uses RequestMetadata table with user_agent='Suzu' to identify enumeration results
+            for path in paths[:100]:  # Limit to 100 paths
+                full_url = urljoin(target_url, path) if isinstance(path, str) else target_url
+                cursor.execute("""
+                    INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
+                        id, record_id_id, target_url, request_method, response_status,
+                        response_time_ms, user_agent, session_id, timestamp, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT DO NOTHING
+                """, [
+                    str(uuid.uuid4()),
+                    eggrecord_id,
+                    full_url,
+                    'GET',
+                    200,  # Assume found paths are accessible
+                    0,
+                    'Suzu/1.0',
+                    f'suzu-{eggrecord_id}',
+                    timezone.now(),
+                    timezone.now(),
+                    timezone.now()
+                ])
+            conn.commit()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Enumeration result submitted for {target_url}',
+                'paths_inserted': len(paths)
+            })
+            
+    except Exception as e:
+        logger.error(f"Error submitting enumeration result: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
 def daemon_submit_assessment(request):
     """
     API: Submit threat assessment results from Ryu daemon
@@ -316,6 +418,7 @@ def daemon_submit_assessment(request):
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
             # Insert assessment
+            # LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
             cursor.execute("""
                 INSERT INTO customer_eggs_eggrecords_general_models_jadeassessment (
                     id, record_id_id, risk_level, threat_summary,
@@ -359,7 +462,7 @@ def daemon_health_check(request, personality):
     Returns health status for monitoring and container health checks.
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu']:
+        if personality not in ['kage', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({
                 'success': False,
                 'error': 'Invalid personality'

@@ -29,6 +29,11 @@ DAEMONS = {
         'script': DAEMON_DIR / 'ryu_daemon.py',
         'pid_file': PID_DIR / 'ryu_daemon.pid',
         'name': 'Ryu'
+    },
+    'suzu': {
+        'script': DAEMON_DIR / 'suzu_daemon.py',
+        'pid_file': PID_DIR / 'suzu_daemon.pid',
+        'name': 'Suzu'
     }
 }
 
@@ -215,7 +220,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: manage_daemons.py <action> [daemon_name]")
         print("Actions: start, stop, pause, resume, status, restart")
-        print("Daemons: kage, kumo, ryu, all")
+        print("Daemons: kage, kumo, ryu, suzu, all")
         sys.exit(1)
     
     action = sys.argv[1].lower()

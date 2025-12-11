@@ -2,12 +2,14 @@
 URL configuration for ryu_app.
 """
 from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 from . import views
 from .daemon_api import (
     daemon_get_eggrecords,
     daemon_submit_scan,
     daemon_submit_spider,
     daemon_submit_assessment,
+    daemon_submit_enumeration,
     daemon_health_check
 )
 
@@ -40,11 +42,17 @@ urlpatterns = [
     # Eggs search API endpoint
     path('api/eggs/search/', views.eggs_search_api, name='eggs_search_api'),
     # Daemon API endpoints (must come before generic personality routes)
-    path('api/daemon/<str:personality>/eggrecords/', daemon_get_eggrecords, name='daemon_get_eggrecords'),
-    path('api/daemon/<str:personality>/scan/', daemon_submit_scan, name='daemon_submit_scan'),
-    path('api/daemon/kumo/spider/', daemon_submit_spider, name='daemon_submit_spider'),
-    path('api/daemon/ryu/assessment/', daemon_submit_assessment, name='daemon_submit_assessment'),
-    path('api/daemon/<str:personality>/health/', daemon_health_check, name='daemon_health_check'),
+    # All daemon API endpoints are CSRF-exempt (no browser-based requests)
+    path('api/daemon/<str:personality>/eggrecords/', csrf_exempt(daemon_get_eggrecords), name='daemon_get_eggrecords'),
+    path('api/daemon/<str:personality>/scan/', csrf_exempt(daemon_submit_scan), name='daemon_submit_scan'),
+    path('api/daemon/kumo/spider/', csrf_exempt(daemon_submit_spider), name='daemon_submit_spider'),
+    path('api/daemon/ryu/assessment/', csrf_exempt(daemon_submit_assessment), name='daemon_submit_assessment'),
+    path('api/daemon/enumeration/', csrf_exempt(daemon_submit_enumeration), name='daemon_submit_enumeration'),
+    path('api/daemon/<str:personality>/health/', csrf_exempt(daemon_health_check), name='daemon_health_check'),
+    # Oak Nuclei template API endpoints (for Surge)
+    path('api/oak/nuclei-templates/<uuid:egg_record_id>/', views.oak_nuclei_templates_api, name='oak_nuclei_templates_api'),
+    path('api/oak/refresh-templates/', views.oak_refresh_templates_api, name='oak_refresh_templates_api'),
+    path('api/oak/curate-sample/', views.oak_curate_sample_api, name='oak_curate_sample_api'),
     # Personality control API endpoints
     path('api/<str:personality>/status/', views.personality_status_api, name='personality_status_api'),
     path('api/<str:personality>/<str:action>/', views.personality_control_api, name='personality_control_api'),

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Ash Fast Port Scanner - Creates Nmap Entries
+Kage Fast Port Scanner - Creates Nmap Entries
 =============================================
 
 Migrated from EgoWebs1 enhanced_ash_service.py
 Refactored for webApps ego system with parallel threading
 
-Ash specializes in:
+Kage specializes in:
 - Fast socket-based port scanning  
 - Service detection and version extraction
 - Creating Nmap model entries for Bugsy to process
@@ -15,7 +15,7 @@ Ash specializes in:
 Note: Uses CPU threading (ThreadPoolExecutor), not GPU compute.
 Network I/O operations cannot utilize GPU - threading is appropriate here.
 
-Author: EGO Revolution - Ash (Scout)
+Author: EGO Revolution - Kage (Scout)
 Version: 2.0.0 - Parallel Threading
 """
 
@@ -40,10 +40,10 @@ from artificial_intelligence.personalities.reconnaissance import EGOQT_SRC  # no
 from artificial_intelligence.personalities.reconnaissance.nmap_scanners.base_nmap_scanner import BASE_PORT_LIST
 
 try:
-    from ai_system.error_reporting_to_l import AshErrorReporter
+    from ai_system.error_reporting_to_l import KageErrorReporter
 except ImportError:
     # Optional error reporting - create dummy class if not available
-    class AshErrorReporter:
+    class KageErrorReporter:
         @staticmethod
         def report_error(error, context=None):
             logger.error(f"Error (no reporter): {error}")
@@ -63,22 +63,22 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
-class AshNmapScanner:
+class KageNmapScanner:
     """
-    Ash's fast port scanning service.
+    Kage's fast port scanning service.
     Creates real Nmap entries in the database for Bugsy to fingerprint.
     """
     
     def __init__(self, parallel_enabled: bool = True):
         """
-        Initialize Ash's port scanner.
+        Initialize Kage's port scanner.
         
         Args:
             parallel_enabled: Use parallel threading (32 workers vs 10)
         """
         self.parallel_enabled = parallel_enabled
         
-        # Ash's fast scanning configuration - use expanded base port list (40 ports)
+        # Kage's fast scanning configuration - use expanded base port list (40 ports)
         self.default_ports = BASE_PORT_LIST.copy()
         self.socket_timeout = 3.0
         self.max_workers = 32 if self.parallel_enabled else 10
@@ -185,18 +185,18 @@ class AshNmapScanner:
             logger.debug(f"LLM enhancer not available: {e}")
             self.llm_enhancer = None
         
-        logger.info(f"⚡ Ash scanner initialized ({'Parallel' if self.parallel_enabled else 'Sequential'} mode, {self.max_workers} workers, Tor: {'enabled' if self.tor_enabled else 'disabled'}, LLM: {'enabled' if self.llm_enabled else 'disabled'})")
+        logger.info(f"⚡ Kage scanner initialized ({'Parallel' if self.parallel_enabled else 'Sequential'} mode, {self.max_workers} workers, Tor: {'enabled' if self.tor_enabled else 'disabled'}, LLM: {'enabled' if self.llm_enabled else 'disabled'})")
         if self.nmap_knowledge:
             logger.info(f"📚 Loaded Nmap knowledge base ({self.nmap_knowledge.get('total_pages', 0)} pages)")
     
-    def scan_egg_record(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'ash_port_scan') -> Dict[str, Any]:
+    def scan_egg_record(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan') -> Dict[str, Any]:
         """
         Scan an EggRecord and create Nmap entries.
         
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'ash_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
         
         Wrapped in try-except to catch and log the exact location of 'int has no len()' errors.
         """
@@ -215,14 +215,14 @@ class AshNmapScanner:
                 }
             raise
     
-    def _scan_egg_record_impl(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'ash_port_scan') -> Dict[str, Any]:
+    def _scan_egg_record_impl(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan') -> Dict[str, Any]:
         """
         Internal implementation of scan_egg_record.
         
         Args:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
-            scan_type: Type of scan (default: 'ash_port_scan', use 'jade_port_scan' for Jade)
+            scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
             
         Returns:
             Scan results summary
@@ -407,7 +407,7 @@ class AshNmapScanner:
             logger.error(f"❌ ports_to_scan is not a list (type: {type(ports_to_scan)}), using default ports")
             ports_to_scan = self.default_ports
         
-        logger.info(f"⚡ Ash scanning {target} ({len(ports_to_scan)} ports)")
+        logger.info(f"⚡ Kage scanning {target} ({len(ports_to_scan)} ports)")
         
         start_time = time.time()
         
@@ -661,7 +661,7 @@ class AshNmapScanner:
                         str(uuid.uuid4()),
                         md5_hash,
                         target,
-                        scan_type,  # Use the parameter instead of hardcoded 'ash_port_scan'
+                        scan_type,  # Use the parameter (default: 'kage_port_scan')
                         'completed',
                         'completed',
                         str(open_ports[0]['port']) if open_ports else '',  # First port as primary
@@ -801,7 +801,7 @@ class AshNmapScanner:
         try:
             ports_count = len(ports_to_scan) if isinstance(ports_to_scan, list) else 0
             open_ports_count = len(open_ports) if isinstance(open_ports, list) else 0
-            logger.info(f"⚡ Ash scan complete: {open_ports_count}/{ports_count} ports open in {duration:.2f}s")
+            logger.info(f"⚡ Kage scan complete: {open_ports_count}/{ports_count} ports open in {duration:.2f}s")
         except (TypeError, AttributeError) as e:
             logger.error(f"❌ CRITICAL: Error calculating port counts: {e}")
             logger.error(f"   ports_to_scan: type={type(ports_to_scan)}, value={ports_to_scan}")
@@ -847,7 +847,7 @@ class AshNmapScanner:
         Returns:
             List of scan results
         """
-        logger.info(f"⚡ Ash batch scanning {len(egg_record_ids)} targets")
+        logger.info(f"⚡ Kage batch scanning {len(egg_record_ids)} targets")
         
         results = []
         for i, egg_record_id in enumerate(egg_record_ids, 1):
@@ -858,7 +858,7 @@ class AshNmapScanner:
         successful = len([r for r in results if r['success']])
         total_ports = sum(r.get('open_ports', 0) for r in results)
         
-        logger.info(f"⚡ Ash batch complete: {successful}/{len(egg_record_ids)} successful, {total_ports} total open ports found")
+        logger.info(f"⚡ Kage batch complete: {successful}/{len(egg_record_ids)} successful, {total_ports} total open ports found")
         
         return results
     
@@ -868,7 +868,7 @@ class AshNmapScanner:
         if not isinstance(ports, list):
             logger.error(f"❌ CRITICAL: _parallel_scan received non-list ports (type: {type(ports)}, value: {ports})")
             ports = self.default_ports if hasattr(self, 'default_ports') else [80, 443]
-        logger.info(f"🚀 Ash parallel scan: {len(ports)} ports with {self.max_workers} workers")
+        logger.info(f"🚀 Kage parallel scan: {len(ports)} ports with {self.max_workers} workers")
         
         results = []
         
@@ -934,7 +934,7 @@ class AshNmapScanner:
         if not isinstance(ports, list):
             logger.error(f"❌ CRITICAL: _sequential_scan received non-list ports (type: {type(ports)}, value: {ports})")
             ports = self.default_ports if hasattr(self, 'default_ports') else [80, 443]
-        logger.info(f"💻 Ash sequential scan: {len(ports)} ports")
+        logger.info(f"💻 Kage sequential scan: {len(ports)} ports")
         
         results = []
         for port in ports:
@@ -1133,7 +1133,7 @@ class AshNmapScanner:
                 except Exception as e:
                     logger.warning(f"Failed to load Nmap knowledge from {knowledge_path}: {e}")
         
-        logger.debug("No Nmap knowledge base found - Ash will use default scanning techniques")
+        logger.debug("No Nmap knowledge base found - Kage will use default scanning techniques")
         return None
     
     def get_scanning_advice(self, scan_type: str = "port_scan", target: str = None) -> List[str]:
@@ -1566,21 +1566,21 @@ class AshNmapScanner:
 
 
 # Singleton instance
-_ash_scanner_instance = None
+_kage_scanner_instance = None
 
-def get_ash_scanner(parallel_enabled: bool = True):
-    """Get Ash scanner instance (singleton)."""
-    global _ash_scanner_instance
+def get_kage_scanner(parallel_enabled: bool = True):
+    """Get Kage scanner instance (singleton)."""
+    global _kage_scanner_instance
     
-    if _ash_scanner_instance is None:
-        _ash_scanner_instance = AshNmapScanner(parallel_enabled=parallel_enabled)
+    if _kage_scanner_instance is None:
+        _kage_scanner_instance = KageNmapScanner(parallel_enabled=parallel_enabled)
     
-    return _ash_scanner_instance
+    return _kage_scanner_instance
 
 
 def scan_egg_record(egg_record_id: str) -> Dict[str, Any]:
     """
-    Scan an EggRecord using Ash scanner.
+    Scan an EggRecord using Kage scanner.
     This function uses the main scan_egg_record method which stores results in the egg record.
     
     Args:
@@ -1591,7 +1591,7 @@ def scan_egg_record(egg_record_id: str) -> Dict[str, Any]:
     """
     try:
         # Get scanner instance
-        scanner = get_ash_scanner()
+        scanner = get_kage_scanner()
         
         # Perform the scan (this stores results in the egg record)
         scan_results = scanner.scan_egg_record(egg_record_id)
@@ -1614,5 +1614,5 @@ def scan_egg_record(egg_record_id: str) -> Dict[str, Any]:
 
 
 # Backward compatibility alias
-NmapScanner = AshNmapScanner
+NmapScanner = KageNmapScanner
 

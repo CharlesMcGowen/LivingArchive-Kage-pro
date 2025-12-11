@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jade's Sableye: Decoy Defender Service
+Ryu's Sableye: Decoy Defender Service
 Acts as a decoy during analyses, leading potential threats away
 """
 

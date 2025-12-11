@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jade's Gardevoir: Threat Assessment AI Service
+Ryu's Gardevoir: Threat Assessment AI Service
 Predicts potential threats and develops countermeasures based on assessments
 """
 

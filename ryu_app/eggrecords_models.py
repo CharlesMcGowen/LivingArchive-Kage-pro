@@ -6,8 +6,8 @@ from django.db import models
 import json
 
 
-class AshWAFDetection(models.Model):
-    """Model for ash_waf_detections table"""
+class KageWAFDetection(models.Model):
+    """Model for ash_waf_detections table (legacy table name preserved for database compatibility)"""
     id = models.AutoField(primary_key=True)
     waf_type = models.CharField(max_length=255, null=True, blank=True)
     bypass_successful = models.BooleanField(null=True, blank=True)
@@ -24,8 +24,8 @@ class AshWAFDetection(models.Model):
         return f"{self.waf_type} - {self.target}"
 
 
-class AshTechniqueEffectiveness(models.Model):
-    """Model for ash_technique_effectiveness table"""
+class KageTechniqueEffectiveness(models.Model):
+    """Model for ash_technique_effectiveness table (legacy table name preserved for database compatibility)"""
     id = models.AutoField(primary_key=True)
     target_pattern = models.CharField(max_length=255, null=True, blank=True)
     waf_type = models.CharField(max_length=255, null=True, blank=True)
@@ -153,8 +153,8 @@ class TechnologyFingerprint(models.Model):
         return f"{self.technology_type} {self.product} {self.version} - {self.target}"
 
 
-class AshScanResult(models.Model):
-    """Model for ash_scan_results table"""
+class KageScanResult(models.Model):
+    """Model for ash_scan_results table (legacy table name preserved for database compatibility)"""
     id = models.AutoField(primary_key=True)
     target = models.CharField(max_length=255, null=True, blank=True)
     technique_used = models.CharField(max_length=255, null=True, blank=True)

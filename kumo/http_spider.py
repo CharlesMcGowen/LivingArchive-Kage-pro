@@ -66,13 +66,13 @@ try:
 except (ImportError, ModuleNotFoundError):
     # Fallback to EgoQT settings if available
     try:
-        sys.path.insert(0, '/mnt/webapps-nvme')
-        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
-        import django
-        django.setup()
-        from django.apps import apps
-        from django.db import connections
-        from django.utils import timezone
+sys.path.insert(0, '/mnt/webapps-nvme')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+import django
+django.setup()
+from django.apps import apps
+from django.db import connections
+from django.utils import timezone
         DJANGO_AVAILABLE = True
     except (ImportError, ModuleNotFoundError):
         DJANGO_AVAILABLE = False
@@ -169,44 +169,44 @@ class KumoHttpSpider:
             target = eggrecord_data.get('subDomain') or eggrecord_data.get('domainname')
             logger.debug(f"Using provided eggrecord data for {target}")
         else:
+        try:
+            EggRecord = apps.get_model('customer_eggs_eggrecords_general_models', 'EggRecord')
             try:
-                EggRecord = apps.get_model('customer_eggs_eggrecords_general_models', 'EggRecord')
-                try:
-                    egg_record = EggRecord.objects.get(id=egg_record_id)
-                    target = egg_record.subDomain or egg_record.domainname
-                    # Store full eggrecord data
+                egg_record = EggRecord.objects.get(id=egg_record_id)
+                target = egg_record.subDomain or egg_record.domainname
+                # Store full eggrecord data
                     egg_record_data_dict = {
-                        'id': str(egg_record.id),
-                        'subDomain': egg_record.subDomain,
-                        'domainname': egg_record.domainname,
-                        'alive': egg_record.alive,
-                        'created_at': egg_record.created_at,
-                        'updated_at': egg_record.updated_at,
-                    }
-                except (AttributeError, Exception) as e:
-                    # Django ORM not available, use raw SQL
-                    logger.debug(f"Django ORM not available, using raw SQL: {e}")
+                    'id': str(egg_record.id),
+                    'subDomain': egg_record.subDomain,
+                    'domainname': egg_record.domainname,
+                    'alive': egg_record.alive,
+                    'created_at': egg_record.created_at,
+                    'updated_at': egg_record.updated_at,
+                }
+            except (AttributeError, Exception) as e:
+                # Django ORM not available, use raw SQL
+                logger.debug(f"Django ORM not available, using raw SQL: {e}")
                     try:
-                        db = connections['customer_eggs']
-                        with db.cursor() as cursor:
-                            cursor.execute("""
-                                SELECT id, "subDomain", domainname, alive, created_at, updated_at
-                                FROM customer_eggs_eggrecords_general_models_eggrecord
-                                WHERE id = %s
-                                LIMIT 1
-                            """, [egg_record_id])
-                            row = cursor.fetchone()
-                            if row:
-                                columns = [col[0] for col in cursor.description]
+                db = connections['customer_eggs']
+                with db.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT id, "subDomain", domainname, alive, created_at, updated_at
+                        FROM customer_eggs_eggrecords_general_models_eggrecord
+                        WHERE id = %s
+                        LIMIT 1
+                    """, [egg_record_id])
+                    row = cursor.fetchone()
+                    if row:
+                        columns = [col[0] for col in cursor.description]
                                 egg_record_data_dict = dict(zip(columns, row))
                                 target = egg_record_data_dict.get('subDomain') or egg_record_data_dict.get('domainname')
-                            else:
-                                logger.error(f"❌ EggRecord {egg_record_id} not found")
-                                return {
-                                    'success': False,
-                                    'error': 'EggRecord not found',
-                                    'target': egg_record_id
-                                }
+                    else:
+                        logger.error(f"❌ EggRecord {egg_record_id} not found")
+                        return {
+                            'success': False,
+                            'error': 'EggRecord not found',
+                            'target': egg_record_id
+                        }
                     except Exception as db_error:
                         logger.error(f"Database error fetching eggrecord: {db_error}")
                         return {
@@ -216,11 +216,11 @@ class KumoHttpSpider:
                         }
             except (LookupError, ValueError) as e:
                 logger.error(f"Model lookup error: {e}")
-                return {
-                    'success': False,
+                    return {
+                        'success': False,
                     'error': f'Model lookup error: {e}',
-                    'target': egg_record_id
-                }
+                        'target': egg_record_id
+                    }
         
         if not target:
             logger.error(f"❌ Could not determine target for EggRecord {egg_record_id}")

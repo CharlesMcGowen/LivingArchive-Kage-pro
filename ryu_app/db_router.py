@@ -14,13 +14,13 @@ class PostgresRouter:
     
     # Models for eggrecords database
     eggrecords_models = {
-        'AshWAFDetection',
-        'AshTechniqueEffectiveness',
+        'KageWAFDetection',
+        'KageTechniqueEffectiveness',
         'CalculatedHeuristicsRule',
         'WAFDetectionDetail',
         'IPTechniqueEffectiveness',
         'TechnologyFingerprint',
-        'AshScanResult',
+        'KageScanResult',
     }
     
     def db_for_read(self, model, **hints):

@@ -372,12 +372,12 @@ function initCytoscape() {
             }
             for (const [key, value] of Object.entries(data)) {
                 if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
-                    if (key === 'ports' && Array.isArray(value)) {
-                        info += `${key}: ${value.length} ports\n`;
-                    } else if (key === 'services' && Array.isArray(value)) {
-                        info += `${key}: ${value.join(', ')}\n`;
+                if (key === 'ports' && Array.isArray(value)) {
+                    info += `${key}: ${value.length} ports\n`;
+                } else if (key === 'services' && Array.isArray(value)) {
+                    info += `${key}: ${value.join(', ')}\n`;
                     } else {
-                        info += `${key}: ${value}\n`;
+                    info += `${key}: ${value}\n`;
                     }
                 }
             }

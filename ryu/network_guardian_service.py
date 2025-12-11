@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jade's Xatu: Network Guardian Service
+Ryu's Xatu: Network Guardian Service
 Stays vigilantly connected, overseeing the integrity of network pathways
 """
 

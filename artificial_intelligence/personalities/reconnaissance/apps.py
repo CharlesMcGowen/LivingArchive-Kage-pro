@@ -52,4 +52,17 @@ class ReconnaissanceConfig(AppConfig):
             logger.warning(f"Could not import Oak service: {e}")
         except Exception as e:
             logger.warning(f"Could not start Oak service: {e}", exc_info=True)
+        
+        # Start Oak autonomous curation service
+        try:
+            from artificial_intelligence.personalities.reconnaissance.oak.target_curation.autonomous_curation_service import get_instance
+            
+            curation_service = get_instance()
+            curation_service.start_service()
+            
+            logger.info("🌳 Oak autonomous curation service started (Django app ready)")
+        except ImportError as e:
+            logger.warning(f"Could not import Oak autonomous curation service: {e}")
+        except Exception as e:
+            logger.warning(f"Could not start Oak autonomous curation service: {e}", exc_info=True)
 
