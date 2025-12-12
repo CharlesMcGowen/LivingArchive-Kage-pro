@@ -204,7 +204,7 @@
         /* Reconnaissance Team Control Header */
         .recon-control-header {
             background: linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-            border-bottom: 2px solid #ec4899;
+            border-bottom: 2px solid #3b82f6;
             padding: 15px 30px;
             margin-bottom: 0;
         }
@@ -276,6 +276,71 @@
             font-size: 0.85rem;
             color: #94a3b8;
             min-width: 60px;
+        }
+        
+        .personality-controls {
+            display: flex;
+            gap: 4px;
+            margin-left: 8px;
+        }
+        
+        .mini-btn {
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            opacity: 0.7;
+        }
+        
+        .mini-btn:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+        
+        .mini-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .start-mini {
+            background: #10b981;
+        }
+        
+        .start-mini:hover:not(:disabled) {
+            background: #059669;
+        }
+        
+        .pause-mini {
+            background: #f59e0b;
+        }
+        
+        .pause-mini:hover:not(:disabled) {
+            background: #d97706;
+        }
+        
+        .resume-mini {
+            background: #3b82f6;
+        }
+        
+        .resume-mini:hover:not(:disabled) {
+            background: #2563eb;
+        }
+        
+        .kill-mini {
+            background: #ef4444;
+        }
+        
+        .kill-mini:hover:not(:disabled) {
+            background: #dc2626;
         }
         
         .team-controls {
@@ -418,26 +483,56 @@
                     <span class="personality-icon">⚡</span>
                     <span class="status-dot" id="kage-status-dot"></span>
                     <span class="status-text" id="kage-status-text">Unknown</span>
+                    <div class="personality-controls">
+                        <button class="mini-btn start-mini" onclick="controlPersonality('kage', 'start')" title="Start Kage">▶</button>
+                        <button class="mini-btn pause-mini" onclick="controlPersonality('kage', 'pause')" title="Pause Kage">⏸</button>
+                        <button class="mini-btn resume-mini" onclick="controlPersonality('kage', 'resume')" title="Resume Kage">▶▶</button>
+                        <button class="mini-btn kill-mini" onclick="controlPersonality('kage', 'kill')" title="Stop Kage">⏹</button>
+                    </div>
                 </div>
                 <div class="team-status-item">
                     <span class="personality-icon">💨</span>
                     <span class="status-dot" id="kaze-status-dot"></span>
                     <span class="status-text" id="kaze-status-text">Unknown</span>
+                    <div class="personality-controls">
+                        <button class="mini-btn start-mini" onclick="controlPersonality('kaze', 'start')" title="Start Kaze">▶</button>
+                        <button class="mini-btn pause-mini" onclick="controlPersonality('kaze', 'pause')" title="Pause Kaze">⏸</button>
+                        <button class="mini-btn resume-mini" onclick="controlPersonality('kaze', 'resume')" title="Resume Kaze">▶▶</button>
+                        <button class="mini-btn kill-mini" onclick="controlPersonality('kaze', 'kill')" title="Stop Kaze">⏹</button>
+                    </div>
                 </div>
                 <div class="team-status-item">
                     <span class="personality-icon">🌊</span>
                     <span class="status-dot" id="kumo-status-dot"></span>
                     <span class="status-text" id="kumo-status-text">Unknown</span>
+                    <div class="personality-controls">
+                        <button class="mini-btn start-mini" onclick="controlPersonality('kumo', 'start')" title="Start Kumo">▶</button>
+                        <button class="mini-btn pause-mini" onclick="controlPersonality('kumo', 'pause')" title="Pause Kumo">⏸</button>
+                        <button class="mini-btn resume-mini" onclick="controlPersonality('kumo', 'resume')" title="Resume Kumo">▶▶</button>
+                        <button class="mini-btn kill-mini" onclick="controlPersonality('kumo', 'kill')" title="Stop Kumo">⏹</button>
+                    </div>
                 </div>
                 <div class="team-status-item">
                     <span class="personality-icon">🔔</span>
                     <span class="status-dot" id="suzu-status-dot"></span>
                     <span class="status-text" id="suzu-status-text">Unknown</span>
+                    <div class="personality-controls">
+                        <button class="mini-btn start-mini" onclick="controlPersonality('suzu', 'start')" title="Start Suzu">▶</button>
+                        <button class="mini-btn pause-mini" onclick="controlPersonality('suzu', 'pause')" title="Pause Suzu">⏸</button>
+                        <button class="mini-btn resume-mini" onclick="controlPersonality('suzu', 'resume')" title="Resume Suzu">▶▶</button>
+                        <button class="mini-btn kill-mini" onclick="controlPersonality('suzu', 'kill')" title="Stop Suzu">⏹</button>
+                    </div>
                 </div>
                 <div class="team-status-item">
                     <span class="personality-icon">🛡️</span>
                     <span class="status-dot" id="ryu-status-dot"></span>
                     <span class="status-text" id="ryu-status-text">Unknown</span>
+                    <div class="personality-controls">
+                        <button class="mini-btn start-mini" onclick="controlPersonality('ryu', 'start')" title="Start Ryu">▶</button>
+                        <button class="mini-btn pause-mini" onclick="controlPersonality('ryu', 'pause')" title="Pause Ryu">⏸</button>
+                        <button class="mini-btn resume-mini" onclick="controlPersonality('ryu', 'resume')" title="Resume Ryu">▶▶</button>
+                        <button class="mini-btn kill-mini" onclick="controlPersonality('ryu', 'kill')" title="Stop Ryu">⏹</button>
+                    </div>
                 </div>
             </div>
             <div class="egg-selector-controls" style="display: flex; align-items: center; gap: 10px; margin-right: 15px;">
@@ -506,17 +601,51 @@
     // Reconnaissance Team Control Functions
     const personalities = ['kage', 'kaze', 'kumo', 'suzu', 'ryu'];
     
+    // Track server connection state
+    let serverConnected = true;
+    let connectionErrorCount = 0;
+    
     // Check status for all personalities
     async function checkPersonalityStatus(personality) {
+        // Skip status checks if server is clearly disconnected
+        if (!serverConnected && connectionErrorCount > 3) {
+            return;
+        }
+        
         try {
-            const response = await fetch(`/reconnaissance/api/${personality}/status/`);
+            const response = await fetch(`/reconnaissance/api/${personality}/status/`, {
+                signal: AbortSignal.timeout(3000) // 3 second timeout
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
             const data = await response.json();
             if (data.success) {
                 updatePersonalityStatus(personality, data.status);
+                serverConnected = true;
+                connectionErrorCount = 0;
             }
         } catch (error) {
-            console.error(`Error checking ${personality} status:`, error);
-            updatePersonalityStatus(personality, 'unknown');
+            connectionErrorCount++;
+            
+            // Only log connection errors occasionally to reduce console noise
+            if (connectionErrorCount === 1 || connectionErrorCount % 10 === 0) {
+                if (error.name === 'AbortError' || error.message.includes('Failed to fetch') || error.message.includes('SOCKET_NOT_CONNECTED')) {
+                    serverConnected = false;
+                    if (connectionErrorCount === 1) {
+                        console.warn(`Server connection issue detected. Status checks will be limited.`);
+                    }
+                } else {
+                    console.error(`Error checking ${personality} status:`, error);
+                }
+            }
+            
+            // Only update to unknown if we haven't had too many connection errors
+            if (connectionErrorCount <= 3) {
+                updatePersonalityStatus(personality, 'unknown');
+            }
         }
     }
     
@@ -578,7 +707,9 @@
                 if (data.success) {
                     successCount++;
                 } else {
-                    console.error(`${personality} ${action} failed:`, data.error || data.message);
+                    const errorMsg = data.error || data.message || 'Unknown error';
+                    const errorDetails = data.details ? ` Details: ${data.details}` : '';
+                    console.error(`${personality} ${action} failed:`, errorMsg + errorDetails);
                     errorCount++;
                 }
             } catch (error) {
@@ -594,9 +725,9 @@
         if (errorCount === 0) {
             showNotification(`All personalities ${action} command sent successfully!`, 'success');
         } else if (successCount > 0) {
-            showNotification(`${successCount} succeeded, ${errorCount} failed. Check console for details.`, 'error');
+            showNotification(`${successCount} succeeded, ${errorCount} failed. Check browser console (F12) for detailed error messages.`, 'error');
         } else {
-            showNotification(`Failed to ${action} all personalities. Check console for details.`, 'error');
+            showNotification(`Failed to ${action} all personalities. Check browser console (F12) for detailed error messages.`, 'error');
         }
         
         buttons.forEach(btn => btn.disabled = false);
@@ -607,6 +738,55 @@
                 checkPersonalityStatus(personality);
             });
         }, 1000);
+    }
+    
+    // Control individual personality
+    async function controlPersonality(personality, action) {
+        // Disable all mini buttons for this personality temporarily
+        const personalityItem = document.querySelector(`#${personality}-status-dot`).closest('.team-status-item');
+        const miniButtons = personalityItem.querySelectorAll('.mini-btn');
+        miniButtons.forEach(btn => btn.disabled = true);
+        
+        try {
+            const response = await fetch(`/reconnaissance/api/${personality}/${action}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({}),
+            });
+            
+            const data = await response.json();
+            
+            // Update status immediately
+            if (data.status) {
+                updatePersonalityStatus(personality, data.status);
+            }
+            
+            if (data.success) {
+                showNotification(`${personality.toUpperCase()} ${action} command sent successfully!`, 'success');
+            } else {
+                const errorMsg = data.error || data.message || 'Unknown error';
+                const errorDetails = data.details ? ` Details: ${data.details}` : '';
+                showNotification(`${personality.toUpperCase()} ${action} failed: ${errorMsg}${errorDetails}`, 'error');
+                console.error(`${personality} ${action} failed:`, errorMsg + errorDetails);
+            }
+            
+            // Refresh status after a short delay
+            setTimeout(() => {
+                checkPersonalityStatus(personality);
+            }, 500);
+        } catch (error) {
+            console.error(`Error controlling ${personality}:`, error);
+            showNotification(`Error controlling ${personality}: ${error.message}`, 'error');
+            updatePersonalityStatus(personality, 'unknown');
+        } finally {
+            // Re-enable buttons after a delay
+            setTimeout(() => {
+                miniButtons.forEach(btn => btn.disabled = false);
+            }, 1000);
+        }
     }
     
     function getCookie(name) {
@@ -973,17 +1153,36 @@
     
     // Load eggs when page loads (wait for DOM to be ready)
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', loadInitialEggs);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadInitialEggs();
+            
+            // Initialize personality status checks
+            personalities.forEach(personality => {
+                checkPersonalityStatus(personality);
+            });
+            
+            // Auto-refresh status every 5 seconds
+            setInterval(() => {
+                personalities.forEach(personality => {
+                    checkPersonalityStatus(personality);
+                });
+            }, 5000);
+        });
     } else {
         loadInitialEggs();
-    }
-    
-    // Refresh status every 5 seconds
-    setInterval(() => {
+        
+        // Initialize personality status checks
         personalities.forEach(personality => {
             checkPersonalityStatus(personality);
         });
-    }, 5000);
+        
+        // Auto-refresh status every 5 seconds
+        setInterval(() => {
+            personalities.forEach(personality => {
+                checkPersonalityStatus(personality);
+            });
+        }, 5000);
+    }
     </script>
 </body>
 </html>

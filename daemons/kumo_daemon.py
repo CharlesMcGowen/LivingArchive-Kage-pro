@@ -93,7 +93,7 @@ class KumoDaemon:
     def _submit_spider_result(self, eggrecord_id, target, result):
         """Submit spider result to Django API"""
         try:
-            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/spider/"
+            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/kumo/spider/"
             data = {
                 'eggrecord_id': eggrecord_id,
                 'target': target,

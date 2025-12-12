@@ -39,6 +39,7 @@ urlpatterns = [
     # Network visualization API endpoints (must come before generic personality routes)
     path('api/network/graph/', views.network_graph_api, name='network_graph_api'),
     path('api/network/options/', views.network_options_api, name='network_options_api'),
+    path('api/network/visual-settings/', views.network_visual_settings_api, name='network_visual_settings_api'),
     # Eggs search API endpoint
     path('api/eggs/search/', views.eggs_search_api, name='eggs_search_api'),
     # Daemon API endpoints (must come before generic personality routes)
@@ -55,6 +56,7 @@ urlpatterns = [
     path('api/oak/curate-sample/', views.oak_curate_sample_api, name='oak_curate_sample_api'),
     # Personality control API endpoints
     path('api/<str:personality>/status/', views.personality_status_api, name='personality_status_api'),
+    path('api/<str:personality>/logs/', views.personality_logs_api, name='personality_logs_api'),  # Must come before generic action route
     path('api/<str:personality>/<str:action>/', views.personality_control_api, name='personality_control_api'),
     path('api/eggs/<int:egg_id>/queue-status/', views.check_egg_queue_status_api, name='check_egg_queue_status_api'),
 ]

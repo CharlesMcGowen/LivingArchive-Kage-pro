@@ -37,6 +37,8 @@ services:
       - ../config:/app/config:ro
       # Mount ryu_app for live code updates
       - ../ryu_app:/app/ryu_app:ro
+      # Mount daemons directory so Django can start/control daemon processes
+      - ../daemons:/app/daemons:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/reconnaissance/"]
       interval: 30s
@@ -67,6 +69,30 @@ services:
       retries: 3
       start_period: 10s
     # No volumes needed for isolated version
+    pid: host  # Use host PID namespace for better signal handling
+
+  # Kaze Daemon - High-Speed Port Scanner
+  kaze-daemon:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recon-kaze
+    command: python3 /app/daemons/kaze_daemon.py
+    restart: unless-stopped
+    depends_on:
+      - django-server
+    networks:
+      - recon-network
+    environment:
+      - DJANGO_API_BASE=http://django-server:9000
+      - KAZE_SCAN_INTERVAL=15
+      - KAZE_MAX_SCANS=10
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kaze/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     pid: host  # Use host PID namespace for better signal handling
 
   # Kumo Daemon - HTTP Spider

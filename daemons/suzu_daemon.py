@@ -147,15 +147,38 @@ class SuzuDaemon:
     
     def _run_ffuf(self, target_url: str):
         """Run ffuf for directory enumeration (if available)"""
+        # Try to find ffuf in common locations
+        ffuf_paths = [
+            os.path.expanduser('~/bin/ffuf'),
+            '/usr/local/bin/ffuf',
+            '/usr/bin/ffuf',
+            'ffuf'  # Fallback to PATH
+        ]
+        ffuf_cmd = None
+        for path in ffuf_paths:
+            expanded = os.path.expanduser(path) if '~' in path else path
+            if expanded == 'ffuf':
+                # Check PATH
+                result = subprocess.run(['which', 'ffuf'], capture_output=True, timeout=2)
+                if result.returncode == 0:
+                    ffuf_cmd = 'ffuf'
+                    break
+            elif os.path.exists(expanded) and os.access(expanded, os.X_OK):
+                ffuf_cmd = expanded
+                break
+        
+        if not ffuf_cmd:
+            return {'success': False, 'error': 'ffuf not found', 'tool': 'ffuf'}
+        
         try:
             # Check if ffuf is available
-            result = subprocess.run(['ffuf', '-V'], capture_output=True, timeout=5)
+            result = subprocess.run([ffuf_cmd, '-V'], capture_output=True, timeout=5)
             if result.returncode != 0:
                 return {'success': False, 'error': 'ffuf not available', 'tool': 'ffuf'}
             
             # Run ffuf
             cmd = [
-                'ffuf',
+                ffuf_cmd,
                 '-u', f"{target_url}/FUZZ",
                 '-w', str(self._wordlist_path),
                 '-t', '20',  # 20 threads

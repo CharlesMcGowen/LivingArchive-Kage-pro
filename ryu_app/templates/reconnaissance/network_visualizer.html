@@ -5,12 +5,60 @@
 {% block extra_styles %}
     :root { --accent-color: #8b5cf6; }
     #cy {
-        width: 100%;
-        height: calc(100vh - 350px);
+        width: 100% !important;
+        height: calc(100vh - 350px) !important;
         min-height: 600px;
         border: 1px solid #334155;
         border-radius: 8px;
         background: #0f172a;
+    }
+    .graph-container {
+        flex: 1 0 1700px; /* flex-grow: 1, flex-shrink: 0, flex-basis: 1700px - prevents shrinking below 1700px */
+        min-width: 1700px;
+        position: relative;
+        width: 100%;
+        height: calc(100vh - 350px);
+        min-height: 600px;
+    }
+    .visualization-center-container {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin-top: 20px;
+    }
+    .visualization-layout-wrapper {
+        width: auto;
+        min-width: 2440px; /* 350px (left panel) + 20px (gap) + 1700px (graph) + 20px (gap) + 350px (right panel - always visible) */
+        overflow-x: auto; /* Allow horizontal scrolling if needed */
+    }
+    .graph-container {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+    }
+    /* Scrollbar styling for side panels */
+    #visual-controls-panel,
+    #node-details-panel {
+        scrollbar-width: thin;
+        scrollbar-color: #334155 #1e293b;
+    }
+    #visual-controls-panel::-webkit-scrollbar,
+    #node-details-panel::-webkit-scrollbar {
+        width: 8px;
+    }
+    #visual-controls-panel::-webkit-scrollbar-track,
+    #node-details-panel::-webkit-scrollbar-track {
+        background: #1e293b;
+        border-radius: 4px;
+    }
+    #visual-controls-panel::-webkit-scrollbar-thumb,
+    #node-details-panel::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+    }
+    #visual-controls-panel::-webkit-scrollbar-thumb:hover,
+    #node-details-panel::-webkit-scrollbar-thumb:hover {
+        background: #475569;
     }
     .controls-panel {
         background: rgba(30, 41, 59, 0.8);
@@ -73,6 +121,27 @@
         color: #3b82f6;
         font-size: 1.2rem;
         font-weight: bold;
+    }
+    .visual-control-section {
+        background: rgba(15, 23, 42, 0.6);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #334155;
+    }
+    .control-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    .control-item label {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        min-width: 120px;
+    }
+    .control-item input[type="range"] {
+        flex: 1;
+        max-width: 150px;
     }
 {% endblock %}
 
@@ -147,23 +216,169 @@
         
         <button onclick="loadGraph()">🔄 Refresh Graph</button>
         <button onclick="resetView()">🎯 Reset View</button>
+        <button onclick="zoomIn()" title="Zoom In">🔍+ Zoom In</button>
+        <button onclick="zoomOut()" title="Zoom Out">🔍- Zoom Out</button>
+        <label style="margin-left: 10px; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.85rem; color: #94a3b8;">Zoom:</span>
+            <input type="range" id="zoom-slider" min="0.1" max="3" step="0.05" value="1" style="width: 120px;" oninput="setZoom(this.value)">
+            <span id="zoom-value" style="color: #94a3b8; font-size: 0.85rem; min-width: 50px;">100%</span>
+        </label>
     </div>
 </div>
 
-<div id="cy"></div>
+<!-- Centering Container - Wraps visualization layout to center it -->
+<div class="visualization-center-container">
+    <!-- Visualization Layout - Three panel flex container -->
+    <div class="visualization-layout-wrapper" style="display: flex; gap: 20px; align-items: flex-start;">
+    <!-- Visual Control Panel - Left Side (Fixed width) -->
+    <div id="visual-controls-panel" class="controls-panel" style="flex: 0 0 350px; background: rgba(59, 130, 246, 0.1); border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; height: calc(100vh - 350px); min-height: 600px; overflow-y: auto;">
+        <h4 style="color: #3b82f6; margin-bottom: 15px; font-size: 1.1rem;">🎨 Visual Controls</h4>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <!-- Node Controls -->
+            <div class="visual-control-section">
+                <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 0.95rem;">Node Settings</h5>
+                <div class="control-item">
+                    <label>Scanned IP Color:</label>
+                    <input type="color" id="node-color-scanned" value="#3b82f6" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>Unscanned IP Color:</label>
+                    <input type="color" id="node-color-unscanned" value="#94a3b8" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>CIDR Node Color:</label>
+                    <input type="color" id="node-color-cidr" value="#10b981" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>ASN Node Color:</label>
+                    <input type="color" id="node-color-asn" value="#f59e0b" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>Node Size:</label>
+                    <input type="range" id="node-size" min="20" max="100" value="30" style="width: 120px;">
+                    <span id="node-size-value" style="color: #94a3b8; margin-left: 10px;">30px</span>
+                </div>
+            </div>
+            
+            <!-- Edge/Line Controls -->
+            <div class="visual-control-section">
+                <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 0.95rem;">Edge/Line Settings</h5>
+                <div class="control-item">
+                    <label>Edge Color:</label>
+                    <input type="color" id="edge-color" value="#64748b" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>Line Width:</label>
+                    <input type="range" id="edge-width" min="1" max="10" value="2" style="width: 120px;">
+                    <span id="edge-width-value" style="color: #94a3b8; margin-left: 10px;">2px</span>
+                </div>
+                <div class="control-item">
+                    <label>Network Edge Color:</label>
+                    <input type="color" id="edge-color-network" value="#8b5cf6" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>Project Edge Color:</label>
+                    <input type="color" id="edge-color-project" value="#ec4899" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+            </div>
+            
+            <!-- Node Color Assignment -->
+            <div class="visual-control-section">
+                <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 0.95rem;">Custom Node Colors</h5>
+                <div class="control-item">
+                    <label>Select Node Type:</label>
+                    <select id="node-type-select" style="width: 150px;">
+                        <option value="ip_scanned">Scanned IP</option>
+                        <option value="ip_unscanned">Unscanned IP</option>
+                        <option value="cidr">CIDR Block</option>
+                        <option value="asn">ASN</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label>Custom Color:</label>
+                    <input type="color" id="custom-node-color" value="#3b82f6" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <button onclick="assignNodeColor()" style="padding: 8px 16px; background: #8b5cf6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600;">
+                        Assign Color
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button onclick="resetVisualSettings()" style="padding: 10px 20px; background: #64748b; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600;">
+                Reset to Defaults
+            </button>
+            <button onclick="applyVisualSettings()" style="padding: 10px 20px; background: #10b981; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600;">
+                ✅ Apply & Save
+            </button>
+        </div>
+    </div>
+    
+    <!-- Graph Panel - Center (Flexible, fills remaining space) -->
+    <div class="graph-container" style="flex: 1 1 auto; position: relative; width: 100%;">
+        <div id="cy" style="width: 100%; height: 100%;"></div>
+    </div>
+    
+    <!-- Node Details Panel - Right Side (Fixed width, always visible) -->
+    <div id="node-details-panel" class="controls-panel" style="flex: 0 0 350px; background: rgba(59, 130, 246, 0.1); border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; height: calc(100vh - 350px); min-height: 600px; overflow-y: auto;">
+        <h4 style="color: #3b82f6; margin-bottom: 15px; font-size: 1.1rem;">📋 Node Details</h4>
+        <div id="node-details-content" style="color: #e2e8f0;">
+            <div style="text-align: center; padding: 40px 20px; color: #64748b; font-size: 0.9rem;">
+                Click on a node to view details
+            </div>
+        </div>
+    </div>
+</div>
+</div>
 
 <div style="margin-top: 20px; padding: 15px; background: rgba(30, 41, 59, 0.8); border-radius: 8px; border: 1px solid #334155;">
-    <h4 style="color: #94a3b8; margin-bottom: 10px;">📖 Legend</h4>
-    <div style="display: flex; gap: 30px; flex-wrap: wrap; color: #64748b; font-size: 0.9rem;">
-        <div><span style="color: #3b82f6;">●</span> Scanned IP Address</div>
-        <div><span style="color: #94a3b8;">●</span> Unscanned IP Address (Grey)</div>
-        <div><span style="color: #10b981;">●</span> CIDR Block Node</div>
-        <div><span style="color: #f59e0b;">●</span> ASN Node</div>
-        <div style="margin-left: 20px;">
-            <span style="color: #94a3b8;">→</span> belongs to (IP → CIDR)
+    <h4 style="color: #e2e8f0; margin-bottom: 15px; font-size: 1.1rem;">📖 Color Legend</h4>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; color: #e2e8f0; font-size: 0.9rem;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 20px; height: 20px; background: #3b82f6; border-radius: 50%;"></div>
+            <span>Scanned IP Address</span>
         </div>
-        <div>
-            <span style="color: #94a3b8;">→</span> owned by (CIDR → ASN)
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 20px; height: 20px; background: #94a3b8; border-radius: 50%; opacity: 0.6;"></div>
+            <span>Unscanned IP Address</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 30px; height: 30px; background: #10b981; border-radius: 8px;"></div>
+            <span>CIDR Block Node</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 35px; height: 35px; background: #f59e0b; border-radius: 8px;"></div>
+            <span>ASN Node</span>
+        </div>
+    </div>
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #334155;">
+        <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 1rem;">Connection Types</h5>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; color: #e2e8f0; font-size: 0.9rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 40px; height: 2px; background: #3b82f6; position: relative;">
+                    <div style="position: absolute; right: -5px; top: -3px; width: 0; height: 0; border-left: 5px solid #3b82f6; border-top: 3px solid transparent; border-bottom: 3px solid transparent;"></div>
+                </div>
+                <span>belongs to (IP → CIDR)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 40px; height: 2px; background: #10b981; position: relative;">
+                    <div style="position: absolute; right: -5px; top: -3px; width: 0; height: 0; border-left: 5px solid #10b981; border-top: 3px solid transparent; border-bottom: 3px solid transparent;"></div>
+                </div>
+                <span>owned by (CIDR → ASN)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 40px; height: 2px; background: #8b5cf6; border-style: dashed; position: relative;">
+                    <div style="position: absolute; right: -5px; top: -3px; width: 0; height: 0; border-left: 5px solid #8b5cf6; border-top: 3px solid transparent; border-bottom: 3px solid transparent;"></div>
+                </div>
+                <span>same network (IP ↔ IP)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 40px; height: 2px; background: #ec4899; border-style: dotted; position: relative;">
+                    <div style="position: absolute; right: -5px; top: -3px; width: 0; height: 0; border-left: 5px solid #ec4899; border-top: 3px solid transparent; border-bottom: 3px solid transparent;"></div>
+                </div>
+                <span>same project (IP ↔ IP)</span>
+            </div>
         </div>
     </div>
 </div>
@@ -175,6 +390,29 @@
 <script>
 let cy;
 let graphData = { nodes: [], edges: [] };
+let selectedNode = null; // Store currently selected node for color updates
+
+// Function to update node color (called from node details panel)
+function updateNodeColor(color) {
+    if (!selectedNode) {
+        console.warn('No node selected');
+        return;
+    }
+    
+    if (!cy) {
+        console.warn('Cytoscape not initialized');
+        return;
+    }
+    
+    // Update the node's style directly
+    selectedNode.style('background-color', color);
+    selectedNode.style('border-color', color);
+    
+    // Log the change
+    const nodeId = selectedNode.id();
+    const nodeLabel = selectedNode.data('label');
+    console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
+}
 
 // Load dropdown options
 async function loadDropdownOptions() {
@@ -245,6 +483,9 @@ function initCytoscape() {
     cy = cytoscape({
         container: document.getElementById('cy'),
         elements: [],
+        minZoom: 0.1,  // Allow zooming out much more (10% of original size)
+        maxZoom: 3,    // Allow zooming in more (300% of original size)
+        wheelSensitivity: 0.2,  // More granular mouse wheel zoom (smaller increments)
         style: [
             {
                 selector: 'node[type="ip"][scanned="true"]',
@@ -332,6 +573,26 @@ function initCytoscape() {
                 }
             },
             {
+                selector: 'edge[type="network"]',
+                style: {
+                    'line-color': '#8b5cf6',
+                    'target-arrow-color': '#8b5cf6',
+                    'width': 1.5,
+                    'opacity': 0.4,
+                    'line-style': 'dashed'
+                }
+            },
+            {
+                selector: 'edge[type="project"]',
+                style: {
+                    'line-color': '#ec4899',
+                    'target-arrow-color': '#ec4899',
+                    'width': 1.5,
+                    'opacity': 0.5,
+                    'line-style': 'dotted'
+                }
+            },
+            {
                 selector: 'node:selected',
                 style: {
                     'border-width': 3,
@@ -352,43 +613,158 @@ function initCytoscape() {
     // Add node click handler
     cy.on('tap', 'node', function(evt) {
         const node = evt.target;
+        selectedNode = node; // Store selected node
         const data = node.data('data');
         
-        let info = `Type: ${node.data('type').toUpperCase()}\n`;
-        info += `Label: ${node.data('label')}\n\n`;
+        // Get current node color
+        const currentColor = node.style('background-color') || '#3b82f6';
+        
+        // Show the node details panel
+        const panel = document.getElementById('node-details-panel');
+        const content = document.getElementById('node-details-content');
+        
+        // Build HTML content
+        let html = '';
+        
+        // Node type and label
+        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Type</div>`;
+        html += `<div style="font-size: 1.2rem; font-weight: 600; color: #3b82f6; margin-bottom: 10px;">${node.data('type').toUpperCase()}</div>`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Label</div>`;
+        html += `<div style="font-size: 1rem; color: #e2e8f0;">${node.data('label')}</div>`;
+        html += `</div>`;
+        
+        // Node Color Control Section
+        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Node Color</div>`;
+        html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">`;
+        html += `<input type="color" id="node-details-color-picker" value="${rgbToHex(currentColor)}" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">`;
+        html += `<button onclick="updateNodeColor(document.getElementById('node-details-color-picker').value)" style="padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Apply Color</button>`;
+        html += `</div>`;
+        html += `<div style="font-size: 0.75rem; color: #64748b;">Change the color of this node</div>`;
+        html += `</div>`;
         
         if (data) {
+            // Scanned status
             if (data.scanned !== undefined) {
-                info += `Scanned: ${data.scanned ? 'Yes' : 'No'}\n`;
+                html += `<div style="margin-bottom: 15px;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Scanned</div>`;
+                html += `<div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: ${data.scanned ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)'}; color: ${data.scanned ? '#10b981' : '#64748b'};">${data.scanned ? 'Yes' : 'No'}</div>`;
+                html += `</div>`;
             }
+            
+            // Associated Eggs
             if (data.eggs && data.eggs.length > 0) {
-                info += `\nAssociated Eggs:\n`;
+                html += `<div style="margin-bottom: 15px;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Associated Eggs (${data.eggs.length})</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
                 data.eggs.forEach((egg, idx) => {
-                    if (egg.eggname) info += `  ${idx + 1}. ${egg.eggname}`;
-                    if (egg.projectegg) info += ` (${egg.projectegg})`;
-                    if (egg.domainname) info += ` - ${egg.domainname}`;
-                    info += `\n`;
+                    html += `<div style="padding: 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid #334155;">`;
+                    if (egg.eggname) html += `<div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">${egg.eggname}</div>`;
+                    if (egg.projectegg) html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Project: ${egg.projectegg}</div>`;
+                    if (egg.domainname) html += `<div style="font-size: 0.85rem; color: #64748b;">Domain: ${egg.domainname}</div>`;
+                    html += `</div>`;
                 });
+                html += `</div>`;
+                html += `</div>`;
             }
+            
+            // Other data fields
+            const otherFields = [];
             for (const [key, value] of Object.entries(data)) {
                 if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
-                if (key === 'ports' && Array.isArray(value)) {
-                    info += `${key}: ${value.length} ports\n`;
-                } else if (key === 'services' && Array.isArray(value)) {
-                    info += `${key}: ${value.join(', ')}\n`;
+                    if (key === 'ports' && Array.isArray(value)) {
+                        otherFields.push({key: key, value: `${value.length} ports`, isArray: true, arrayData: value});
+                    } else if (key === 'services' && Array.isArray(value)) {
+                        otherFields.push({key: key, value: value.join(', '), isArray: true, arrayData: value});
                     } else {
-                    info += `${key}: ${value}\n`;
+                        otherFields.push({key: key, value: value, isArray: false});
                     }
                 }
             }
+            
+            if (otherFields.length > 0) {
+                html += `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #334155;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Additional Information</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+                otherFields.forEach(field => {
+                    html += `<div>`;
+                    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">${field.key.charAt(0).toUpperCase() + field.key.slice(1).replace(/_/g, ' ')}</div>`;
+                    if (field.isArray && field.arrayData.length > 0) {
+                        html += `<div style="padding: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 4px; font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                    } else {
+                        html += `<div style="font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                    }
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                html += `</div>`;
+            }
         }
         
-        alert(info);
+        // Update content
+        content.innerHTML = html;
+        
+        // Add event listener for color picker changes
+        const colorPicker = document.getElementById('node-details-color-picker');
+        if (colorPicker) {
+            colorPicker.addEventListener('input', function(e) {
+                // Optional: update color in real-time as user picks
+                // updateNodeColor(e.target.value);
+            });
+        }
+        
+        // Scroll to top of panel
+        panel.scrollTop = 0;
     });
+    
+    // Helper function to convert RGB to hex
+    function rgbToHex(rgb) {
+        if (!rgb) return '#3b82f6';
+        if (rgb.startsWith('#')) return rgb;
+        if (rgb.startsWith('rgb')) {
+            const matches = rgb.match(/\d+/g);
+            if (matches && matches.length >= 3) {
+                return '#' + matches.map(x => {
+                    const hex = parseInt(x).toString(16);
+                    return hex.length === 1 ? '0' + hex : hex;
+                }).join('');
+            }
+        }
+        return '#3b82f6'; // Default fallback
+    }
+    
+    // Function to update node color (called from node details panel)
+    function updateNodeColor(color) {
+        if (!selectedNode) {
+            console.warn('No node selected');
+            return;
+        }
+        
+        // Update the node's style directly
+        selectedNode.style('background-color', color);
+        selectedNode.style('border-color', color);
+        
+        // Log the change
+        const nodeId = selectedNode.id();
+        const nodeLabel = selectedNode.data('label');
+        console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
+    }
     
     // Add pan/zoom controls
     cy.on('pan', function() {});
-    cy.on('zoom', function() {});
+    cy.on('zoom', function() {
+        // Update zoom slider when zoom changes
+        const currentZoom = cy.zoom();
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomSlider) {
+            zoomSlider.value = currentZoom;
+        }
+        if (zoomValue) {
+            zoomValue.textContent = Math.round(currentZoom * 100) + '%';
+        }
+    });
 }
 
 // Load graph data from API
@@ -399,11 +775,18 @@ async function loadGraph() {
     const eggname = document.getElementById('eggname-select').value;
     const projectegg = document.getElementById('projectegg-select').value;
     
+    // Get filter_cidr from URL query string if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const filterCidr = urlParams.get('filter_cidr') || '';
+    
     const params = new URLSearchParams({
         level: level,
         only_scanned_eggs: onlyScannedEggs
     });
     
+    if (filterCidr) {
+        params.append('filter_cidr', filterCidr);
+    }
     if (asnFilter) {
         params.append('filter_asn', asnFilter);
     }
@@ -419,10 +802,13 @@ async function loadGraph() {
         const data = await response.json();
         
         if (data.success) {
+            console.log(`Graph loaded: ${data.nodes.length} nodes, ${data.edges.length} edges`);
             graphData = data;
             updateGraph();
             updateStats(data.stats);
+            console.log('Graph updated and stats displayed');
         } else {
+            console.error('Graph API error:', data.error);
             alert('Error loading graph: ' + data.error);
         }
     } catch (error) {
@@ -433,19 +819,28 @@ async function loadGraph() {
 
 // Update graph visualization
 function updateGraph() {
-    if (!cy) return;
+    if (!cy) {
+        console.error('Cytoscape not initialized');
+        return;
+    }
     
     const elements = [];
     
     for (const node of graphData.nodes) {
+        const nodeData = {
+            id: node.id,
+            label: node.label,
+            type: node.type,
+            scanned: node.data?.scanned ? 'true' : 'false'  // Set as direct attribute for CSS selector
+        };
+        
+        // Add all node data properties
+        if (node.data) {
+            Object.assign(nodeData, node.data);
+        }
+        
         elements.push({
-            data: {
-                id: node.id,
-                label: node.label,
-                type: node.type,
-                scanned: node.data?.scanned ? 'true' : 'false',
-                data: node.data
-            }
+            data: nodeData
         });
     }
     
@@ -461,18 +856,54 @@ function updateGraph() {
         });
     }
     
+    console.log(`Updating graph with ${elements.length} elements (${graphData.nodes.length} nodes, ${graphData.edges.length} edges)`);
+    
     cy.elements().remove();
     cy.add(elements);
     
-    // Apply layout
-    cy.layout({
-        name: 'dagre',
-        rankDir: 'TB',
-        spacingFactor: 1.5,
-        nodeSep: 50,
-        edgeSep: 20,
-        rankSep: 100
-    }).run();
+    console.log(`Graph elements added. Total elements: ${cy.elements().length}`);
+    
+    // Apply layout - use grid if no edges, dagre if edges exist
+    const hasEdges = elements.some(el => el.data.source && el.data.target);
+    if (hasEdges) {
+        console.log('Using dagre layout (has edges)');
+        cy.layout({
+            name: 'dagre',
+            rankDir: 'TB',
+            spacingFactor: 1.5,
+            nodeSep: 50,
+            edgeSep: 20,
+            rankSep: 100
+        }).run();
+    } else {
+        console.log('Using grid layout (no edges)');
+        // Use grid layout when there are no edges
+        const nodeCount = graphData.nodes.length;
+        const cols = Math.ceil(Math.sqrt(nodeCount));
+        cy.layout({
+            name: 'grid',
+            rows: Math.ceil(nodeCount / cols),
+            cols: cols,
+            spacing: 100
+        }).run();
+    }
+    
+    // Fit and center the graph
+    cy.fit();
+    cy.center();
+    console.log('Graph layout applied and centered');
+    
+    // Initialize zoom slider
+    const zoomSlider = document.getElementById('zoom-slider');
+    const zoomValue = document.getElementById('zoom-value');
+    if (zoomSlider && zoomValue) {
+        const currentZoom = cy.zoom();
+        zoomSlider.value = currentZoom;
+        zoomValue.textContent = Math.round(currentZoom * 100) + '%';
+    }
+    
+    // Apply current visual settings to the newly loaded graph
+    applyVisualSettingsToGraph();
 }
 
 // Update statistics panel
@@ -491,12 +922,381 @@ function resetView() {
     if (cy) {
         cy.fit();
         cy.center();
+        // Reset zoom slider
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomSlider) {
+            zoomSlider.value = 1;
+        }
+        if (zoomValue) {
+            zoomValue.textContent = '100%';
+        }
     }
+}
+
+// Zoom in with smaller increments for more granular control
+function zoomIn() {
+    if (cy) {
+        const currentZoom = cy.zoom();
+        const newZoom = Math.min(currentZoom * 1.15, 3); // 15% increase, max 3x
+        cy.zoom(newZoom);
+        // Update slider
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomSlider) {
+            zoomSlider.value = newZoom;
+        }
+        if (zoomValue) {
+            zoomValue.textContent = Math.round(newZoom * 100) + '%';
+        }
+    }
+}
+
+// Zoom out with smaller increments for more granular control
+function zoomOut() {
+    if (cy) {
+        const currentZoom = cy.zoom();
+        const newZoom = Math.max(currentZoom / 1.15, 0.1); // 15% decrease, min 0.1x
+        cy.zoom(newZoom);
+        // Update slider
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomSlider) {
+            zoomSlider.value = newZoom;
+        }
+        if (zoomValue) {
+            zoomValue.textContent = Math.round(newZoom * 100) + '%';
+        }
+    }
+}
+
+// Set zoom level from slider
+function setZoom(value) {
+    if (cy) {
+        const zoomLevel = parseFloat(value);
+        cy.zoom(zoomLevel);
+        // Update zoom value display
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomValue) {
+            zoomValue.textContent = Math.round(zoomLevel * 100) + '%';
+        }
+    }
+}
+
+// Visual settings state
+let visualSettings = {
+    nodeColors: {
+        scanned: '#3b82f6',
+        unscanned: '#94a3b8',
+        cidr: '#10b981',
+        asn: '#f59e0b'
+    },
+    nodeSize: 30,
+    edgeColor: '#64748b',
+    edgeWidth: 2,
+    edgeColorNetwork: '#8b5cf6',
+    edgeColorProject: '#ec4899'
+};
+
+// Load visual settings from API
+async function loadVisualSettings() {
+    try {
+        const response = await fetch('/reconnaissance/api/network/visual-settings/');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.settings) {
+                visualSettings = { ...visualSettings, ...data.settings };
+                applyVisualSettingsToControls();
+                applyVisualSettingsToGraph();
+            }
+        }
+    } catch (error) {
+        console.warn('Could not load visual settings:', error);
+    }
+}
+
+// Apply visual settings to control inputs
+function applyVisualSettingsToControls() {
+    document.getElementById('node-color-scanned').value = visualSettings.nodeColors.scanned;
+    document.getElementById('node-color-unscanned').value = visualSettings.nodeColors.unscanned;
+    document.getElementById('node-color-cidr').value = visualSettings.nodeColors.cidr;
+    document.getElementById('node-color-asn').value = visualSettings.nodeColors.asn;
+    document.getElementById('node-size').value = visualSettings.nodeSize;
+    document.getElementById('node-size-value').textContent = visualSettings.nodeSize + 'px';
+    document.getElementById('edge-color').value = visualSettings.edgeColor;
+    document.getElementById('edge-width').value = visualSettings.edgeWidth;
+    document.getElementById('edge-width-value').textContent = visualSettings.edgeWidth + 'px';
+    document.getElementById('edge-color-network').value = visualSettings.edgeColorNetwork;
+    document.getElementById('edge-color-project').value = visualSettings.edgeColorProject;
+}
+
+// Apply visual settings to Cytoscape graph
+function applyVisualSettingsToGraph() {
+    if (!cy) return;
+    
+    // Update node styles using the style sheet API
+    const styleSheet = cy.style();
+    
+    // Scanned IP nodes
+    styleSheet.selector('node[type="ip"][scanned="true"]')
+        .style('background-color', visualSettings.nodeColors.scanned)
+        .style('width', visualSettings.nodeSize)
+        .style('height', visualSettings.nodeSize);
+    
+    // Unscanned IP nodes
+    styleSheet.selector('node[type="ip"][scanned="false"]')
+        .style('background-color', visualSettings.nodeColors.unscanned)
+        .style('width', visualSettings.nodeSize)
+        .style('height', visualSettings.nodeSize);
+    
+    // CIDR nodes
+    styleSheet.selector('node[type="cidr"]')
+        .style('background-color', visualSettings.nodeColors.cidr)
+        .style('width', visualSettings.nodeSize + 20)
+        .style('height', visualSettings.nodeSize + 20);
+    
+    // ASN nodes
+    styleSheet.selector('node[type="asn"]')
+        .style('background-color', visualSettings.nodeColors.asn)
+        .style('width', visualSettings.nodeSize + 40)
+        .style('height', visualSettings.nodeSize + 40);
+    
+    // Default edges
+    styleSheet.selector('edge')
+        .style('line-color', visualSettings.edgeColor)
+        .style('target-arrow-color', visualSettings.edgeColor)
+        .style('width', visualSettings.edgeWidth);
+    
+    // Network edges
+    styleSheet.selector('edge[type="network"]')
+        .style('line-color', visualSettings.edgeColorNetwork)
+        .style('target-arrow-color', visualSettings.edgeColorNetwork);
+    
+    // Project edges
+    styleSheet.selector('edge[type="project"]')
+        .style('line-color', visualSettings.edgeColorProject)
+        .style('target-arrow-color', visualSettings.edgeColorProject);
+    
+    // Belongs to edges (IP -> CIDR)
+    styleSheet.selector('edge[type="belongs_to"]')
+        .style('line-color', visualSettings.nodeColors.scanned)
+        .style('target-arrow-color', visualSettings.nodeColors.scanned);
+    
+    // Owned by edges (CIDR -> ASN)
+    styleSheet.selector('edge[type="owned_by"]')
+        .style('line-color', visualSettings.nodeColors.cidr)
+        .style('target-arrow-color', visualSettings.nodeColors.cidr);
+    
+    // Apply all style updates - this is critical for changes to take effect
+    styleSheet.update();
+    
+    // Also directly update nodes to ensure size changes are applied immediately
+    // This is a workaround for Cytoscape style sheet update timing issues
+    cy.nodes('[type="ip"][scanned="true"]').style({
+        'width': visualSettings.nodeSize,
+        'height': visualSettings.nodeSize
+    });
+    cy.nodes('[type="ip"][scanned="false"]').style({
+        'width': visualSettings.nodeSize,
+        'height': visualSettings.nodeSize
+    });
+    cy.nodes('[type="cidr"]').style({
+        'width': visualSettings.nodeSize + 20,
+        'height': visualSettings.nodeSize + 20
+    });
+    cy.nodes('[type="asn"]').style({
+        'width': visualSettings.nodeSize + 40,
+        'height': visualSettings.nodeSize + 40
+    });
+}
+
+// Assign custom color to node type
+function assignNodeColor() {
+    const nodeType = document.getElementById('node-type-select').value;
+    const color = document.getElementById('custom-node-color').value;
+    
+    switch(nodeType) {
+        case 'ip_scanned':
+            visualSettings.nodeColors.scanned = color;
+            document.getElementById('node-color-scanned').value = color;
+            break;
+        case 'ip_unscanned':
+            visualSettings.nodeColors.unscanned = color;
+            document.getElementById('node-color-unscanned').value = color;
+            break;
+        case 'cidr':
+            visualSettings.nodeColors.cidr = color;
+            document.getElementById('node-color-cidr').value = color;
+            break;
+        case 'asn':
+            visualSettings.nodeColors.asn = color;
+            document.getElementById('node-color-asn').value = color;
+            break;
+    }
+    
+    applyVisualSettingsToGraph();
+}
+
+// Apply and save visual settings
+async function applyVisualSettings() {
+    // Update settings from controls
+    visualSettings.nodeColors.scanned = document.getElementById('node-color-scanned').value;
+    visualSettings.nodeColors.unscanned = document.getElementById('node-color-unscanned').value;
+    visualSettings.nodeColors.cidr = document.getElementById('node-color-cidr').value;
+    visualSettings.nodeColors.asn = document.getElementById('node-color-asn').value;
+    visualSettings.nodeSize = parseInt(document.getElementById('node-size').value);
+    visualSettings.edgeColor = document.getElementById('edge-color').value;
+    visualSettings.edgeWidth = parseInt(document.getElementById('edge-width').value);
+    visualSettings.edgeColorNetwork = document.getElementById('edge-color-network').value;
+    visualSettings.edgeColorProject = document.getElementById('edge-color-project').value;
+    
+    // Apply to graph immediately
+    applyVisualSettingsToGraph();
+    
+    // Save to API
+    try {
+        const response = await fetch('/reconnaissance/api/network/visual-settings/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ settings: visualSettings })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification('Visual settings saved successfully!', 'success');
+        } else {
+            showNotification('Error saving settings: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error saving visual settings:', error);
+        showNotification('Error saving settings: ' + error.message, 'error');
+    }
+}
+
+// Reset visual settings to defaults
+function resetVisualSettings() {
+    visualSettings = {
+        nodeColors: {
+            scanned: '#3b82f6',
+            unscanned: '#94a3b8',
+            cidr: '#10b981',
+            asn: '#f59e0b'
+        },
+        nodeSize: 30,
+        edgeColor: '#64748b',
+        edgeWidth: 2,
+        edgeColorNetwork: '#8b5cf6',
+        edgeColorProject: '#ec4899'
+    };
+    applyVisualSettingsToControls();
+    applyVisualSettingsToGraph();
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Show notification
+function showNotification(message, type) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 20px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        z-index: 10000;
+        animation: slideIn 0.3s ease-out;
+        ${type === 'success' ? 'background: #10b981;' : 'background: #ef4444;'}
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    // Set wrapper min-width since node details panel is always visible
+    const wrapper = document.querySelector('.visualization-layout-wrapper');
+    if (wrapper) {
+        wrapper.style.minWidth = '2440px'; // 350px (left) + 20px + 1700px (graph) + 20px + 350px (right)
+    }
     initCytoscape();
+    
+    // Setup control event listeners
+    const nodeSizeSlider = document.getElementById('node-size');
+    if (nodeSizeSlider) {
+        nodeSizeSlider.addEventListener('input', function(e) {
+            const sizeValue = parseInt(e.target.value) || 30;
+            document.getElementById('node-size-value').textContent = sizeValue + 'px';
+            visualSettings.nodeSize = sizeValue;
+            applyVisualSettingsToGraph();
+        });
+    }
+    
+    document.getElementById('edge-width').addEventListener('input', function(e) {
+        document.getElementById('edge-width-value').textContent = e.target.value + 'px';
+        visualSettings.edgeWidth = parseInt(e.target.value);
+        applyVisualSettingsToGraph();
+    });
+    
+    // Color picker listeners for real-time preview (using 'input' for instant updates)
+    ['node-color-scanned', 'node-color-unscanned', 'node-color-cidr', 'node-color-asn', 
+     'edge-color', 'edge-color-network', 'edge-color-project'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            // Use 'input' event for real-time updates as user drags the color picker
+            element.addEventListener('input', function(e) {
+                if (id.startsWith('node-color-')) {
+                    const type = id.replace('node-color-', '');
+                    visualSettings.nodeColors[type] = e.target.value;
+                } else if (id === 'edge-color') {
+                    visualSettings.edgeColor = e.target.value;
+                } else if (id === 'edge-color-network') {
+                    visualSettings.edgeColorNetwork = e.target.value;
+                } else if (id === 'edge-color-project') {
+                    visualSettings.edgeColorProject = e.target.value;
+                }
+                applyVisualSettingsToGraph();
+            });
+            // Also listen to 'change' event as backup
+            element.addEventListener('change', function(e) {
+                if (id.startsWith('node-color-')) {
+                    const type = id.replace('node-color-', '');
+                    visualSettings.nodeColors[type] = e.target.value;
+                } else if (id === 'edge-color') {
+                    visualSettings.edgeColor = e.target.value;
+                } else if (id === 'edge-color-network') {
+                    visualSettings.edgeColorNetwork = e.target.value;
+                } else if (id === 'edge-color-project') {
+                    visualSettings.edgeColorProject = e.target.value;
+                }
+                applyVisualSettingsToGraph();
+            });
+        }
+    });
+    
     loadDropdownOptions().then(() => {
         // Add change handlers to reload graph when dropdowns change
         document.getElementById('eggname-select').addEventListener('change', loadGraph);
@@ -505,8 +1305,13 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('asn-filter').addEventListener('change', loadGraph);
         document.getElementById('only-scanned-eggs').addEventListener('change', loadGraph);
     });
-    loadGraph();
+    
+    // Load saved visual settings
+    loadVisualSettings().then(() => {
+        loadGraph();
+    });
 });
 </script>
 
 {% endblock %}
+

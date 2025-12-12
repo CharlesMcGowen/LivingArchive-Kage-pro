@@ -73,7 +73,7 @@ func (c *Client) SubmitSpiderResult(
 	ctx context.Context,
 	req *SubmitSpiderRequest,
 ) (*APIResponse, error) {
-	endpoint := fmt.Sprintf("%s/reconnaissance/api/daemon/spider/", c.baseURL)
+	endpoint := fmt.Sprintf("%s/reconnaissance/api/daemon/kumo/spider/", c.baseURL)
 	return c.postJSON(ctx, endpoint, req)
 }
 

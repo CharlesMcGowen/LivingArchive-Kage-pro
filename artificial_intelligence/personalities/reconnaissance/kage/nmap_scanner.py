@@ -59,11 +59,24 @@ except ImportError:
 import sys
 import os
 
-# Setup Django
-sys.path.insert(0, '/mnt/webapps-nvme')
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
-import django
-django.setup()
+# Setup Django with error handling
+try:
+    # Try kage-pro Django settings first
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+    import django
+    django.setup()
+    DJANGO_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    # Fallback to EgoQT settings if available
+    try:
+        sys.path.insert(0, '/mnt/webapps-nvme')
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+        import django
+        django.setup()
+        DJANGO_AVAILABLE = True
+    except (ImportError, ModuleNotFoundError):
+        DJANGO_AVAILABLE = False
+        logger.warning("Django not available - some features may be limited")
 
 from django.apps import apps
 from django.db import connections
@@ -2123,123 +2136,6 @@ def scan_egg_record(egg_record_id: str) -> Dict[str, Any]:
 
 # Backward compatibility alias
 NmapScanner = KageNmapScanner
-
-
-            'bypass_technique': None,
-            'bypass_successful': False,
-            'recommendations': []
-        }
-        
-        if not self.host_discovery or not self.learning_db:
-            return result
-        
-        # Check learning database for known good technique
-        best_technique = self.learning_db.get_best_technique(target)
-        
-        # Try techniques in order of effectiveness
-        techniques_to_try = []
-        
-        if best_technique:
-            # Use learned technique first
-            techniques_to_try.append(best_technique['technique'])
-            logger.info(f"📚 Using learned technique: {best_technique['technique']} (success rate: {best_technique['success_rate']:.2%})")
-        
-        # Add techniques from Nmap knowledge base
-        if self.nmap_knowledge:
-            host_discovery_advice = self.get_scanning_advice('host_discovery', target)
-            if host_discovery_advice:
-                # Extract techniques from advice
-                for advice in host_discovery_advice:
-                    if 'tcp syn' in advice.lower() and 'tcp_syn_nonhttp' not in techniques_to_try:
-                        techniques_to_try.append('tcp_syn_nonhttp')
-                    elif 'tcp ack' in advice.lower() and 'tcp_ack' not in techniques_to_try:
-                        techniques_to_try.append('tcp_ack')
-                    elif 'udp' in advice.lower() and 'udp_dns' not in techniques_to_try:
-                        techniques_to_try.append('udp_dns')
-                    elif 'icmp' in advice.lower() and 'icmp' not in techniques_to_try:
-                        techniques_to_try.append('icmp')
-        
-        # Default techniques if none found
-        if not techniques_to_try:
-            techniques_to_try = ['tcp_syn_nonhttp', 'tcp_ack', 'udp_dns', 'icmp']
-        
-        # Try host discovery
-        discovery_result = self.host_discovery.multi_probe_discovery(target, techniques_to_try)
-        
-        if discovery_result['success']:
-            result['bypass_technique'] = discovery_result['technique']
-            result['bypass_successful'] = True
-            
-            # Try to detect WAF via HTTP probe
-            try:
-                import requests
-                http_response = requests.get(f"http://{target}", timeout=3, verify=False, allow_redirects=True)
-                waf_info = self.waf_fingerprinter.fingerprint_waf(target, http_response, discovery_result['probe_result'])
-                
-                if waf_info['waf_detected']:
-                    result['waf_detected'] = True
-                    result['waf_type'] = waf_info['waf_type']
-                    result['confidence'] = waf_info.get('confidence', 0.0)
-                    result['recommendations'] = waf_info['bypass_recommendations']
-                    
-                    # Record WAF detection
-                    self.learning_db.record_waf_detection(
-                        target, waf_info, 
-                        discovery_result['technique'], 
-                        True,
-                        response_headers=dict(http_response.headers),
-                        response_body_sample=http_response.text[:1000]
-                    )
-            except Exception as e:
-                logger.debug(f"HTTP probe for WAF detection failed: {e}")
-            
-            # Record successful technique
-            self.learning_db.record_technique_result(
-                target, result.get('waf_type'), 
-                discovery_result['technique'], 
-                True
-            )
-        else:
-            # All techniques failed - record failures
-            for probe in discovery_result['all_results']:
-                self.learning_db.record_technique_result(
-                    target, None,
-                    probe['technique'],
-                    False
-                )
-        
-        return result
-    
-    def _adapt_strategy_for_waf(self, strategy: Dict[str, Any], waf_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Adapt scanning strategy based on WAF detection."""
-        waf_type = waf_info.get('waf_type')
-        
-        if not waf_type:
-            return strategy
-        
-        # Get WAF-specific recommendations
-        recommendations = waf_info.get('bypass_recommendations', [])
-        
-        # Adapt timing
-        if 'slow' in ' '.join(recommendations).lower():
-            strategy['timing'] = 'slow'
-        
-        # Adapt ports based on recommendations
-        if 'non-http' in ' '.join(recommendations).lower() or 'non-standard' in ' '.join(recommendations).lower():
-            # Ensure strategy['ports'] is a list before extending
-            if 'ports' not in strategy or not isinstance(strategy['ports'], list):
-                strategy['ports'] = strategy.get('ports', [])
-                if not isinstance(strategy['ports'], list):
-                    # Convert to list if it's not already
-                    strategy['ports'] = [strategy['ports']] if strategy['ports'] else []
-            # Add non-HTTP ports
-            strategy['ports'].extend([22, 25, 53, 3306, 5432])
-            strategy['ports'] = list(set(strategy['ports']))  # Remove duplicates
-        
-        # Add recommendations to strategy
-        strategy['waf_bypass_recommendations'] = recommendations
-        
-        return strategy
 
 
 # Singleton instance

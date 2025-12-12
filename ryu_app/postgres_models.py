@@ -73,10 +73,16 @@ class PostgresRequestMetadata(models.Model):
         db_column='record_id_id',
         related_name='http_requests'
     )
-    url = models.URLField(max_length=2048)
-    method = models.CharField(max_length=10, default='GET')
-    status_code = models.IntegerField(null=True, blank=True)
+    # Map to actual database columns
+    url = models.URLField(max_length=2048, db_column='target_url', null=True, blank=True)
+    method = models.CharField(max_length=10, default='GET', db_column='request_method', null=True, blank=True)
+    status_code = models.IntegerField(null=True, blank=True, db_column='response_status')
+    user_agent = models.CharField(max_length=512, null=True, blank=True)
+    session_id = models.CharField(max_length=255, null=True, blank=True)
+    response_time_ms = models.IntegerField(null=True, blank=True)
+    timestamp = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
     
     class Meta:
         db_table = 'customer_eggs_eggrecords_general_models_requestmetadata'

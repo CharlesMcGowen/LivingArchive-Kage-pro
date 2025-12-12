@@ -23,16 +23,16 @@ def daemon_get_eggrecords(request, personality):
     API: Get eggrecords for a daemon to process
     
     Args:
-        personality: 'kage', 'kumo', or 'ryu'
+        personality: 'kage', 'kaze', 'kumo', or 'ryu'
         limit: Optional query param for max records (default: 10)
-        scan_type: For kage/ryu - 'kage_port_scan' or 'ryu_port_scan'
+        scan_type: For kage/kaze/ryu - 'kage_port_scan', 'kaze_port_scan', or 'ryu_port_scan'
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu']:
+        if personality not in ['kage', 'kaze', 'kumo', 'ryu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality'}, status=400)
         
         limit = int(request.GET.get('limit', 10))
-        scan_type = request.GET.get('scan_type', f'{personality}_port_scan' if personality in ['kage', 'ryu'] else None)
+        scan_type = request.GET.get('scan_type', f'{personality}_port_scan' if personality in ['kage', 'kaze', 'ryu'] else None)
         
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
@@ -43,6 +43,19 @@ def daemon_get_eggrecords(request, personality):
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
                         AND n.scan_type = 'kage_port_scan'
+                    WHERE e.alive = true
+                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    ORDER BY e.updated_at ASC
+                    LIMIT %s
+                """, [limit])
+                
+            elif personality == 'kaze':
+                # Get eggrecords that need high-speed Nmap scanning
+                cursor.execute("""
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    FROM customer_eggs_eggrecords_general_models_eggrecord e
+                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
+                        AND n.scan_type = 'kaze_port_scan'
                     WHERE e.alive = true
                     AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
                     ORDER BY e.updated_at ASC
@@ -145,7 +158,7 @@ def daemon_submit_scan(request, personality):
     }
     """
     try:
-        if personality not in ['kage', 'ryu']:
+        if personality not in ['kage', 'kaze', 'ryu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality for scan submission'}, status=400)
         
         data = json.loads(request.body)
@@ -361,7 +374,7 @@ def daemon_health_check(request, personality):
     Returns health status for monitoring and container health checks.
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu']:
+        if personality not in ['kage', 'kaze', 'kumo', 'ryu']:
             return JsonResponse({
                 'success': False,
                 'error': 'Invalid personality'

@@ -177,6 +177,10 @@ class ScanLearningService:
                 pass
         
         # Store in database
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping database storage")
+            return
+        
         db: Session = SessionLocal()
         try:
             # Check if table exists
@@ -248,6 +252,10 @@ class ScanLearningService:
             return cached
         
         # Query database
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping database query")
+            return None
+        
         db: Session = SessionLocal()
         try:
             # Check if table exists first
@@ -325,6 +333,10 @@ class ScanLearningService:
                            response_headers: Optional[Dict] = None,
                            response_body_sample: Optional[str] = None):
         """Record WAF detection result."""
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping WAF detection recording")
+            return
+        
         db: Session = SessionLocal()
         try:
             # Check if table exists
@@ -387,6 +399,10 @@ class ScanLearningService:
                           scan_results: Optional[Dict] = None):
         """Record complete scan result."""
         logger.debug(f"📚 Learning: Attempting to record scan result for {target} (technique={technique_used}, ports={open_ports_found})")
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping scan result recording")
+            return
+        
         db: Session = SessionLocal()
         try:
             # Check if table exists
@@ -440,6 +456,10 @@ class ScanLearningService:
         if cached:
             return cached
         
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping technique stats query")
+            return {}
+        
         db: Session = SessionLocal()
         try:
             query = db.query(
@@ -481,6 +501,10 @@ class ScanLearningService:
         cached = self._get_from_cache(cache_key)
         if cached:
             return cached
+        
+        if SessionLocal is None:
+            logger.debug("SessionLocal not available, skipping WAF history query")
+            return []
         
         db: Session = SessionLocal()
         try:

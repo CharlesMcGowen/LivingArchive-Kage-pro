@@ -1320,12 +1320,12 @@ def kumo_dashboard(request):
             for req in kumo_requests:
                 row_dict = {
                     'id': str(req.id),
-                    'target_url': req.url,
-                    'request_method': req.method,
-                    'response_status': req.status_code,
-                    'response_time_ms': None,  # Not in model yet
-                    'user_agent': '',  # Not in model yet
-                    'timestamp': req.created_at
+                    'target_url': req.url or '',
+                    'request_method': req.method or 'GET',
+                    'response_status': req.status_code or 0,
+                    'response_time_ms': req.response_time_ms,
+                    'user_agent': req.user_agent or '',
+                    'timestamp': req.timestamp or req.created_at
                 }
                 serialized = _serialize_row(row_dict)
                 serialized['full_data_json'] = json.dumps(serialized)
@@ -1387,16 +1387,16 @@ def suzu_dashboard(request):
                     'record_id_id': str(req.record_id.id),
                     'target': target,
                     'domainname': eggrecord.domainname or '',
-                    'target_url': req.url,
-                    'request_method': req.method,
-                    'response_status': req.status_code,
+                    'target_url': req.url or '',
+                    'request_method': req.method or 'GET',
+                    'response_status': req.status_code or 0,
                     'response_headers': '',  # Not in model yet
-                    'response_time_ms': None,  # Not in model yet
-                    'user_agent': '',  # Not in model yet
-                    'session_id': '',  # Not in model yet
-                    'timestamp': req.created_at,
+                    'response_time_ms': req.response_time_ms,
+                    'user_agent': req.user_agent or '',
+                    'session_id': req.session_id or '',
+                    'timestamp': req.timestamp or req.created_at,
                     'created_at': req.created_at,
-                    'updated_at': req.created_at
+                    'updated_at': req.updated_at or req.created_at
                 }
                 serialized_row = _serialize_row(row_dict)
                 
@@ -1408,7 +1408,7 @@ def suzu_dashboard(request):
                 enumeration_results.append({
                     'id': str(req.id),
                     'target': target,
-                    'path': req.url,
+                    'path': req.url or '',
                     'status': req.status_code or 0,
                     'tool': enumeration_metadata.get('tool', 'unknown'),
                     'enumeration_type': enumeration_metadata.get('enumeration_type', 'wordlist'),
@@ -1646,6 +1646,71 @@ def network_options_api(request):
 
 
 @csrf_exempt
+def network_visual_settings_api(request):
+    """API endpoint to get and save visual settings for network graph"""
+    if request.method == 'GET':
+        # Return saved visual settings from session, or defaults
+        default_settings = {
+            'nodeColors': {
+                'scanned': '#3b82f6',
+                'unscanned': '#94a3b8',
+                'cidr': '#10b981',
+                'asn': '#f59e0b'
+            },
+            'nodeSize': 30,
+            'edgeColor': '#64748b',
+            'edgeWidth': 2,
+            'edgeColorNetwork': '#8b5cf6',
+            'edgeColorProject': '#ec4899'
+        }
+        
+        # Get saved settings from session
+        saved_settings = request.session.get('network_visual_settings', default_settings)
+        
+        return JsonResponse({
+            'success': True,
+            'settings': saved_settings
+        })
+    
+    elif request.method == 'POST':
+        # Save visual settings to session
+        try:
+            data = json.loads(request.body)
+            settings = data.get('settings', {})
+            
+            # Validate and store settings
+            if settings:
+                request.session['network_visual_settings'] = settings
+                request.session.modified = True
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Visual settings saved successfully'
+                })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No settings provided'
+                })
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid JSON data'
+            })
+        except Exception as e:
+            logger.error(f"Error saving visual settings: {e}", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            })
+    
+    else:
+        return JsonResponse({
+            'success': False,
+            'error': 'Method not allowed'
+        }, status=405)
+
+
+@csrf_exempt
 def eggs_search_api(request):
     """API endpoint to search eggs for dropdown population"""
     from django.db import connections
@@ -1715,6 +1780,13 @@ def network_graph_api(request):
         eggname_filter = request.GET.get('eggname', '').strip()
         projectegg_filter = request.GET.get('projectegg', '').strip()
         
+        # Safety: If no filters are provided, limit to 100 records to prevent huge responses
+        if not filter_cidr and not eggname_filter and not projectegg_filter:
+            logger.warning("Network graph API called without filters - limiting to 100 records for performance")
+            max_records = 100
+        else:
+            max_records = 500
+        
         # Try to import IP ownership validator for ASN lookups
         try:
             import sys
@@ -1747,11 +1819,25 @@ def network_graph_api(request):
             eggrecords_query = eggrecords_query.filter(eggname=eggname_filter)
         if projectegg_filter:
             eggrecords_query = eggrecords_query.filter(projectegg=projectegg_filter)
+        if filter_cidr:
+            # Filter by CIDR range - convert to IP network and filter
+            try:
+                import ipaddress
+                cidr_network = ipaddress.ip_network(filter_cidr, strict=False)
+                # Filter IPs that are in the CIDR range
+                # PostgreSQL supports CIDR operations
+                eggrecords_query = eggrecords_query.extra(
+                    where=["ip_address <<= %s"],
+                    params=[str(cidr_network)]
+                )
+            except (ValueError, Exception) as e:
+                logger.debug(f"Invalid CIDR filter {filter_cidr}: {e}")
         if only_scanned_eggs:
             # Only include eggs that have nmap scans
             eggrecords_query = eggrecords_query.filter(nmap_scans__isnull=False).distinct()
         
-        eggrecords = list(eggrecords_query.prefetch_related('nmap_scans')[:1000])
+        # Limit results to prevent huge responses (max_records set above based on filters)
+        eggrecords = list(eggrecords_query.select_related().prefetch_related('nmap_scans')[:max_records])
         
         # Build graph data structures
         nodes = []
@@ -1762,6 +1848,7 @@ def network_graph_api(request):
         ip_to_asn = {}
         ip_to_cidr = {}
         ip_to_egg = {}
+        ip_to_projectegg = defaultdict(set)
         asn_to_ips = defaultdict(set)
         cidr_to_ips = defaultdict(set)
         
@@ -1797,6 +1884,10 @@ def network_graph_api(request):
                 'domainname': egg.domainname,
                 'subDomain': egg.subDomain
             })
+            
+            # Track IPs by projectegg for creating project connections
+            if egg.projectegg:
+                ip_to_projectegg[egg.projectegg].add(ip)
             
             # Get ASN and CIDR for IP
             if asn_available and ip_validator:
@@ -1899,6 +1990,23 @@ def network_graph_api(request):
                                     'type': 'belongs_to',
                                     'label': 'belongs to'
                                 })
+                    
+                    # Add edges between IPs in the same CIDR (network connections)
+                    ip_list = list(ips)
+                    for i, ip1 in enumerate(ip_list):
+                        for ip2 in ip_list[i+1:]:
+                            ip1_node_id = f"ip_{ip1}"
+                            ip2_node_id = f"ip_{ip2}"
+                            if ip1_node_id in node_ids and ip2_node_id in node_ids:
+                                edge_id = f"{ip1_node_id}_{ip2_node_id}_network"
+                                if not any(e.get('id') == edge_id for e in edges):
+                                    edges.append({
+                                        'id': edge_id,
+                                        'source': ip1_node_id,
+                                        'target': ip2_node_id,
+                                        'type': 'network',
+                                        'label': 'same network'
+                                    })
         
         # 3. Add ASN nodes
         if level in ['all', 'asn']:
@@ -1952,6 +2060,30 @@ def network_graph_api(request):
                                         'type': 'owned_by',
                                         'label': 'owned by'
                                     })
+        
+        # 4. Add edges between IPs in the same projectegg (project connections)
+        for projectegg, project_ips in ip_to_projectegg.items():
+            if len(project_ips) > 1:  # Only create edges if there are multiple IPs
+                project_ip_list = list(project_ips)
+                for i, ip1 in enumerate(project_ip_list):
+                    for ip2 in project_ip_list[i+1:]:
+                        ip1_node_id = f"ip_{ip1}"
+                        ip2_node_id = f"ip_{ip2}"
+                        if ip1_node_id in node_ids and ip2_node_id in node_ids:
+                            # Check if edge already exists (might be created by CIDR network edges)
+                            edge_id = f"{ip1_node_id}_{ip2_node_id}_project"
+                            existing_edge = any(e.get('id') == edge_id or 
+                                                (e.get('source') == ip1_node_id and e.get('target') == ip2_node_id) or
+                                                (e.get('source') == ip2_node_id and e.get('target') == ip1_node_id)
+                                                for e in edges)
+                            if not existing_edge:
+                                edges.append({
+                                    'id': edge_id,
+                                    'source': ip1_node_id,
+                                    'target': ip2_node_id,
+                                    'type': 'project',
+                                    'label': f'same project: {projectegg}'
+                                })
         
         # Calculate statistics
         stats = {
@@ -2203,13 +2335,18 @@ def personality_status_api(request, personality):
         # Fallback: check PID file (for non-Docker setups)
         if status == 'stopped':
             pid_file = Path(f'/tmp/{personality}_daemon.pid')
-        if pid_file.exists():
-            try:
-                pid = int(pid_file.read_text().strip())
-                os.kill(pid, 0)  # Check if process exists
-                status = 'running'
-            except (ProcessLookupError, ValueError, OSError):
-                status = 'stopped'
+            if pid_file.exists():
+                try:
+                    pid = int(pid_file.read_text().strip())
+                    os.kill(pid, 0)  # Check if process exists
+                    status = 'running'
+                except (ProcessLookupError, ValueError, OSError):
+                    # Process doesn't exist, remove stale PID file
+                    try:
+                        pid_file.unlink()
+                    except:
+                        pass
+                    status = 'stopped'
         
         response_data = {
             'success': True,
@@ -2253,10 +2390,14 @@ def personality_status_api(request, personality):
         })
 
 
+@csrf_exempt
 def personality_control_api(request, personality, action):
     """API: Control personality service (start/pause/kill)"""
+    import os
+    import sys
+    import subprocess
+    import signal
     from pathlib import Path
-    import json
     
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
@@ -2268,26 +2409,373 @@ def personality_control_api(request, personality, action):
                 'error': f'Invalid personality: {personality}'
             })
         
-        if action not in ['start', 'pause', 'kill']:
+        if action not in ['start', 'pause', 'resume', 'kill']:
             return JsonResponse({
                 'success': False,
-                'error': f'Invalid action: {action}. Must be start, pause, or kill'
+                'error': f'Invalid action: {action}. Must be start, pause, resume, or kill'
             })
         
-        # For LivingArchive-Kage, we'll return a message that daemons need to be started manually
-        # In a full implementation, this would interact with the daemon processes
-        return JsonResponse({
-            'success': True,
-            'status': 'stopped',
-            'message': f'{action.capitalize()} command received for {personality}. Note: Daemons must be started manually in LivingArchive-Kage.',
-            'note': 'This is a simplified implementation. Full daemon control requires the daemon processes to be running.'
-        })
+        # Map personality to daemon script path
+        # Try multiple methods to find project root for compatibility with Docker and local environments
+        from django.conf import settings
+        # Method 1: Use BASE_DIR from settings
+        project_root = settings.BASE_DIR
+        # Method 2: If daemons don't exist in BASE_DIR, try parent of ryu_app (more reliable)
+        daemons_dir = project_root / 'daemons'
+        if not daemons_dir.exists():
+            # views.py is in ryu_app/, so parent.parent gets us to project root
+            project_root = Path(__file__).resolve().parent.parent
+            daemons_dir = project_root / 'daemons'
+        
+        daemon_scripts = {
+            'kage': daemons_dir / 'kage_daemon.py',
+            'kaze': daemons_dir / 'kaze_daemon.py',
+            'kumo': daemons_dir / 'kumo_daemon.py',
+            'suzu': daemons_dir / 'suzu_daemon.py',
+            'ryu': daemons_dir / 'ryu_daemon.py',
+        }
+        
+        pid_file = Path(f'/tmp/{personality}_daemon.pid')
+        
+        # Check if daemon is running
+        def is_running():
+            if not pid_file.exists():
+                return False
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)  # Signal 0 just checks if process exists
+                return True
+            except (ProcessLookupError, ValueError, OSError):
+                if pid_file.exists():
+                    pid_file.unlink()
+                return False
+        
+        # Get PID if running
+        def get_pid():
+            if not pid_file.exists():
+                return None
+            try:
+                return int(pid_file.read_text().strip())
+            except (ValueError, OSError):
+                return None
+        
+        # Handle different actions
+        if action == 'start':
+            if is_running():
+                return JsonResponse({
+                    'success': True,
+                    'status': 'running',
+                    'message': f'{personality} is already running'
+                })
+            
+            # Find daemon script
+            daemon_script = daemon_scripts.get(personality)
+            if not daemon_script or not daemon_script.exists():
+                # Include debug info in error message
+                expected_path = str(daemon_script) if daemon_script else 'None'
+                project_root_str = str(project_root)
+                logger.error(f"Daemon script not found for {personality}. Expected: {expected_path}, Project root: {project_root_str}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Daemon script not found for {personality}',
+                    'details': f'Expected path: {expected_path}, Project root: {project_root_str}'
+                })
+            
+            # Start daemon
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, str(daemon_script)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=str(project_root)
+                )
+                
+                # Wait a moment for PID file to be created and process to initialize
+                import time
+                time.sleep(2)  # Increased wait time to allow daemon to initialize
+                
+                # Check if process is still alive
+                if process.poll() is not None:
+                    # Process has already terminated (crashed)
+                    stderr_output = process.stderr.read().decode('utf-8', errors='ignore')[:500]  # Limit error message length
+                    logger.error(f"{personality} daemon crashed immediately. stderr: {stderr_output}")
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'{personality} daemon crashed on startup. Check server logs for details.',
+                        'details': stderr_output if stderr_output else 'No error output captured'
+                    })
+                
+                # Check if daemon is running (PID file exists and process is alive)
+                if is_running():
+                    return JsonResponse({
+                        'success': True,
+                        'status': 'running',
+                        'message': f'{personality} started successfully'
+                    })
+                else:
+                    # Process is alive but PID file doesn't exist - might still be initializing
+                    # Check again after another short wait
+                    time.sleep(1)
+                    if is_running():
+                        return JsonResponse({
+                            'success': True,
+                            'status': 'running',
+                            'message': f'{personality} started successfully'
+                        })
+                    else:
+                        # Still not running - check for errors
+                        if process.poll() is not None:
+                            stderr_output = process.stderr.read().decode('utf-8', errors='ignore')[:500]
+                            logger.error(f"{personality} daemon failed to start. stderr: {stderr_output}")
+                            return JsonResponse({
+                                'success': False,
+                                'error': f'{personality} failed to start. Check server logs for details.',
+                                'details': stderr_output if stderr_output else 'No error output captured'
+                            })
+                        else:
+                            # Process is running but PID file not created - might be a timing issue
+                            logger.warning(f"{personality} process is running but PID file not found")
+                            return JsonResponse({
+                                'success': False,
+                                'error': f'{personality} process started but PID file not created. Process may still be initializing.'
+                            })
+            except Exception as e:
+                logger.error(f"Error starting {personality}: {e}", exc_info=True)
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error starting {personality}: {str(e)}'
+                })
+        
+        elif action == 'pause':
+            if not is_running():
+                return JsonResponse({
+                    'success': False,
+                    'error': f'{personality} is not running'
+                })
+            
+            pid = get_pid()
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGUSR1)
+                    return JsonResponse({
+                        'success': True,
+                        'status': 'paused',
+                        'message': f'{personality} paused'
+                    })
+                except Exception as e:
+                    logger.error(f"Error pausing {personality}: {e}", exc_info=True)
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Error pausing {personality}: {str(e)}'
+                    })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Could not get PID for {personality}'
+                })
+        
+        elif action == 'resume':
+            if not is_running():
+                return JsonResponse({
+                    'success': False,
+                    'error': f'{personality} is not running'
+                })
+            
+            pid = get_pid()
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGUSR2)
+                    return JsonResponse({
+                        'success': True,
+                        'status': 'running',
+                        'message': f'{personality} resumed'
+                    })
+                except Exception as e:
+                    logger.error(f"Error resuming {personality}: {e}", exc_info=True)
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Error resuming {personality}: {str(e)}'
+                    })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Could not get PID for {personality}'
+                })
+        
+        elif action == 'kill':
+            if not is_running():
+                return JsonResponse({
+                    'success': True,
+                    'status': 'stopped',
+                    'message': f'{personality} is already stopped'
+                })
+            
+            pid = get_pid()
+            if pid:
+                try:
+                    # Try graceful shutdown first
+                    os.kill(pid, signal.SIGTERM)
+                    
+                    # Wait for process to stop
+                    import time
+                    for _ in range(10):
+                        if not is_running():
+                            return JsonResponse({
+                                'success': True,
+                                'status': 'stopped',
+                                'message': f'{personality} stopped successfully'
+                            })
+                        time.sleep(0.5)
+                    
+                    # Force kill if still running
+                    if is_running():
+                        os.kill(pid, signal.SIGKILL)
+                        time.sleep(0.5)
+                        return JsonResponse({
+                            'success': True,
+                            'status': 'stopped',
+                            'message': f'{personality} force-killed'
+                        })
+                    else:
+                        return JsonResponse({
+                            'success': True,
+                            'status': 'stopped',
+                            'message': f'{personality} stopped successfully'
+                        })
+                except ProcessLookupError:
+                    return JsonResponse({
+                        'success': True,
+                        'status': 'stopped',
+                        'message': f'{personality} process not found (already stopped)'
+                    })
+                except Exception as e:
+                    logger.error(f"Error killing {personality}: {e}", exc_info=True)
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Error stopping {personality}: {str(e)}'
+                    })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Could not get PID for {personality}'
+                })
+        
     except Exception as e:
         logger.error(f"Error controlling {personality}: {e}", exc_info=True)
         return JsonResponse({
             'success': False,
             'error': str(e)
         })
+
+
+@csrf_exempt
+def personality_logs_api(request, personality):
+    """API: Get activity logs for a personality daemon"""
+    from pathlib import Path
+    
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'GET method required'}, status=405)
+    
+    try:
+        if personality not in ['kage', 'kaze', 'kumo', 'suzu', 'ryu']:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid personality: {personality}'
+            }, status=400)
+        
+        # Get limit from query params
+        limit = int(request.GET.get('limit', 50))
+        
+        # Map personality to log file (check multiple possible locations)
+        log_file_candidates = {
+            'kage': ['/tmp/kage_daemon.log', '/tmp/kage.log'],
+            'kaze': ['/tmp/kaze_daemon.log', '/tmp/kaze.log'],
+            'kumo': ['/tmp/kumo_daemon.log', '/tmp/kumo.log'],
+            'suzu': ['/tmp/suzu_daemon.log', '/tmp/suzu.log'],
+            'ryu': ['/tmp/ryu_daemon.log', '/tmp/ryu.log'],
+        }
+        
+        # Find the first existing log file
+        log_file = None
+        for log_path_str in log_file_candidates.get(personality, []):
+            try:
+                if os.path.exists(log_path_str) and os.path.isfile(log_path_str):
+                    log_file = log_path_str
+                    break
+            except Exception as e:
+                logger.debug(f"Error checking log path {log_path_str}: {e}")
+                continue
+        
+        if not log_file:
+            # Return empty data instead of error - log file may not exist yet
+            return JsonResponse({
+                'success': True,
+                'data': [],
+                'message': f'Log file not found for {personality}. Checked: {log_file_candidates.get(personality, [])}'
+            })
+        
+        # Read last N lines from log file
+        try:
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+                # Get last 'limit' lines
+                recent_lines = lines[-limit:] if len(lines) > limit else lines
+                
+                # Parse log entries
+                log_entries = []
+                for line in recent_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Try to parse timestamp and level from common log formats
+                    entry = {
+                        'raw': line,
+                        'timestamp': '',
+                        'level': 'INFO',
+                        'message': line
+                    }
+                    
+                    # Try to parse common log formats
+                    # Format: "2025-12-11 16:20:00 [KAGE] INFO: message"
+                    import re
+                    timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                    if timestamp_match:
+                        entry['timestamp'] = timestamp_match.group(1)
+                    
+                    level_match = re.search(r'\[(ERROR|WARNING|INFO|DEBUG)\]', line)
+                    if level_match:
+                        entry['level'] = level_match.group(1)
+                    
+                    # Extract message (everything after timestamp and level)
+                    message_start = max(
+                        line.find(']') + 1 if ']' in line else 0,
+                        line.find(':') + 1 if ':' in line else 0
+                    )
+                    if message_start > 0:
+                        entry['message'] = line[message_start:].strip()
+                    
+                    log_entries.append(entry)
+                
+                return JsonResponse({
+                    'success': True,
+                    'data': log_entries,
+                    'count': len(log_entries),
+                    'personality': personality
+                })
+        except Exception as e:
+            logger.error(f"Error reading log file: {e}", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': f'Error reading log file: {str(e)}'
+            }, status=500)
+            
+    except Exception as e:
+        logger.error(f"Error getting logs for {personality}: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 def check_egg_queue_status_api(request, egg_id):
