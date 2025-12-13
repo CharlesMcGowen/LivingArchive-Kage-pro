@@ -23,6 +23,8 @@ from .eggrecords_models import (
 )
 from django.db import connections
 from django.db.models import Count, Q, F, Avg, Max, Case, When, IntegerField
+from django.db.utils import ProgrammingError, OperationalError, DatabaseError
+from .mitre_mapping import get_mitre_mapper, map_finding_to_mitre_techniques
 
 logger = logging.getLogger(__name__)
 
@@ -643,44 +645,23 @@ def kaze_dashboard(request):
                     pass
             
             nmap_scans = nmap_scans.order_by('-created_at')
-            
-            # Get total count first (for display)
             total_eggrecord_scans = nmap_scans.count()
             
             # Limit to 1000 records for performance (pagination will handle displaying 25 at a time)
             for scan in nmap_scans[:1000]:
-                try:
-                    eggrecord = scan.record_id
-                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
-                except Exception as e:
-                    # Fallback to scan.target if record_id access fails
-                    target = scan.target or 'unknown'
-                    eggrecord = None
-                
-                serialized_row = {
+                row_dict = {
                     'id': str(scan.id),
-                    'record_id_id': str(scan.record_id.id) if scan.record_id else '',
-                    'target': target,
-                    'domainname': eggrecord.domainname if eggrecord else (scan.target or ''),
-                    'scan_type': scan.scan_type,
-                    'scan_status': scan.scan_status,
-                    'port': str(scan.port) if scan.port else '',
-                    'service_name': scan.service_name or 'N/A',
-                    'open_ports': scan.open_ports or '',
-                    'created_at': scan.created_at,
-                    'updated_at': scan.updated_at
-                }
-                scan_records.append({
-                    'id': str(scan.id),
-                    'target': target,
+                    'target': scan.target or '',
                     'scan_type': scan.scan_type or 'kaze_port_scan',
                     'scan_status': scan.scan_status or 'completed',
-                    'port': str(scan.port) if scan.port else '',
-                    'service_name': scan.service_name or 'N/A',
+                    'port': scan.port,
+                    'service_name': scan.service_name or '',
                     'open_ports': scan.open_ports or '',
-                    'created_at': scan.created_at,
-                    'full_data_json': json.dumps(_serialize_row(serialized_row))
-                })
+                    'created_at': scan.created_at
+                }
+                serialized = _serialize_row(row_dict)
+                serialized['full_data_json'] = json.dumps(serialized)
+                scan_records.append(serialized)
         except Exception as e:
             logger.warning(f"Could not query Kaze scan records from PostgreSQL: {e}", exc_info=True)
     
@@ -728,8 +709,9 @@ def kaze_dashboard(request):
     context['total_scans'] = total_eggrecord_scans if total_eggrecord_scans > 0 else len(scan_records)
     context['eggrecord_scans'] = len(scan_records)
     
-    # Get recent scans (last 24 hours) using Django ORM
+    # Get recent scans (last 24 hours) using Django ORM and last scan timestamp
     recent_scans_24h = 0
+    last_scan_time = None
     if 'customer_eggs' in connections.databases:
         try:
             recent_time = timezone.now() - timedelta(hours=24)
@@ -737,6 +719,12 @@ def kaze_dashboard(request):
                 scan_type='kaze_port_scan',
                 created_at__gte=recent_time
             ).count()
+            # Get the timestamp of the most recent scan
+            last_scan = PostgresNmap.objects.using('customer_eggs').filter(
+                scan_type='kaze_port_scan'
+            ).order_by('-created_at').first()
+            if last_scan:
+                last_scan_time = last_scan.created_at
         except Exception as e:
             logger.debug(f"Could not query recent Kaze scans: {e}")
     else:
@@ -747,6 +735,7 @@ def kaze_dashboard(request):
             logger.debug(f"Could not query recent Kaze scans from SQLite: {e}")
     
     context['recent_scans_24h'] = recent_scans_24h
+    context['last_scan_time'] = last_scan_time
     
     # Get WAF detection stats using Django ORM
     context['waf_count'] = 0
@@ -1737,18 +1726,35 @@ def suzu_check_duplicates_api(request):
                 }
         
         # Check for duplicate paths in Vector DB
+        # Limit to first 1000 paths to avoid timeout on large files
         if paths:
             try:
                 from suzu.vector_path_store import VectorPathStore
                 vector_store = VectorPathStore()
-                path_check = vector_store.check_existing_paths(paths, cms_name, wordlist_name)
+                
+                # Limit path checking to avoid timeout
+                paths_to_check = paths[:1000] if len(paths) > 1000 else paths
+                path_check = vector_store.check_existing_paths(paths_to_check, cms_name, wordlist_name)
+                
                 results['duplicate_paths'] = path_check['existing']
                 results['new_paths'] = path_check['new']
-                results['duplicate_count'] = path_check['existing_count']
-                results['new_count'] = path_check['new_count']
+                
+                # If we only checked a sample, estimate the counts
+                if len(paths) > 1000:
+                    sample_ratio = len(paths_to_check) / len(paths)
+                    results['duplicate_count'] = int(path_check['existing_count'] / sample_ratio)
+                    results['new_count'] = len(paths) - results['duplicate_count']
+                    results['sample_checked'] = True
+                    results['sample_size'] = len(paths_to_check)
+                else:
+                    results['duplicate_count'] = path_check['existing_count']
+                    results['new_count'] = path_check['new_count']
+                    results['sample_checked'] = False
             except Exception as e:
                 logger.warning(f"Error checking duplicate paths in Vector DB: {e}")
                 # Continue without path checking if Vector DB is unavailable
+                results['duplicate_count'] = 0
+                results['new_count'] = len(paths)
         
         return JsonResponse({'success': True, 'results': results})
     except Exception as e:
@@ -2004,8 +2010,9 @@ def kage_dashboard(request):
     context['eggrecord_scans'] = len(scans_from_eggrecords)
     context['learning_scans'] = 0
     
-    # Get recent scans (last 24 hours) using Django ORM
+    # Get recent scans (last 24 hours) using Django ORM and last scan timestamp
     recent_scans_24h = 0
+    last_scan_time = None
     if 'customer_eggs' in connections.databases:
         try:
             recent_time = timezone.now() - timedelta(hours=24)
@@ -2013,10 +2020,17 @@ def kage_dashboard(request):
                 scan_type__in=['kage_port_scan'],
                 created_at__gte=recent_time
             ).count()
+            # Get the timestamp of the most recent scan
+            last_scan = PostgresNmap.objects.using('customer_eggs').filter(
+                scan_type__in=['kage_port_scan']
+            ).order_by('-created_at').first()
+            if last_scan:
+                last_scan_time = last_scan.created_at
         except Exception as e:
             logger.debug(f"Could not query recent scans: {e}")
     
     context['recent_scans_24h'] = recent_scans_24h
+    context['last_scan_time'] = last_scan_time
     
     # Get WAF detection stats using Django ORM
     if 'eggrecords' in connections.databases:
@@ -2117,53 +2131,67 @@ def suzu_dashboard(request):
             try:
                 from artificial_intelligence.customer_eggs_eggrecords_general_models.models import DirectoryEnumerationResult
                 
-                dir_results = DirectoryEnumerationResult.objects.using('customer_eggs').select_related().order_by('-created_at')[:1000]
-                
-                seen_targets = {}
-                for result in dir_results:
-                    egg_record_id = str(result.egg_record_id)
+                # Query directory enumeration results
+                # Wrap in try-except to catch database errors if table doesn't exist
+                try:
+                    dir_results = DirectoryEnumerationResult.objects.using('customer_eggs').order_by('-created_at')[:1000]
                     
-                    # Get target from eggrecord if not already cached
-                    if egg_record_id not in seen_targets:
-                        try:
-                            eggrecord = EggRecord.objects.using('customer_eggs').get(id=result.egg_record_id)
-                            target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
-                            seen_targets[egg_record_id] = target
-                        except:
-                            target = 'unknown'
-                            seen_targets[egg_record_id] = target
-                    else:
-                        target = seen_targets[egg_record_id]
+                    # Log query result for debugging
+                    result_count = dir_results.count() if hasattr(dir_results, 'count') else len(list(dir_results))
+                    logger.debug(f"Suzu dashboard: Found {result_count} DirectoryEnumerationResult entries")
                     
-                    # Build result dict with heuristics data
-                    row_dict = {
-                        'id': str(result.id),
-                        'target': target,
-                        'path': result.discovered_path or '',
-                        'status': result.path_status_code or 0,
-                        'priority_score': float(result.priority_score) if result.priority_score else 0.0,
-                        'priority_factors': result.priority_factors if isinstance(result.priority_factors, dict) else (json.loads(result.priority_factors) if isinstance(result.priority_factors, str) else {}),
-                        'cms_detected': result.detected_cms,
-                        'cms_version': result.detected_cms_version,
-                        'cms_confidence': float(result.cms_detection_confidence) if result.cms_detection_confidence else 0.0,
-                        'tool': result.enumeration_tool or 'unknown',
-                        'wordlist': result.wordlist_used or 'default',
-                        'content_length': result.path_content_length,
-                        'content_type': result.path_content_type,
-                        'response_time': result.path_response_time_ms,
-                        'created_at': result.created_at,
-                        'egg_record_id': egg_record_id
-                    }
-                    serialized = _serialize_row(row_dict)
-                    serialized['full_data_json'] = json.dumps(serialized)
-                    enumeration_results.append(serialized)
+                    seen_targets = {}
+                    for result in dir_results:
+                        egg_record_id = str(result.egg_record_id)
+                        
+                        # Get target from eggrecord if not already cached
+                        if egg_record_id not in seen_targets:
+                            try:
+                                eggrecord = EggRecord.objects.using('customer_eggs').get(id=result.egg_record_id)
+                                target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                                seen_targets[egg_record_id] = target
+                            except Exception as e:
+                                logger.debug(f"Could not get eggrecord {egg_record_id}: {e}")
+                                target = 'unknown'
+                                seen_targets[egg_record_id] = target
+                        else:
+                            target = seen_targets[egg_record_id]
+                        
+                        # Build result dict with heuristics data
+                        row_dict = {
+                            'id': str(result.id),
+                            'target': target,
+                            'path': result.discovered_path or '',
+                            'status': result.path_status_code or 0,
+                            'priority_score': float(result.priority_score) if result.priority_score else 0.0,
+                            'priority_factors': result.priority_factors if isinstance(result.priority_factors, dict) else (json.loads(result.priority_factors) if isinstance(result.priority_factors, str) else {}),
+                            'cms_detected': result.detected_cms,
+                            'cms_version': result.detected_cms_version,
+                            'cms_confidence': float(result.cms_detection_confidence) if result.cms_detection_confidence else 0.0,
+                            'tool': result.enumeration_tool or 'unknown',
+                            'wordlist': result.wordlist_used or 'default',
+                            'content_length': result.path_content_length,
+                            'content_type': result.path_content_type,
+                            'response_time': result.path_response_time_ms,
+                            'created_at': result.created_at,
+                            'egg_record_id': egg_record_id
+                        }
+                        serialized = _serialize_row(row_dict)
+                        serialized['full_data_json'] = json.dumps(serialized)
+                        enumeration_results.append(serialized)
+                    
+                    # Get total count
+                    context['total_enumerations'] = DirectoryEnumerationResult.objects.using('customer_eggs').count()
+                    logger.debug(f"Suzu dashboard: Total enumerations in database: {context['total_enumerations']}")
+                    
+                except (ProgrammingError, OperationalError, DatabaseError) as db_error:
+                    # Table doesn't exist yet - fall back to RequestMetadata
+                    logger.warning(f"DirectoryEnumerationResult table not available: {db_error}, using RequestMetadata fallback")
+                    raise  # Re-raise to trigger fallback handler
                 
-                # Get total count
-                context['total_enumerations'] = DirectoryEnumerationResult.objects.using('customer_eggs').count()
-                
-            except ImportError:
+            except (ImportError, ProgrammingError, OperationalError, DatabaseError) as e:
                 # Fallback: use RequestMetadata (legacy format)
-                logger.debug("DirectoryEnumerationResult model not available, using RequestMetadata")
+                logger.warning(f"DirectoryEnumerationResult not available ({type(e).__name__}: {e}), using RequestMetadata fallback")
                 suzu_requests = PostgresRequestMetadata.objects.using('customer_eggs').filter(
                     Q(user_agent__icontains='Suzu') | Q(session_id__startswith='suzu-')
                 ).select_related('record_id').order_by('-created_at')[:100]
@@ -2193,8 +2221,9 @@ def suzu_dashboard(request):
                 ).count()
                 
         except Exception as e:
-            logger.warning(f"Could not query Suzu enumeration results: {e}", exc_info=True)
+            logger.error(f"Could not query Suzu enumeration results: {e}", exc_info=True)
             context['total_enumerations'] = 0
+            context['query_error'] = str(e)  # Add error to context for debugging
     
     # Pagination
     paginator = Paginator(enumeration_results, 25)
@@ -2211,6 +2240,17 @@ def suzu_dashboard(request):
     
     if 'total_enumerations' not in context:
         context['total_enumerations'] = len(enumeration_results)
+    
+    # Get uploaded wordlist files
+    try:
+        from ryu_app.models import WordlistUpload
+        uploaded_wordlists = WordlistUpload.objects.all().order_by('-created_at')[:50]
+        context['uploaded_wordlists'] = uploaded_wordlists
+        context['total_uploaded_wordlists'] = WordlistUpload.objects.count()
+    except Exception as e:
+        logger.warning(f"Could not query uploaded wordlists: {e}")
+        context['uploaded_wordlists'] = []
+        context['total_uploaded_wordlists'] = 0
     
     return render(request, 'reconnaissance/suzu_dashboard.html', context)
 
@@ -3970,6 +4010,212 @@ def terminal_cancel_api(request, request_id):
         logger.error(f"Error in terminal_cancel_api: {e}", exc_info=True)
         return JsonResponse({
             'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def mitre_soc2_dashboard(request):
+    """MITRE ATT&CK and SOC2 compliance dashboard"""
+    context = {
+        'personality': 'mitre_soc2',
+        'title': 'MITRE ATT&CK & SOC2 Dashboard',
+        'icon': '🛡️',
+        'color': '#dc2626',
+        'mitre_tactics_count': 14,
+        'mitre_techniques_count': 200,
+        'soc2_controls_count': 67,
+        'compliance_score': 85,
+        'threats_detected': 0,
+        'controls_active': 0,
+        'last_assessment': timezone.now().strftime('%Y-%m-%d %H:%M') if timezone else 'N/A'
+    }
+    
+    # Get actual MITRE technique mappings from recent scans
+    try:
+        mapper = get_mitre_mapper()
+        recent_scans = []
+        
+        # Get recent scan results
+        if 'customer_eggs' in connections.databases:
+            try:
+                nmap_scans = PostgresNmap.objects.using('customer_eggs').select_related('record_id').order_by('-created_at')[:100]
+                for scan in nmap_scans:
+                    eggrecord = scan.record_id
+                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                    finding = {
+                        'path': '',
+                        'url': f"http://{target}",
+                        'service_name': scan.service_name or '',
+                        'description': f"{scan.scan_type} scan on {target}",
+                    }
+                    recent_scans.append(finding)
+            except Exception as e:
+                logger.warning(f"Could not query scans for MITRE mapping: {e}", exc_info=True)
+        
+        # Analyze and get technique counts
+        if recent_scans:
+            analysis = mapper.analyze_scan_results(recent_scans)
+            context['mitre_techniques_count'] = analysis['summary']['total_techniques']
+            context['mitre_tactics_count'] = analysis['summary']['total_tactics']
+            context['threats_detected'] = analysis['summary']['high_relevance']
+            context['controls_active'] = analysis['summary']['high_confidence']
+    except Exception as e:
+        logger.warning(f"Error in MITRE analysis: {e}", exc_info=True)
+    
+    return render(request, 'reconnaissance/mitre_soc2_dashboard.html', context)
+
+
+def mitre_soc2_status_api(request):
+    """API endpoint for MITRE ATT&CK and SOC2 status"""
+    try:
+        mapper = get_mitre_mapper()
+        recent_scans = []
+        
+        # Get recent scan results
+        if 'customer_eggs' in connections.databases:
+            try:
+                nmap_scans = PostgresNmap.objects.using('customer_eggs').select_related('record_id').order_by('-created_at')[:100]
+                for scan in nmap_scans:
+                    eggrecord = scan.record_id
+                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                    finding = {
+                        'path': '',
+                        'url': f"http://{target}",
+                        'service_name': scan.service_name or '',
+                        'description': f"{scan.scan_type} scan on {target}",
+                    }
+                    recent_scans.append(finding)
+            except Exception as e:
+                logger.warning(f"Could not query scans: {e}", exc_info=True)
+        
+        # Analyze scan results
+        analysis = mapper.analyze_scan_results(recent_scans) if recent_scans else {
+            'summary': {'total_techniques': 0, 'total_tactics': 0, 'high_confidence': 0, 'high_relevance': 0},
+            'techniques': [],
+            'tactics': {}
+        }
+        
+        return JsonResponse({
+            'mitre_tactics': analysis['summary']['total_tactics'],
+            'mitre_techniques': analysis['summary']['total_techniques'],
+            'soc2_controls': 67,
+            'compliance_score': 85,
+            'threats_detected': analysis['summary']['high_relevance'],
+            'controls_active': analysis['summary']['high_confidence'],
+            'last_assessment': timezone.now().isoformat() if timezone else None,
+            'techniques': analysis['techniques'][:20],  # Top 20 techniques
+            'tactics': analysis['tactics']
+        })
+    except Exception as e:
+        logger.error(f"Error in mitre_soc2_status_api: {e}", exc_info=True)
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def mitre_map_finding_api(request):
+    """
+    API endpoint to map a specific finding to MITRE techniques.
+    
+    POST /reconnaissance/api/mitre-soc2/map/
+    {
+        "path": "/wp-admin/",
+        "url": "http://example.com/wp-admin/",
+        "service_name": "wordpress",
+        "vulnerability_type": "authentication_bypass",
+        "description": "WordPress admin panel discovered"
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        mapper = get_mitre_mapper()
+        
+        techniques = mapper.map_finding_to_mitre_techniques(data)
+        
+        return JsonResponse({
+            'success': True,
+            'finding': data,
+            'techniques': [
+                {
+                    'id': tech.technique_id,
+                    'name': tech.technique_name,
+                    'tactic': tech.tactic,
+                    'confidence': tech.confidence,
+                    'relevance': tech.relevance,
+                    'description': tech.description
+                }
+                for tech in techniques
+            ],
+            'count': len(techniques)
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in mitre_map_finding_api: {e}", exc_info=True)
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+
+def mitre_analyze_scans_api(request):
+    """
+    API endpoint to analyze all recent scans and return MITRE technique mappings.
+    
+    GET /reconnaissance/api/mitre-soc2/analyze/?limit=100
+    """
+    try:
+        limit = int(request.GET.get('limit', 100))
+        mapper = get_mitre_mapper()
+        recent_scans = []
+        
+        # Get recent scan results
+        if 'customer_eggs' in connections.databases:
+            try:
+                nmap_scans = PostgresNmap.objects.using('customer_eggs').select_related('record_id').order_by('-created_at')[:limit]
+                for scan in nmap_scans:
+                    eggrecord = scan.record_id
+                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                    
+                    # Parse open_ports if available
+                    open_ports_data = []
+                    if scan.open_ports:
+                        try:
+                            open_ports_data = json.loads(scan.open_ports) if isinstance(scan.open_ports, str) else scan.open_ports
+                        except:
+                            pass
+                    
+                    finding = {
+                        'path': '',
+                        'url': f"http://{target}",
+                        'service_name': scan.service_name or '',
+                        'description': f"{scan.scan_type} scan on {target}",
+                        'target': target,
+                        'port': scan.port,
+                        'open_ports': open_ports_data,
+                    }
+                    recent_scans.append(finding)
+            except Exception as e:
+                logger.warning(f"Could not query scans: {e}", exc_info=True)
+        
+        # Analyze scan results
+        analysis = mapper.analyze_scan_results(recent_scans) if recent_scans else {
+            'summary': {'total_techniques': 0, 'total_tactics': 0, 'high_confidence': 0, 'high_relevance': 0},
+            'techniques': [],
+            'tactics': {}
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'scans_analyzed': len(recent_scans),
+            'analysis': analysis
+        })
+    except Exception as e:
+        logger.error(f"Error in mitre_analyze_scans_api: {e}", exc_info=True)
+        return JsonResponse({
             'error': str(e)
         }, status=500)
 

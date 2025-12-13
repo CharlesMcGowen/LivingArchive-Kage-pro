@@ -40,39 +40,51 @@ def daemon_get_eggrecords(request, personality):
             # Handle Ryu scan requests (distinguish between scans and assessments)
             if personality == 'ryu' and scan_type == 'ryu_port_scan':
                 # Get eggrecords that need Ryu Nmap scanning
+                # Only return eggrecords that have NOT been scanned within the last 24 hours
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
-                        AND n.scan_type = 'ryu_port_scan'
                     WHERE e.alive = true
-                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
+                        WHERE n.record_id_id = e.id
+                        AND n.scan_type = 'ryu_port_scan'
+                        AND n.created_at > NOW() - INTERVAL '24 hours'
+                    )
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
                 
             elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
+                # Only return eggrecords that have NOT been scanned within the last 24 hours
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
-                        AND n.scan_type = 'kage_port_scan'
                     WHERE e.alive = true
-                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
+                        WHERE n.record_id_id = e.id
+                        AND n.scan_type = 'kage_port_scan'
+                        AND n.created_at > NOW() - INTERVAL '24 hours'
+                    )
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
                 
             elif personality == 'kaze':
                 # Get eggrecords that need high-speed Nmap scanning
+                # Only return eggrecords that have NOT been scanned within the last 24 hours
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
-                        AND n.scan_type = 'kaze_port_scan'
                     WHERE e.alive = true
-                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
+                        WHERE n.record_id_id = e.id
+                        AND n.scan_type = 'kaze_port_scan'
+                        AND n.created_at > NOW() - INTERVAL '24 hours'
+                    )
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
@@ -219,6 +231,24 @@ def daemon_submit_scan(request, personality):
         
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
+            # Check for very recent duplicate scans (within last hour) to prevent race conditions
+            # This is a safety check in addition to the 24-hour check in daemon_get_eggrecords
+            cursor.execute("""
+                SELECT COUNT(*) as recent_scan_count
+                FROM customer_eggs_eggrecords_general_models_nmap n
+                WHERE n.record_id_id = %s
+                AND n.scan_type = %s
+                AND n.created_at > NOW() - INTERVAL '1 hour'
+            """, [eggrecord_id, scan_type])
+            recent_count = cursor.fetchone()[0]
+            
+            if recent_count > 0:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Domain has been scanned very recently (within last hour). Found {recent_count} recent scan(s). Skipping duplicate.',
+                    'skip_reason': 'very_recent_scan_exists'
+                }, status=409)  # 409 Conflict
+            
             # Generate MD5 hash
             import hashlib
             scan_data_str = f"{target}:{eggrecord_id}:{timezone.now().isoformat()}"

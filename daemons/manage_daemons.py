@@ -20,6 +20,11 @@ DAEMONS = {
         'pid_file': PID_DIR / 'kage_daemon.pid',
         'name': 'Kage'
     },
+    'kaze': {
+        'script': DAEMON_DIR / 'kaze_daemon.py',
+        'pid_file': PID_DIR / 'kaze_daemon.pid',
+        'name': 'Kaze'
+    },
     'kumo': {
         'script': DAEMON_DIR / 'kumo_daemon.py',
         'pid_file': PID_DIR / 'kumo_daemon.pid',
@@ -220,7 +225,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: manage_daemons.py <action> [daemon_name]")
         print("Actions: start, stop, pause, resume, status, restart")
-        print("Daemons: kage, kumo, ryu, suzu, all")
+        print("Daemons: kage, kaze, kumo, ryu, suzu, all")
         sys.exit(1)
     
     action = sys.argv[1].lower()

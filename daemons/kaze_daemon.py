@@ -55,8 +55,8 @@ class KazeDaemon:
     def _init_scanner(self):
         """Initialize Nmap scanner"""
         try:
-            from kage.nmap_scanner import get_kage_scanner
-            self.scanner = get_kage_scanner(parallel_enabled=True)
+            from kaze.nmap_scanner import get_kaze_scanner
+            self.scanner = get_kaze_scanner(parallel_enabled=True)
             logger.info("✅ Kaze Nmap scanner initialized")
         except Exception as e:
             logger.error(f"❌ Failed to initialize scanner: {e}")

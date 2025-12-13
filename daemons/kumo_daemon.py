@@ -26,11 +26,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-DJANGO_API_BASE = os.getenv('DJANGO_API_BASE', 'http://127.0.0.1:9000')
-PID_FILE = Path('/tmp/kumo_daemon.pid')
-SPIDER_INTERVAL = int(os.getenv('KUMO_SPIDER_INTERVAL', '45'))
-MAX_SPIDERS_PER_CYCLE = int(os.getenv('KUMO_MAX_SPIDERS', '3'))
+# Load agent configuration
+from daemons.config_loader import AgentConfig
+config = AgentConfig('kumo')
+
+# Configuration from config file or environment variables
+DJANGO_API_BASE = config.get_server_url()
+PID_FILE = config.get_pid_file()
+SPIDER_INTERVAL = config.get_spider_interval(45)
+MAX_SPIDERS_PER_CYCLE = config.get_max_spiders_per_cycle(3)
 
 
 class KumoDaemon:
@@ -41,6 +45,7 @@ class KumoDaemon:
         self.paused = False  # Pause state
         self.pid = os.getpid()
         self.spider = None
+        self.config = config  # Store config reference
         self._current_task = None  # Track current work for graceful pause
         self._retry_count = 0  # Retry counter for exponential backoff
         self._init_spider()
@@ -57,14 +62,17 @@ class KumoDaemon:
     
     def _get_eggrecords(self):
         """Get eggrecords to spider from Django API with exponential backoff retry"""
-        max_retries = 5
-        base_wait = 2  # Base wait time in seconds
+        retry_config = self.config.get_retry_config()
+        timeout_config = self.config.get_timeout_config()
+        max_retries = retry_config['max_retries']
+        base_wait = retry_config['base_wait']
+        max_wait = retry_config['max_wait']
         
         for attempt in range(max_retries):
             try:
-                url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/kumo/eggrecords/"
-                params = {'limit': MAX_SPIDERS_PER_CYCLE}
-                response = requests.get(url, params=params, timeout=10)
+                url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/kumo/eggrecords/"
+                params = {'limit': self.config.get_max_spiders_per_cycle(3)}
+                response = requests.get(url, params=params, timeout=timeout_config['api_timeout'])
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -78,7 +86,7 @@ class KumoDaemon:
             except requests.exceptions.RequestException as e:
                 self._retry_count = attempt + 1
                 if attempt < max_retries - 1:
-                    wait_time = min(base_wait ** (attempt + 1), 60)  # Exponential backoff, max 60s
+                    wait_time = min(base_wait ** (attempt + 1), max_wait)  # Exponential backoff
                     logger.warning(f"API error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue
@@ -93,13 +101,14 @@ class KumoDaemon:
     def _submit_spider_result(self, eggrecord_id, target, result):
         """Submit spider result to Django API"""
         try:
-            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/kumo/spider/"
+            timeout_config = self.config.get_timeout_config()
+            url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/kumo/spider/"
             data = {
                 'eggrecord_id': eggrecord_id,
                 'target': target,
                 'result': result
             }
-            response = requests.post(url, json=data, timeout=30)
+            response = requests.post(url, json=data, timeout=timeout_config['submit_timeout'])
             
             if response.status_code == 200:
                 result_data = response.json()
@@ -166,7 +175,7 @@ class KumoDaemon:
                 
                 if not self.spider:
                     logger.warning("⚠️  Spider not available, waiting...")
-                    time.sleep(SPIDER_INTERVAL)
+                    time.sleep(self.config.get_spider_interval(45))
                     continue
                 
                 # Get eggrecords to spider
@@ -174,7 +183,7 @@ class KumoDaemon:
                 
                 if not eggrecords:
                     logger.debug("No eggrecords to spider, waiting...")
-                    time.sleep(SPIDER_INTERVAL)
+                    time.sleep(self.config.get_spider_interval(45))
                     continue
                 
                 logger.info(f"📋 Found {len(eggrecords)} eggrecords to spider")
@@ -223,7 +232,7 @@ class KumoDaemon:
                     logger.info(f"✅ Completed {spidered} spiders this cycle")
                 
                 # Wait before next cycle
-                time.sleep(SPIDER_INTERVAL)
+                time.sleep(self.config.get_spider_interval(45))
                 
             except KeyboardInterrupt:
                 logger.info("⚠️  Spider loop interrupted")
@@ -243,8 +252,9 @@ class KumoDaemon:
         
         # Write PID file
         try:
-            PID_FILE.write_text(str(self.pid))
-            logger.info(f"📝 PID file written: {PID_FILE} (PID: {self.pid})")
+            pid_file = self.config.get_pid_file()
+            pid_file.write_text(str(self.pid))
+            logger.info(f"📝 PID file written: {pid_file} (PID: {self.pid})")
         except Exception as e:
             logger.warning(f"Could not write PID file: {e}")
         
@@ -267,8 +277,9 @@ class KumoDaemon:
         
         # Remove PID file
         try:
-            if PID_FILE.exists():
-                PID_FILE.unlink()
+            pid_file = self.config.get_pid_file()
+            if pid_file.exists():
+                pid_file.unlink()
         except Exception as e:
             logger.warning(f"Could not remove PID file: {e}")
 
@@ -302,9 +313,10 @@ if __name__ == '__main__':
     signal.signal(signal.SIGUSR2, signal_handler)  # Resume
     
     # Check if already running
-    if PID_FILE.exists():
+    pid_file = config.get_pid_file()
+    if pid_file.exists():
         try:
-            old_pid = int(PID_FILE.read_text().strip())
+            old_pid = int(pid_file.read_text().strip())
             # Check if process is actually running
             try:
                 os.kill(old_pid, 0)  # Signal 0 just checks if process exists
@@ -312,7 +324,7 @@ if __name__ == '__main__':
                 sys.exit(1)
             except ProcessLookupError:
                 # Process doesn't exist, remove stale PID file
-                PID_FILE.unlink()
+                pid_file.unlink()
                 logger.info("Removed stale PID file")
         except Exception as e:
             logger.warning(f"Error checking PID file: {e}")

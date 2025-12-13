@@ -28,6 +28,9 @@
         <div class="label">Recent Scans</div>
         <div class="value">{{ recent_scans_24h|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
+        {% if last_scan_time %}
+        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 3px;">Last: {{ last_scan_time|date:"Y-m-d H:i" }}</div>
+        {% endif %}
     </div>
     <div class="stat-card">
         <div class="label">Total Scans</div>

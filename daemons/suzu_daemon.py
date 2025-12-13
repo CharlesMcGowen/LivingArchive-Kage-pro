@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Suzu Daemon - Standalone Directory Enumeration Service
-======================================================
+Suzu Daemon - Standalone Directory Enumeration Service with Full Heuristics
+===========================================================================
 Runs as an independent process, communicates with Django via API.
-Uses ffuf, gobuster, and dirsearch for directory enumeration.
+Uses SuzuDirectoryEnumerator with:
+- Priority scoring
+- CMS detection
+- Vector DB weighted paths
+- Learned patterns from Kumo
+- Technology fingerprint correlation
 """
 
 import os
@@ -13,14 +18,18 @@ import signal
 import logging
 import requests
 import json
-import subprocess
 from pathlib import Path
 
 # Add project root to path (for isolated repo)
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-# Configure logging
+# Also add /app to path (for Docker container)
+if '/app' not in sys.path:
+    sys.path.insert(0, '/app')
+
+# Configure logging FIRST (before Django setup that might use logger)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [SUZU] %(levelname)s: %(message)s',
@@ -28,34 +37,87 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-DJANGO_API_BASE = os.getenv('DJANGO_API_BASE', 'http://127.0.0.1:9000')
-PID_FILE = Path('/tmp/suzu_daemon.pid')
-ENUM_INTERVAL = int(os.getenv('SUZU_ENUM_INTERVAL', '60'))
-MAX_ENUMS_PER_CYCLE = int(os.getenv('SUZU_MAX_ENUMS', '2'))
+# Setup Django for SuzuDirectoryEnumerator (optional - enumerator will handle it if needed)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+try:
+    import django
+    django.setup()
+    logger.debug("✅ Django setup complete")
+except Exception as e:
+    # Django setup is optional - SuzuDirectoryEnumerator will handle it
+    logger.debug(f"Django setup skipped (will be handled by enumerator): {e}")
+
+# Load agent configuration
+from daemons.config_loader import AgentConfig
+config = AgentConfig('suzu')
+
+# Configuration from config file or environment variables
+DJANGO_API_BASE = config.get_server_url()
+PID_FILE = config.get_pid_file()
+ENUM_INTERVAL = config.get_enum_interval(60)
+MAX_ENUMS_PER_CYCLE = config.get_max_enums_per_cycle(2)
 
 
 class SuzuDaemon:
-    """Standalone Suzu daemon process for directory enumeration"""
+    """Standalone Suzu daemon process for directory enumeration with full heuristics"""
     
     def __init__(self):
         self.running = False
         self.paused = False  # Pause state
         self.pid = os.getpid()
+        self.config = config  # Store config reference
         self._current_task = None  # Track current work for graceful pause
         self._retry_count = 0  # Retry counter for exponential backoff
-        self._wordlist_path = Path('/opt/dirsearch/db/dicc.txt')  # Default wordlist
+        
+        # Progress tracking for dashboard
+        self.progress = {
+            'status': 'idle',  # 'idle', 'enumerating', 'processing', 'completed'
+            'current_target': None,
+            'current_eggrecord_id': None,
+            'current_step': None,  # 'cms_detection', 'vector_query', 'enumeration', 'scoring'
+            'progress_percent': 0,
+            'cycle_number': 0,
+            'enumerated_this_cycle': 0,
+            'total_in_queue': 0,
+            'paths_found': 0,
+            'cms_detected': None,
+            'started_at': None,
+            'estimated_completion': None
+        }
+        
+        # Initialize SuzuDirectoryEnumerator with full heuristics
+        try:
+            # Ensure suzu module is importable
+            suzu_path = project_root / 'suzu'
+            if str(suzu_path.parent) not in sys.path:
+                sys.path.insert(0, str(suzu_path.parent))
+            
+            from suzu.directory_enumerator import SuzuDirectoryEnumerator
+            self.enumerator = SuzuDirectoryEnumerator(parallel_enabled=True)
+            logger.info("✅ SuzuDirectoryEnumerator initialized with full heuristics")
+        except ImportError as e:
+            logger.error(f"❌ Failed to import SuzuDirectoryEnumerator: {e}")
+            logger.debug(f"Python path: {sys.path[:5]}")
+            logger.debug(f"Project root: {project_root}")
+            logger.debug(f"Suzu path exists: {(project_root / 'suzu').exists()}")
+            self.enumerator = None
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize SuzuDirectoryEnumerator: {e}", exc_info=True)
+            self.enumerator = None
         
     def _get_eggrecords(self):
         """Get eggrecords to enumerate from Django API with exponential backoff retry"""
-        max_retries = 5
-        base_wait = 2  # Base wait time in seconds
+        retry_config = self.config.get_retry_config()
+        timeout_config = self.config.get_timeout_config()
+        max_retries = retry_config['max_retries']
+        base_wait = retry_config['base_wait']
+        max_wait = retry_config['max_wait']
         
         for attempt in range(max_retries):
             try:
-                url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/suzu/eggrecords/"
-                params = {'limit': MAX_ENUMS_PER_CYCLE}
-                response = requests.get(url, params=params, timeout=10)
+                url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/suzu/eggrecords/"
+                params = {'limit': self.config.get_max_enums_per_cycle(2)}
+                response = requests.get(url, params=params, timeout=timeout_config['api_timeout'])
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -69,7 +131,7 @@ class SuzuDaemon:
             except requests.exceptions.RequestException as e:
                 self._retry_count = attempt + 1
                 if attempt < max_retries - 1:
-                    wait_time = min(base_wait ** (attempt + 1), 60)  # Exponential backoff, max 60s
+                    wait_time = min(base_wait ** (attempt + 1), max_wait)  # Exponential backoff
                     logger.warning(f"API error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue
@@ -81,189 +143,104 @@ class SuzuDaemon:
         
         return []
     
-    def _run_dirsearch(self, target_url: str):
-        """Run dirsearch for directory enumeration"""
-        try:
-            # Use dirsearch (Python-based, already in Docker)
-            cmd = [
-                'python3', '/opt/dirsearch/dirsearch.py',
-                '-u', target_url,
-                '-e', 'php,html,js,txt,json,xml',
-                '--random-agent',
-                '--timeout', '10',
-                '--max-time', '300',  # 5 minute max
-                '--format', 'json',
-                '--quiet'
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=320  # Slightly longer than max-time
-            )
-            
-            if result.returncode == 0:
-                # Parse dirsearch JSON output
-                try:
-                    output = json.loads(result.stdout)
-                    paths = output.get('results', [])
-                    return {
-                        'success': True,
-                        'tool': 'dirsearch',
-                        'paths_found': len(paths),
-                        'paths': paths[:100],  # Limit to 100 paths
-                        'raw_output': result.stdout[:1000]  # First 1000 chars
-                    }
-                except json.JSONDecodeError:
-                    # Fallback: parse text output
-                    lines = result.stdout.split('\n')
-                    paths = [line.strip() for line in lines if line.strip() and 'Status:' in line]
-                    return {
-                        'success': True,
-                        'tool': 'dirsearch',
-                        'paths_found': len(paths),
-                        'paths': paths[:100],
-                        'raw_output': result.stdout[:1000]
-                    }
-            else:
-                return {
-                    'success': False,
-                    'error': f"dirsearch failed: {result.stderr[:200]}",
-                    'tool': 'dirsearch'
-                }
-        except subprocess.TimeoutExpired:
-            return {
-                'success': False,
-                'error': 'dirsearch timeout',
-                'tool': 'dirsearch'
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e),
-                'tool': 'dirsearch'
-            }
-    
-    def _run_ffuf(self, target_url: str):
-        """Run ffuf for directory enumeration (if available)"""
-        # Try to find ffuf in common locations
-        ffuf_paths = [
-            os.path.expanduser('~/bin/ffuf'),
-            '/usr/local/bin/ffuf',
-            '/usr/bin/ffuf',
-            'ffuf'  # Fallback to PATH
-        ]
-        ffuf_cmd = None
-        for path in ffuf_paths:
-            expanded = os.path.expanduser(path) if '~' in path else path
-            if expanded == 'ffuf':
-                # Check PATH
-                result = subprocess.run(['which', 'ffuf'], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    ffuf_cmd = 'ffuf'
-                    break
-            elif os.path.exists(expanded) and os.access(expanded, os.X_OK):
-                ffuf_cmd = expanded
-                break
+    def _enumerate_target(self, eggrecord_id: str, target: str):
+        """
+        Perform directory enumeration on target using full heuristics system.
         
-        if not ffuf_cmd:
-            return {'success': False, 'error': 'ffuf not found', 'tool': 'ffuf'}
+        Args:
+            eggrecord_id: UUID of the eggrecord
+            target: Target domain/subdomain
+        
+        Returns:
+            Dictionary with enumeration results including priority scores
+        """
+        if not self.enumerator:
+            return {
+                'success': False,
+                'error': 'SuzuDirectoryEnumerator not initialized'
+            }
         
         try:
-            # Check if ffuf is available
-            result = subprocess.run([ffuf_cmd, '-V'], capture_output=True, timeout=5)
-            if result.returncode != 0:
-                return {'success': False, 'error': 'ffuf not available', 'tool': 'ffuf'}
-            
-            # Run ffuf
-            cmd = [
-                ffuf_cmd,
-                '-u', f"{target_url}/FUZZ",
-                '-w', str(self._wordlist_path),
-                '-t', '20',  # 20 threads
-                '-timeout', '10',
-                '-mc', '200,204,301,302,307,401,403',
-                '-o', '-',  # JSON output to stdout
-                '-of', 'json'
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300
+            # Use SuzuDirectoryEnumerator with full heuristics
+            # This includes: CMS detection, priority scoring, vector DB, learned patterns
+            result = self.enumerator.enumerate_egg_record(
+                egg_record_id=eggrecord_id,
+                write_to_db=False,  # We'll submit via API instead
+                egg_record_data={'subDomain': target, 'domainname': target}
             )
             
-            if result.returncode == 0:
-                try:
-                    output = json.loads(result.stdout)
-                    results = output.get('results', [])
-                    return {
-                        'success': True,
-                        'tool': 'ffuf',
-                        'paths_found': len(results),
-                        'paths': [r.get('url', '') for r in results[:100]],
-                        'raw_output': result.stdout[:1000]
-                    }
-                except json.JSONDecodeError:
-                    return {
-                        'success': False,
-                        'error': 'ffuf JSON parse error',
-                        'tool': 'ffuf'
-                    }
+            if result.get('success'):
+                logger.info(f"✅ Enumeration completed: {result.get('paths_discovered', 0)} paths found")
+                return result
             else:
-                return {
-                    'success': False,
-                    'error': f"ffuf failed: {result.stderr[:200]}",
-                    'tool': 'ffuf'
-                }
-        except subprocess.TimeoutExpired:
-            return {
-                'success': False,
-                'error': 'ffuf timeout',
-                'tool': 'ffuf'
-            }
-        except FileNotFoundError:
-            return {
-                'success': False,
-                'error': 'ffuf not found',
-                'tool': 'ffuf'
-            }
+                logger.warning(f"❌ Enumeration failed: {result.get('error', 'Unknown error')}")
+                return result
+                
         except Exception as e:
+            logger.error(f"❌ Error during enumeration: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e),
-                'tool': 'ffuf'
+                'error': str(e)
             }
     
-    def _enumerate_target(self, target_url: str):
-        """Perform directory enumeration on target"""
-        # Try dirsearch first (most reliable)
-        result = self._run_dirsearch(target_url)
-        
-        # If dirsearch fails, try ffuf
-        if not result.get('success'):
-            logger.debug(f"dirsearch failed, trying ffuf for {target_url}")
-            result = self._run_ffuf(target_url)
-        
-        return result
+    def _update_progress_api(self):
+        """Update progress via API for dashboard"""
+        try:
+            url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/suzu/progress/"
+            # Add timestamp
+            progress_data = self.progress.copy()
+            progress_data['started_at'] = progress_data.get('started_at')
+            if progress_data.get('started_at'):
+                progress_data['started_at'] = progress_data['started_at']
+            
+            response = requests.post(url, json=progress_data, timeout=5)
+            if response.status_code == 200:
+                logger.debug("Progress updated via API")
+        except Exception as e:
+            logger.debug(f"Could not update progress API: {e}")
     
     def _submit_enum_result(self, eggrecord_id, target, result):
-        """Submit enumeration result to Django API"""
+        """
+        Submit enumeration result to Django API with full heuristics data.
+        
+        The result from SuzuDirectoryEnumerator includes:
+        - paths_discovered: List of discovered paths with metadata
+        - cms_detection: CMS detection results
+        - priority_scores: Priority scores for each path
+        - enumeration_metadata: Tool used, wordlist, etc.
+        """
         try:
-            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/enumeration/"
+            timeout_config = self.config.get_timeout_config()
+            url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/enumeration/"
+            
+            # Extract enumeration results from SuzuDirectoryEnumerator output
+            enumeration_results = result.get('enumeration_results', [])
+            paths_discovered = result.get('paths_discovered', [])
+            cms_detection = result.get('cms_detection')
+            enumeration_metadata = result.get('enumeration_metadata', {})
+            
+            # Prepare data for API
             data = {
                 'eggrecord_id': eggrecord_id,
                 'target': target,
-                'result': result
+                'result': {
+                    'success': result.get('success', False),
+                    'paths_discovered': len(paths_discovered),
+                    'enumeration_results': enumeration_results,  # Full results with priority scores
+                    'cms_detection': cms_detection,
+                    'enumeration_metadata': enumeration_metadata,
+                    'duration': result.get('duration', 0),
+                    'results_stored': result.get('results_stored', 0)
+                }
             }
-            response = requests.post(url, json=data, timeout=30)
+            
+            response = requests.post(url, json=data, timeout=timeout_config['submit_timeout'])
             
             if response.status_code == 200:
                 result_data = response.json()
                 if result_data.get('success'):
-                    logger.info(f"✅ Enumeration result submitted for {target}")
+                    paths_inserted = result_data.get('paths_inserted', 0)
+                    logger.info(f"✅ Enumeration result submitted for {target}: {paths_inserted} paths with heuristics")
                     return True
                 else:
                     logger.warning(f"API returned error: {result_data.get('error')}")
@@ -323,50 +300,104 @@ class SuzuDaemon:
                 cycle_count += 1
                 logger.info(f"🔄 Suzu enumeration cycle #{cycle_count}")
                 
+                # Update progress
+                self.progress['cycle_number'] = cycle_count
+                self.progress['status'] = 'enumerating'
+                self.progress['started_at'] = time.time()
+                self._update_progress_api()
+                
                 # Get eggrecords to enumerate
                 eggrecords = self._get_eggrecords()
                 
                 if not eggrecords:
                     logger.debug("No eggrecords to enumerate, waiting...")
-                    time.sleep(ENUM_INTERVAL)
+                    self.progress['status'] = 'idle'
+                    self.progress['current_target'] = None
+                    self.progress['current_step'] = None
+                    self.progress['progress_percent'] = 0
+                    self._update_progress_api()
+                    time.sleep(self.config.get_enum_interval(60))
                     continue
                 
                 logger.info(f"📋 Found {len(eggrecords)} eggrecords to enumerate")
+                self.progress['total_in_queue'] = len(eggrecords)
+                self.progress['enumerated_this_cycle'] = 0
+                self._update_progress_api()
                 
                 # Enumerate each eggrecord
                 enumerated = 0
-                for eggrecord in eggrecords:
+                total_targets = len(eggrecords)
+                
+                for idx, eggrecord in enumerate(eggrecords):
                     if not self.running or self.paused:
                         break
                     
                     try:
                         eggrecord_id = str(eggrecord['id'])
                         target = eggrecord.get('subDomain') or eggrecord.get('domainname', 'unknown')
-                        target_url = f"http://{target}" if not target.startswith('http') else target
+                        
+                        if not target or target == 'unknown':
+                            logger.warning(f"⚠️  Skipping eggrecord {eggrecord_id}: no valid target")
+                            continue
                         
                         # Mark current task
                         self._current_task = eggrecord_id
                         
-                        logger.info(f"🔔 Enumerating directories for {target_url} ({eggrecord_id})")
+                        # Update progress
+                        self.progress['current_target'] = target
+                        self.progress['current_eggrecord_id'] = eggrecord_id
+                        self.progress['current_step'] = 'starting'
+                        self.progress['progress_percent'] = int((idx / total_targets) * 100)
                         
-                        # Perform enumeration
-                        result = self._enumerate_target(target_url)
+                        logger.info(f"🔔 Enumerating directories for {target} ({eggrecord_id}) with full heuristics")
+                        
+                        # Update progress - CMS detection phase
+                        self.progress['current_step'] = 'cms_detection'
+                        self.progress['progress_percent'] = int(((idx + 0.2) / total_targets) * 100)
+                        self._update_progress_api()
+                        
+                        # Perform enumeration using full heuristics system
+                        self.progress['current_step'] = 'enumeration'
+                        self.progress['progress_percent'] = int(((idx + 0.5) / total_targets) * 100)
+                        self._update_progress_api()
+                        
+                        result = self._enumerate_target(eggrecord_id, target)
                         
                         if result.get('success'):
-                            # Submit result to API
+                            # Update progress - scoring phase
+                            self.progress['current_step'] = 'scoring'
+                            self.progress['progress_percent'] = int(((idx + 0.8) / total_targets) * 100)
+                            self._update_progress_api()
+                            
+                            # Submit result to API (includes priority scores, CMS detection, etc.)
                             self._submit_enum_result(
                                 eggrecord_id,
-                                target_url,
+                                target,
                                 result
                             )
                             enumerated += 1
+                            self.progress['enumerated_this_cycle'] = enumerated
+                            
+                            # Log heuristics summary
+                            cms_detection = result.get('cms_detection')
+                            if cms_detection:
+                                self.progress['cms_detected'] = cms_detection.get('cms')
+                                logger.info(f"🔍 CMS detected: {cms_detection.get('cms')} (confidence: {cms_detection.get('confidence', 0):.2f})")
+                            
+                            paths_count = result.get('paths_discovered', [])
+                            if isinstance(paths_count, list):
+                                self.progress['paths_found'] += len(paths_count)
+                                logger.info(f"📊 Discovered {len(paths_count)} paths with priority scores")
                         else:
-                            logger.warning(f"❌ Enumeration failed for {target_url}: {result.get('error', 'Unknown error')}")
+                            logger.warning(f"❌ Enumeration failed for {target}: {result.get('error', 'Unknown error')}")
                         
-                        # Clear current task
+                        # Clear current task and progress
                         self._current_task = None
+                        self.progress['current_step'] = 'completed'
+                        self.progress['progress_percent'] = int(((idx + 1) / total_targets) * 100)
+                        self._update_progress_api()
                         
-                        time.sleep(1)  # Delay between enumerations
+                        time.sleep(2)  # Delay between enumerations (slightly longer for heuristics processing)
                         
                     except Exception as e:
                         self._current_task = None
@@ -376,8 +407,22 @@ class SuzuDaemon:
                 if enumerated > 0:
                     logger.info(f"✅ Completed {enumerated} enumerations this cycle")
                 
+                # Update progress - cycle complete
+                self.progress['status'] = 'completed'
+                self.progress['current_target'] = None
+                self.progress['current_eggrecord_id'] = None
+                self.progress['current_step'] = None
+                self.progress['progress_percent'] = 100
+                self._update_progress_api()
+                
                 # Wait before next cycle
-                time.sleep(ENUM_INTERVAL)
+                time.sleep(self.config.get_enum_interval(60))
+                
+                # Reset progress for next cycle
+                self.progress['paths_found'] = 0
+                self.progress['cms_detected'] = None
+                self.progress['status'] = 'idle'
+                self._update_progress_api()
                 
             except KeyboardInterrupt:
                 logger.info("⚠️  Enumeration loop interrupted")
@@ -397,8 +442,9 @@ class SuzuDaemon:
         
         # Write PID file
         try:
-            PID_FILE.write_text(str(self.pid))
-            logger.info(f"📝 PID file written: {PID_FILE} (PID: {self.pid})")
+            pid_file = self.config.get_pid_file()
+            pid_file.write_text(str(self.pid))
+            logger.info(f"📝 PID file written: {pid_file} (PID: {self.pid})")
         except Exception as e:
             logger.warning(f"Could not write PID file: {e}")
         
@@ -421,8 +467,9 @@ class SuzuDaemon:
         
         # Remove PID file
         try:
-            if PID_FILE.exists():
-                PID_FILE.unlink()
+            pid_file = self.config.get_pid_file()
+            if pid_file.exists():
+                pid_file.unlink()
         except Exception as e:
             logger.warning(f"Could not remove PID file: {e}")
 
@@ -456,9 +503,10 @@ if __name__ == '__main__':
     signal.signal(signal.SIGUSR2, signal_handler)  # Resume
     
     # Check if already running
-    if PID_FILE.exists():
+    pid_file = config.get_pid_file()
+    if pid_file.exists():
         try:
-            old_pid = int(PID_FILE.read_text().strip())
+            old_pid = int(pid_file.read_text().strip())
             # Check if process is actually running
             try:
                 os.kill(old_pid, 0)  # Signal 0 just checks if process exists
@@ -466,7 +514,7 @@ if __name__ == '__main__':
                 sys.exit(1)
             except ProcessLookupError:
                 # Process doesn't exist, remove stale PID file
-                PID_FILE.unlink()
+                pid_file.unlink()
                 logger.info("Removed stale PID file")
         except Exception as e:
             logger.warning(f"Error checking PID file: {e}")

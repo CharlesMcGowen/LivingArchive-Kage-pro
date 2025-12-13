@@ -27,13 +27,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-DJANGO_API_BASE = os.getenv('DJANGO_API_BASE', 'http://127.0.0.1:9000')
-PID_FILE = Path('/tmp/ryu_daemon.pid')
-SCAN_INTERVAL = int(os.getenv('RYU_SCAN_INTERVAL', '30'))
-ASSESSMENT_INTERVAL = int(os.getenv('RYU_ASSESSMENT_INTERVAL', '60'))
-MAX_SCANS_PER_CYCLE = int(os.getenv('RYU_MAX_SCANS', '5'))
-MAX_ASSESSMENTS_PER_CYCLE = int(os.getenv('RYU_MAX_ASSESSMENTS', '2'))
+# Load agent configuration
+from daemons.config_loader import AgentConfig
+config = AgentConfig('ryu')
+
+# Configuration from config file or environment variables
+DJANGO_API_BASE = config.get_server_url()
+PID_FILE = config.get_pid_file()
+SCAN_INTERVAL = config.get_scan_interval(30)
+ASSESSMENT_INTERVAL = config.get_assessment_interval(60)
+MAX_SCANS_PER_CYCLE = config.get_max_scans_per_cycle(5)
+MAX_ASSESSMENTS_PER_CYCLE = config.get_max_assessments_per_cycle(2)
 
 
 class RyuDaemon:
@@ -45,6 +49,7 @@ class RyuDaemon:
         self.pid = os.getpid()
         self.scanner = None
         self.llm_enhancer = None
+        self.config = config  # Store config reference
         self._current_task = None  # Track current work for graceful pause
         self._retry_count = 0  # Retry counter for exponential backoff
         self._init_scanner()
@@ -75,14 +80,17 @@ class RyuDaemon:
     
     def _get_eggrecords_to_scan(self):
         """Get eggrecords to scan from Django API with exponential backoff retry"""
-        max_retries = 5
-        base_wait = 2
+        retry_config = self.config.get_retry_config()
+        timeout_config = self.config.get_timeout_config()
+        max_retries = retry_config['max_retries']
+        base_wait = retry_config['base_wait']
+        max_wait = retry_config['max_wait']
         
         for attempt in range(max_retries):
             try:
-                url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/ryu/eggrecords/"
-                params = {'limit': MAX_SCANS_PER_CYCLE, 'scan_type': 'ryu_port_scan'}
-                response = requests.get(url, params=params, timeout=10)
+                url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/ryu/eggrecords/"
+                params = {'limit': self.config.get_max_scans_per_cycle(5), 'scan_type': 'ryu_port_scan'}
+                response = requests.get(url, params=params, timeout=timeout_config['api_timeout'])
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -92,7 +100,7 @@ class RyuDaemon:
             except requests.exceptions.RequestException as e:
                 self._retry_count = attempt + 1
                 if attempt < max_retries - 1:
-                    wait_time = min(base_wait ** (attempt + 1), 60)
+                    wait_time = min(base_wait ** (attempt + 1), max_wait)
                     logger.warning(f"API error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue
@@ -105,14 +113,17 @@ class RyuDaemon:
     
     def _get_eggrecords_to_assess(self):
         """Get eggrecords to assess from Django API with exponential backoff retry"""
-        max_retries = 5
-        base_wait = 2
+        retry_config = self.config.get_retry_config()
+        timeout_config = self.config.get_timeout_config()
+        max_retries = retry_config['max_retries']
+        base_wait = retry_config['base_wait']
+        max_wait = retry_config['max_wait']
         
         for attempt in range(max_retries):
             try:
-                url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/ryu/eggrecords/"
-                params = {'limit': MAX_ASSESSMENTS_PER_CYCLE}
-                response = requests.get(url, params=params, timeout=10)
+                url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/ryu/eggrecords/"
+                params = {'limit': self.config.get_max_assessments_per_cycle(2)}
+                response = requests.get(url, params=params, timeout=timeout_config['api_timeout'])
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -122,7 +133,7 @@ class RyuDaemon:
             except requests.exceptions.RequestException as e:
                 self._retry_count = attempt + 1
                 if attempt < max_retries - 1:
-                    wait_time = min(base_wait ** (attempt + 1), 60)
+                    wait_time = min(base_wait ** (attempt + 1), max_wait)
                     logger.warning(f"API error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue
@@ -136,14 +147,15 @@ class RyuDaemon:
     def _submit_scan_result(self, eggrecord_id, target, result):
         """Submit scan result to Django API"""
         try:
-            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/ryu/scan/"
+            timeout_config = self.config.get_timeout_config()
+            url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/ryu/scan/"
             data = {
                 'eggrecord_id': eggrecord_id,
                 'target': target,
                 'scan_type': 'ryu_port_scan',
                 'result': result
             }
-            response = requests.post(url, json=data, timeout=30)
+            response = requests.post(url, json=data, timeout=timeout_config['submit_timeout'])
             
             if response.status_code == 200:
                 result_data = response.json()
@@ -157,12 +169,13 @@ class RyuDaemon:
     def _submit_assessment(self, eggrecord_id, assessment_data):
         """Submit threat assessment to Django API"""
         try:
-            url = f"{DJANGO_API_BASE}/reconnaissance/api/daemon/assessment/"
+            timeout_config = self.config.get_timeout_config()
+            url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/assessment/"
             data = {
                 'eggrecord_id': eggrecord_id,
                 **assessment_data
             }
-            response = requests.post(url, json=data, timeout=30)
+            response = requests.post(url, json=data, timeout=timeout_config['submit_timeout'])
             
             if response.status_code == 200:
                 result_data = response.json()
@@ -255,14 +268,16 @@ class RyuDaemon:
                 current_time = time.time()
                 
                 # Perform Nmap scans
-                if current_time - last_scan_time >= SCAN_INTERVAL and self.scanner:
+                scan_interval = self.config.get_scan_interval(30)
+                if current_time - last_scan_time >= scan_interval and self.scanner:
                     logger.info(f"🔄 Ryu scan cycle #{cycle_count}")
                     eggrecords = self._get_eggrecords_to_scan()
                     
                     if eggrecords:
                         logger.info(f"📋 Found {len(eggrecords)} eggrecords to scan")
                         scanned = 0
-                        for eggrecord in eggrecords[:MAX_SCANS_PER_CYCLE]:
+                        max_scans = self.config.get_max_scans_per_cycle(5)
+                        for eggrecord in eggrecords[:max_scans]:
                             if not self.running or self.paused:
                                 break
                             
@@ -295,14 +310,16 @@ class RyuDaemon:
                     last_scan_time = current_time
                 
                 # Perform threat assessments
-                if current_time - last_assessment_time >= ASSESSMENT_INTERVAL:
+                assessment_interval = self.config.get_assessment_interval(60)
+                if current_time - last_assessment_time >= assessment_interval:
                     logger.info(f"🔄 Ryu assessment cycle #{cycle_count}")
                     eggrecords = self._get_eggrecords_to_assess()
                     
                     if eggrecords:
                         logger.info(f"📋 Found {len(eggrecords)} eggrecords to assess")
                         assessed = 0
-                        for eggrecord in eggrecords[:MAX_ASSESSMENTS_PER_CYCLE]:
+                        max_assessments = self.config.get_max_assessments_per_cycle(2)
+                        for eggrecord in eggrecords[:max_assessments]:
                             if not self.running or self.paused:
                                 break
                             
@@ -335,7 +352,9 @@ class RyuDaemon:
                     last_assessment_time = current_time
                 
                 # Sleep if no work done
-                if current_time - last_scan_time < SCAN_INTERVAL and current_time - last_assessment_time < ASSESSMENT_INTERVAL:
+                scan_interval = self.config.get_scan_interval(30)
+                assessment_interval = self.config.get_assessment_interval(60)
+                if current_time - last_scan_time < scan_interval and current_time - last_assessment_time < assessment_interval:
                     time.sleep(5)  # Short sleep when waiting
                 
             except KeyboardInterrupt:
@@ -356,8 +375,9 @@ class RyuDaemon:
         
         # Write PID file
         try:
-            PID_FILE.write_text(str(self.pid))
-            logger.info(f"📝 PID file written: {PID_FILE} (PID: {self.pid})")
+            pid_file = self.config.get_pid_file()
+            pid_file.write_text(str(self.pid))
+            logger.info(f"📝 PID file written: {pid_file} (PID: {self.pid})")
         except Exception as e:
             logger.warning(f"Could not write PID file: {e}")
         
@@ -380,8 +400,9 @@ class RyuDaemon:
         
         # Remove PID file
         try:
-            if PID_FILE.exists():
-                PID_FILE.unlink()
+            pid_file = self.config.get_pid_file()
+            if pid_file.exists():
+                pid_file.unlink()
         except Exception as e:
             logger.warning(f"Could not remove PID file: {e}")
 
@@ -415,15 +436,16 @@ if __name__ == '__main__':
     signal.signal(signal.SIGUSR2, signal_handler)  # Resume
     
     # Check if already running
-    if PID_FILE.exists():
+    pid_file = config.get_pid_file()
+    if pid_file.exists():
         try:
-            old_pid = int(PID_FILE.read_text().strip())
+            old_pid = int(pid_file.read_text().strip())
             try:
                 os.kill(old_pid, 0)
                 logger.error(f"❌ Daemon already running (PID: {old_pid})")
                 sys.exit(1)
             except ProcessLookupError:
-                PID_FILE.unlink()
+                pid_file.unlink()
                 logger.info("Removed stale PID file")
         except Exception as e:
             logger.warning(f"Error checking PID file: {e}")

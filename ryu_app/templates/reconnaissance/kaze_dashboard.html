@@ -28,6 +28,9 @@
         <div class="label">Recent Scans</div>
         <div class="value">{{ recent_scans_24h|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
+        {% if last_scan_time %}
+        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 3px;">Last: {{ last_scan_time|date:"Y-m-d H:i" }}</div>
+        {% endif %}
     </div>
     <div class="stat-card">
         <div class="label">Total Scans</div>
@@ -129,8 +132,15 @@
 {% if scans.has_other_pages %}
 <div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap;">
     {% if scans.has_previous %}
-        <a href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
-        <a href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+        {% with query_params=request.GET.urlencode %}
+            {% if query_params %}
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+            {% else %}
+                <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
+                <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+            {% endif %}
+        {% endwith %}
     {% endif %}
     
     <span style="color: #94a3b8; padding: 8px 12px;">
@@ -138,8 +148,15 @@
     </span>
     
     {% if scans.has_next %}
-        <a href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
-        <a href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
+        {% with query_params=request.GET.urlencode %}
+            {% if query_params %}
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
+            {% else %}
+                <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
+                <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
+            {% endif %}
+        {% endwith %}
     {% endif %}
 </div>
 {% endif %}
