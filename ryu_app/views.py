@@ -580,24 +580,88 @@ def kaze_dashboard(request):
         'color': '#10b981'
     }
     
+    # Get filter parameters from query string
+    filter_target = request.GET.get('target', '').strip()
+    filter_port = request.GET.get('port', '').strip()
+    filter_service = request.GET.get('service', '').strip()
+    filter_status = request.GET.get('status', '').strip()
+    filter_date_from = request.GET.get('date_from', '').strip()
+    filter_date_to = request.GET.get('date_to', '').strip()
+    
+    # Store filters in context for form persistence
+    context['filters'] = {
+        'target': filter_target,
+        'port': filter_port,
+        'service': filter_service,
+        'status': filter_status,
+        'date_from': filter_date_from,
+        'date_to': filter_date_to
+    }
+    
     scan_records = []
     
     # Try to use PostgreSQL database if available
+    total_eggrecord_scans = 0
     if 'customer_eggs' in connections.databases:
         try:
-            # Get detailed scan records using Django ORM
+            # Get scans using Django ORM with filtering
             nmap_scans = PostgresNmap.objects.using('customer_eggs').filter(
                 scan_type='kaze_port_scan'
-            ).select_related('record_id').order_by('-created_at')
+            ).select_related('record_id')
             
-            for scan in nmap_scans:
-                eggrecord = scan.record_id
-                target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+            # Apply filters
+            if filter_target:
+                nmap_scans = nmap_scans.filter(target__icontains=filter_target)
+            if filter_port:
+                try:
+                    port_int = int(filter_port)
+                    nmap_scans = nmap_scans.filter(port=port_int)
+                except ValueError:
+                    # If port is not a number, try string match
+                    nmap_scans = nmap_scans.filter(port__icontains=filter_port)
+            if filter_service:
+                nmap_scans = nmap_scans.filter(service_name__icontains=filter_service)
+            if filter_status:
+                nmap_scans = nmap_scans.filter(scan_status=filter_status)
+            if filter_date_from:
+                try:
+                    from_date = datetime.strptime(filter_date_from, '%Y-%m-%d')
+                    if timezone.is_naive(from_date):
+                        from_date = timezone.make_aware(from_date)
+                    nmap_scans = nmap_scans.filter(created_at__gte=from_date)
+                except ValueError:
+                    pass
+            if filter_date_to:
+                try:
+                    to_date = datetime.strptime(filter_date_to, '%Y-%m-%d')
+                    if timezone.is_naive(to_date):
+                        to_date = timezone.make_aware(to_date)
+                    # Add 1 day to include the entire end date
+                    to_date = to_date + timedelta(days=1)
+                    nmap_scans = nmap_scans.filter(created_at__lt=to_date)
+                except ValueError:
+                    pass
+            
+            nmap_scans = nmap_scans.order_by('-created_at')
+            
+            # Get total count first (for display)
+            total_eggrecord_scans = nmap_scans.count()
+            
+            # Limit to 1000 records for performance (pagination will handle displaying 25 at a time)
+            for scan in nmap_scans[:1000]:
+                try:
+                    eggrecord = scan.record_id
+                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                except Exception as e:
+                    # Fallback to scan.target if record_id access fails
+                    target = scan.target or 'unknown'
+                    eggrecord = None
+                
                 serialized_row = {
                     'id': str(scan.id),
-                    'record_id_id': str(scan.record_id.id),
+                    'record_id_id': str(scan.record_id.id) if scan.record_id else '',
                     'target': target,
-                    'domainname': eggrecord.domainname or '',
+                    'domainname': eggrecord.domainname if eggrecord else (scan.target or ''),
                     'scan_type': scan.scan_type,
                     'scan_status': scan.scan_status,
                     'port': str(scan.port) if scan.port else '',
@@ -661,7 +725,8 @@ def kaze_dashboard(request):
         scans_page = paginator.page(paginator.num_pages)
     
     context['scans'] = scans_page
-    context['total_scans'] = len(scan_records)
+    context['total_scans'] = total_eggrecord_scans if total_eggrecord_scans > 0 else len(scan_records)
+    context['eggrecord_scans'] = len(scan_records)
     
     # Get recent scans (last 24 hours) using Django ORM
     recent_scans_24h = 0
@@ -1069,6 +1134,628 @@ def learning_techniques_api(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+@csrf_exempt
+def suzu_upload_paths_api(request):
+    """
+    API: Upload wordlist paths to vector database.
+    Weight is automatically calculated based on CMS detection and path patterns.
+    
+    POST /reconnaissance/api/suzu/paths/upload/
+    {
+        "wordlist_name": "wordpress.fuzz.txt",
+        "cms_name": "wordpress",  # Optional, auto-detected from paths
+        "paths": ["/wp-admin/", "/wp-content/", ...],
+        "source": "seclist",
+        "category": "admin"  # Optional
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        wordlist_name = data.get('wordlist_name')
+        paths = data.get('paths', [])
+        cms_name = data.get('cms_name')
+        # Weight is now automatically calculated - ignore user input
+        source = data.get('source', 'uploaded')
+        category = data.get('category')
+        
+        if not wordlist_name or not paths:
+            return JsonResponse({
+                'success': False,
+                'error': 'wordlist_name and paths required'
+            }, status=400)
+        
+        # Add project root to path so we can import suzu
+        import sys
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
+        # Initialize vector store
+        try:
+            from suzu.vector_path_store import VectorPathStore
+            vector_store = VectorPathStore()
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Vector database not available: {str(e)}'
+            }, status=503)
+        
+        # Upload paths with per-path CMS detection and weight calculation
+        # cms_name is used as hint for per-path detection if provided
+        result = vector_store.upload_paths(
+            paths=paths,
+            wordlist_name=wordlist_name,
+            cms_name=cms_name,  # Used as fallback/hint only
+            default_weight=0.4,  # Used as fallback only
+            source=source,
+            category=category,
+            per_path_detection=True,  # Enable per-path detection
+            filename_cms_hint=cms_name  # Use provided CMS as hint
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'uploaded': result['uploaded'],
+            'failed': result['failed'],
+            'collection': result['collection'],
+            'total_dim': result['total_dim']
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error uploading paths: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def suzu_similar_paths_api(request):
+    """
+    API: Find similar paths using vector matching.
+    
+    POST /reconnaissance/api/suzu/paths/similar/
+    {
+        "query_path": "/admin",
+        "cms_name": "wordpress",  # Optional
+        "limit": 10,
+        "threshold": 0.7,
+        "category": "admin"  # Optional
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        query_path = data.get('query_path')
+        
+        if not query_path:
+            return JsonResponse({
+                'success': False,
+                'error': 'query_path required'
+            }, status=400)
+        
+        try:
+            from suzu.vector_path_store import VectorPathStore
+            vector_store = VectorPathStore()
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Vector database not available: {str(e)}'
+            }, status=503)
+        
+        similar = vector_store.find_similar_paths(
+            query_path=query_path,
+            cms_name=data.get('cms_name'),
+            limit=int(data.get('limit', 10)),
+            threshold=float(data.get('threshold', 0.7)),
+            category=data.get('category')
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'query_path': query_path,
+            'similar_paths': similar,
+            'count': len(similar)
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error finding similar paths: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def suzu_weighted_paths_api(request):
+    """
+    API: Get weighted paths for Suzu enumeration.
+    
+    GET /reconnaissance/api/suzu/paths/weighted/?cms_name=wordpress&limit=100&min_weight=0.2
+    """
+    try:
+        cms_name = request.GET.get('cms_name')
+        limit = int(request.GET.get('limit', 100))
+        min_weight = float(request.GET.get('min_weight', 0.2))
+        
+        try:
+            from suzu.vector_path_store import VectorPathStore
+            vector_store = VectorPathStore()
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Vector database not available: {str(e)}'
+            }, status=503)
+        
+        weighted_paths = vector_store.get_weighted_paths(
+            cms_name=cms_name,
+            limit=limit,
+            min_weight=min_weight
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'paths': weighted_paths,
+            'count': len(weighted_paths),
+            'cms_name': cms_name,
+            'min_weight': min_weight
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting weighted paths: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def suzu_get_progress(request):
+    """
+    API: Get Suzu daemon progress (for dashboard)
+    
+    GET /reconnaissance/api/suzu/progress/
+    """
+    # Import from daemon_api module
+    import ryu_app.daemon_api as daemon_api_module
+    return JsonResponse({
+        'success': True,
+        'progress': daemon_api_module._suzu_progress
+    })
+
+
+@csrf_exempt
+def suzu_upload_file_api(request):
+    """
+    API: Upload wordlist file via multipart/form-data.
+    Weight is automatically calculated based on CMS detection and path patterns.
+    
+    POST /reconnaissance/api/suzu/paths/upload-file/
+    
+    Form data:
+        - file: The wordlist file (.txt, .fuzz, etc.)
+        - cms_name: Optional CMS name (auto-inferred from filename and path content)
+        - wordlist_name: Optional wordlist name (default: filename)
+        - source: Optional source (default: 'uploaded')
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        if 'file' not in request.FILES:
+            return JsonResponse({
+                'success': False,
+                'error': 'No file provided'
+            }, status=400)
+        
+        uploaded_file = request.FILES['file']
+        cms_name = request.POST.get('cms_name', '').strip() or None
+        wordlist_name = request.POST.get('wordlist_name', '').strip() or uploaded_file.name
+        # Weight is now automatically calculated - ignore user input
+        source = request.POST.get('source', 'uploaded')
+        
+        # Read file content
+        paths = []
+        for line in uploaded_file:
+            line = line.decode('utf-8', errors='ignore').strip()
+            if not line or line.startswith('#'):
+                continue
+            if not line.startswith('/'):
+                line = '/' + line
+            paths.append(line)
+        
+        if not paths:
+            # #region agent log
+            import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1325","message":"No paths found in file","data":{},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+            # #endregion
+            return JsonResponse({
+                'success': False,
+                'error': 'No valid paths found in file'
+            }, status=400)
+        
+        # #region agent log
+        import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1330","message":"Paths loaded, starting upload","data":{"path_count":len(paths)},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+        # #endregion
+        
+        # Add project root to path so we can import suzu
+        import sys
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
+        # Get filename CMS hint for per-path detection
+        filename_cms_hint = None
+        try:
+            from suzu.upload_wordlist import infer_cms_from_filename
+            if not cms_name:
+                filename_cms_hint = infer_cms_from_filename(uploaded_file.name)
+            else:
+                filename_cms_hint = cms_name
+        except ImportError as e:
+            # #region agent log
+            import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1345","message":"Import error for infer_cms_from_filename","data":{"error":str(e)},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+            # #endregion
+            # Fallback if import fails
+            pass
+        
+        # Upload to vector store with per-path detection
+        try:
+            from suzu.vector_path_store import VectorPathStore
+            vector_store = VectorPathStore()
+            # #region agent log
+            import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1355","message":"VectorPathStore initialized, calling upload_paths","data":{"filename_cms_hint":filename_cms_hint},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+            # #endregion
+        except Exception as e:
+            # #region agent log
+            import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1360","message":"VectorPathStore initialization failed","data":{"error":str(e)},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+            # #endregion
+            logger.error(f"Failed to initialize vector store: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Vector database not available: {str(e)}'
+            }, status=503)
+        
+        # Check for duplicate paths before uploading
+        path_check = vector_store.check_existing_paths(paths, cms_name, wordlist_name)
+        new_paths = path_check['new']
+        duplicate_count = path_check['existing_count']
+        
+        # Upload only new paths with per-path CMS detection and weight calculation
+        result = None
+        if new_paths:
+            result = vector_store.upload_paths(
+                paths=new_paths,
+                wordlist_name=wordlist_name,
+                cms_name=cms_name,  # Used as fallback only
+                default_weight=0.4,  # Used as fallback only
+                source=source,
+                category=None,
+                per_path_detection=True,  # Enable per-path detection
+                filename_cms_hint=filename_cms_hint  # Pass filename hint
+            )
+        else:
+            # All paths are duplicates
+            result = {'uploaded': 0, 'failed': 0, 'collection': vector_store.collection_name}
+        
+        # #region agent log
+        import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1382","message":"Upload completed","data":{"uploaded":result.get('uploaded',0),"failed":result.get('failed',0),"duplicate_count":duplicate_count,"result":result},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+        # #endregion
+        
+        # Save upload history
+        upload_record = None
+        try:
+            from ryu_app.models import WordlistUpload
+            import hashlib
+            
+            # Calculate file hash for deduplication
+            file_content = '\n'.join(paths).encode('utf-8')
+            file_hash = hashlib.sha256(file_content).hexdigest()
+            
+            upload_record = WordlistUpload.objects.create(
+                wordlist_name=wordlist_name,
+                filename=uploaded_file.name,
+                cms_name=cms_name,
+                source=source,
+                paths_count=len(paths),
+                uploaded_count=result.get('uploaded', 0),
+                failed_count=result.get('failed', 0),
+                file_hash=file_hash
+            )
+        except Exception as e:
+            logger.error(f"Failed to save upload history: {e}", exc_info=True)
+        
+        response = JsonResponse({
+            'success': True,
+            'uploaded': result.get('uploaded', 0),
+            'failed': result.get('failed', 0),
+            'duplicate_count': duplicate_count,
+            'wordlist_name': wordlist_name,
+            'cms_name': cms_name,
+            'paths_count': len(paths),
+            'new_paths_count': len(new_paths),
+            'upload_id': str(upload_record.id) if upload_record else None
+        })
+        return response
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        # #region agent log
+        import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1396","message":"Exception in suzu_upload_file_api","data":{"error":str(e),"error_type":type(e).__name__,"traceback":error_trace},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+        # #endregion
+        logger.error(f"Error uploading file: {e}\n{error_trace}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': f'Upload failed: {str(e)}. Check server logs for details.'
+        }, status=500)
+
+
+@csrf_exempt
+def suzu_upload_directory_api(request):
+    """
+    API: Upload wordlist files from a directory path.
+    Weight is automatically calculated for each file based on CMS detection and path patterns.
+    
+    POST /reconnaissance/api/suzu/paths/upload-directory/
+    
+    JSON body:
+        {
+            "directory_path": "/path/to/directory",
+            "recursive": true,
+            "source": "seclist"
+        }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        directory_path = data.get('directory_path')
+        recursive = data.get('recursive', False)
+        # Weight is now automatically calculated - ignore user input
+        source = data.get('source', 'seclist')
+        
+        if not directory_path:
+            return JsonResponse({
+                'success': False,
+                'error': 'directory_path required'
+            }, status=400)
+        
+        dir_path = Path(directory_path)
+        if not dir_path.exists():
+            return JsonResponse({
+                'success': False,
+                'error': f'Directory does not exist: {directory_path}'
+            }, status=400)
+        
+        if not dir_path.is_dir():
+            return JsonResponse({
+                'success': False,
+                'error': f'Path is not a directory: {directory_path}'
+            }, status=400)
+        
+        # Find wordlist files
+        wordlist_extensions = ['.txt', '.fuzz', '.lst', '.wordlist']
+        files_to_upload = []
+        
+        if recursive:
+            for ext in wordlist_extensions:
+                files_to_upload.extend(dir_path.rglob(f'*{ext}'))
+        else:
+            for ext in wordlist_extensions:
+                files_to_upload.extend(dir_path.glob(f'*{ext}'))
+        
+        if not files_to_upload:
+            return JsonResponse({
+                'success': False,
+                'error': f'No wordlist files found in {directory_path}'
+            }, status=400)
+        
+        # Add project root to path so we can import suzu
+        import sys
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
+        # Import upload functions
+        from suzu.upload_wordlist import upload_wordlist_file, infer_cms_from_filename
+        
+        # Initialize vector store
+        try:
+            from suzu.vector_path_store import VectorPathStore
+            vector_store = VectorPathStore()
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Vector database not available: {str(e)}'
+            }, status=503)
+        
+        # Process each file
+        results = []
+        total_uploaded = 0
+        total_failed = 0
+        
+        for file_path in files_to_upload:
+            # CMS and weight are now automatically detected from filename and path content
+            result = upload_wordlist_file(
+                file_path=file_path,
+                cms_name=None,  # Auto-infer from filename and paths
+                wordlist_name=file_path.name,
+                default_weight=0.4,  # Will be overridden by automatic calculation
+                source=source
+            )
+            
+            if result:
+                results.append({
+                    'file': file_path.name,
+                    'cms_name': cms_name,
+                    'uploaded': result['uploaded'],
+                    'failed': result['failed']
+                })
+                total_uploaded += result['uploaded']
+                total_failed += result['failed']
+        
+        return JsonResponse({
+            'success': True,
+            'files_processed': len(files_to_upload),
+            'total_uploaded': total_uploaded,
+            'total_failed': total_failed,
+            'results': results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading directory: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def suzu_upload_history_api(request):
+    """
+    API: Get upload history for Suzu wordlist uploads.
+    
+    GET /reconnaissance/api/suzu/upload-history/
+    Query params:
+        - limit: Maximum number of records to return (default: 50)
+        - wordlist_name: Filter by wordlist name (optional)
+        - cms_name: Filter by CMS name (optional)
+    """
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'GET method required'}, status=405)
+    
+    try:
+        from ryu_app.models import WordlistUpload
+        
+        limit = int(request.GET.get('limit', 50))
+        wordlist_name_filter = request.GET.get('wordlist_name', '').strip()
+        cms_name_filter = request.GET.get('cms_name', '').strip()
+        
+        uploads = WordlistUpload.objects.all()
+        
+        if wordlist_name_filter:
+            uploads = uploads.filter(wordlist_name__icontains=wordlist_name_filter)
+        if cms_name_filter:
+            uploads = uploads.filter(cms_name__icontains=cms_name_filter)
+        
+        uploads = uploads[:limit]
+        
+        data = [{
+            'id': str(upload.id),
+            'wordlist_name': upload.wordlist_name,
+            'filename': upload.filename,
+            'cms_name': upload.cms_name,
+            'source': upload.source,
+            'paths_count': upload.paths_count,
+            'uploaded_count': upload.uploaded_count,
+            'failed_count': upload.failed_count,
+            'created_at': upload.created_at.isoformat(),
+            'created_at_display': upload.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        } for upload in uploads]
+        
+        return JsonResponse({'success': True, 'uploads': data, 'count': len(data)})
+    except Exception as e:
+        logger.error(f"Error getting upload history: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def suzu_check_duplicates_api(request):
+    """
+    API: Check for duplicate wordlist or paths before upload.
+    
+    POST /reconnaissance/api/suzu/check-duplicates/
+    JSON body:
+        {
+            "wordlist_name": "wordpress.txt",
+            "paths": ["/wp-admin/", "/wp-content/"],
+            "cms_name": "wordpress"  // optional
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "results": {
+                "wordlist_exists": false,
+                "existing_upload": null,
+                "duplicate_paths": [],
+                "new_paths": [...],
+                "duplicate_count": 0,
+                "new_count": 2
+            }
+        }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        from ryu_app.models import WordlistUpload
+        
+        data = json.loads(request.body)
+        wordlist_name = data.get('wordlist_name')
+        paths = data.get('paths', [])
+        cms_name = data.get('cms_name')
+        
+        results = {
+            'wordlist_exists': False,
+            'existing_upload': None,
+            'duplicate_paths': [],
+            'new_paths': paths,
+            'duplicate_count': 0,
+            'new_count': len(paths)
+        }
+        
+        # Check if wordlist_name already exists
+        if wordlist_name:
+            existing_upload = WordlistUpload.objects.filter(wordlist_name=wordlist_name).order_by('-created_at').first()
+            if existing_upload:
+                results['wordlist_exists'] = True
+                results['existing_upload'] = {
+                    'id': str(existing_upload.id),
+                    'created_at': existing_upload.created_at.isoformat(),
+                    'uploaded_count': existing_upload.uploaded_count,
+                    'paths_count': existing_upload.paths_count
+                }
+        
+        # Check for duplicate paths in Vector DB
+        if paths:
+            try:
+                from suzu.vector_path_store import VectorPathStore
+                vector_store = VectorPathStore()
+                path_check = vector_store.check_existing_paths(paths, cms_name, wordlist_name)
+                results['duplicate_paths'] = path_check['existing']
+                results['new_paths'] = path_check['new']
+                results['duplicate_count'] = path_check['existing_count']
+                results['new_count'] = path_check['new_count']
+            except Exception as e:
+                logger.warning(f"Error checking duplicate paths in Vector DB: {e}")
+                # Continue without path checking if Vector DB is unavailable
+        
+        return JsonResponse({'success': True, 'results': results})
+    except Exception as e:
+        logger.error(f"Error checking duplicates: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 def learning_ip_effectiveness_api(request):
     """API: Get technique effectiveness by IP/ASN/CIDR using Django ORM"""
     try:
@@ -1220,19 +1907,72 @@ def kage_dashboard(request):
         'color': '#f59e0b'
     }
     
+    # Get filter parameters from query string
+    filter_target = request.GET.get('target', '').strip()
+    filter_port = request.GET.get('port', '').strip()
+    filter_service = request.GET.get('service', '').strip()
+    filter_status = request.GET.get('status', '').strip()
+    filter_date_from = request.GET.get('date_from', '').strip()
+    filter_date_to = request.GET.get('date_to', '').strip()
+    
+    # Store filters in context for form persistence
+    context['filters'] = {
+        'target': filter_target,
+        'port': filter_port,
+        'service': filter_service,
+        'status': filter_status,
+        'date_from': filter_date_from,
+        'date_to': filter_date_to
+    }
+    
     scans_from_eggrecords = []
     total_eggrecord_scans = 0
     
     if 'customer_eggs' in connections.databases:
         try:
-            # Get scans using Django ORM
+            # Get scans using Django ORM with filtering
             nmap_scans = PostgresNmap.objects.using('customer_eggs').filter(
                 scan_type__in=['kage_port_scan']
-            ).order_by('-created_at')
+            )
             
+            # Apply filters
+            if filter_target:
+                nmap_scans = nmap_scans.filter(target__icontains=filter_target)
+            if filter_port:
+                try:
+                    port_int = int(filter_port)
+                    nmap_scans = nmap_scans.filter(port=port_int)
+                except ValueError:
+                    # If port is not a number, try string match
+                    nmap_scans = nmap_scans.filter(port__icontains=filter_port)
+            if filter_service:
+                nmap_scans = nmap_scans.filter(service_name__icontains=filter_service)
+            if filter_status:
+                nmap_scans = nmap_scans.filter(scan_status=filter_status)
+            if filter_date_from:
+                try:
+                    from_date = datetime.strptime(filter_date_from, '%Y-%m-%d')
+                    if timezone.is_naive(from_date):
+                        from_date = timezone.make_aware(from_date)
+                    nmap_scans = nmap_scans.filter(created_at__gte=from_date)
+                except ValueError:
+                    pass
+            if filter_date_to:
+                try:
+                    to_date = datetime.strptime(filter_date_to, '%Y-%m-%d')
+                    if timezone.is_naive(to_date):
+                        to_date = timezone.make_aware(to_date)
+                    # Add 1 day to include the entire end date
+                    to_date = to_date + timedelta(days=1)
+                    nmap_scans = nmap_scans.filter(created_at__lt=to_date)
+                except ValueError:
+                    pass
+            
+            nmap_scans = nmap_scans.order_by('-created_at')
             total_eggrecord_scans = nmap_scans.count()
             
-            for scan in nmap_scans:
+            # Limit to 1000 records for performance (pagination will handle displaying 25 at a time)
+            for scan in nmap_scans[:1000]:
                 row_dict = {
                     'id': str(scan.id),
                     'target': scan.target or '',
@@ -1361,7 +2101,7 @@ def kumo_dashboard(request):
 
 
 def suzu_dashboard(request):
-    """Suzu (Bell) dashboard - Directory enumeration results"""
+    """Suzu (Bell) dashboard - Directory enumeration results with heuristics"""
     context = {
         'personality': 'suzu',
         'title': 'Suzu Directory Enumerator Database',
@@ -1373,50 +2113,88 @@ def suzu_dashboard(request):
     
     if 'customer_eggs' in connections.databases:
         try:
-            # Use Django ORM with Q objects for OR conditions
-            suzu_requests = PostgresRequestMetadata.objects.using('customer_eggs').filter(
-                Q(user_agent__icontains='Suzu') | Q(session_id__startswith='suzu-')
-            ).select_related('record_id').order_by('-created_at')
-            
-            for req in suzu_requests:
-                eggrecord = req.record_id
-                target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+            # Try to use DirectoryEnumerationResult model (new format with heuristics)
+            try:
+                from artificial_intelligence.customer_eggs_eggrecords_general_models.models import DirectoryEnumerationResult
                 
-                row_dict = {
-                    'id': str(req.id),
-                    'record_id_id': str(req.record_id.id),
-                    'target': target,
-                    'domainname': eggrecord.domainname or '',
-                    'target_url': req.url or '',
-                    'request_method': req.method or 'GET',
-                    'response_status': req.status_code or 0,
-                    'response_headers': '',  # Not in model yet
-                    'response_time_ms': req.response_time_ms,
-                    'user_agent': req.user_agent or '',
-                    'session_id': req.session_id or '',
-                    'timestamp': req.timestamp or req.created_at,
-                    'created_at': req.created_at,
-                    'updated_at': req.updated_at or req.created_at
-                }
-                serialized_row = _serialize_row(row_dict)
+                dir_results = DirectoryEnumerationResult.objects.using('customer_eggs').select_related().order_by('-created_at')[:1000]
                 
-                enumeration_metadata = {
-                    'tool': 'unknown',
-                    'enumeration_type': 'wordlist',
-                }
+                seen_targets = {}
+                for result in dir_results:
+                    egg_record_id = str(result.egg_record_id)
+                    
+                    # Get target from eggrecord if not already cached
+                    if egg_record_id not in seen_targets:
+                        try:
+                            eggrecord = EggRecord.objects.using('customer_eggs').get(id=result.egg_record_id)
+                            target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                            seen_targets[egg_record_id] = target
+                        except:
+                            target = 'unknown'
+                            seen_targets[egg_record_id] = target
+                    else:
+                        target = seen_targets[egg_record_id]
+                    
+                    # Build result dict with heuristics data
+                    row_dict = {
+                        'id': str(result.id),
+                        'target': target,
+                        'path': result.discovered_path or '',
+                        'status': result.path_status_code or 0,
+                        'priority_score': float(result.priority_score) if result.priority_score else 0.0,
+                        'priority_factors': result.priority_factors if isinstance(result.priority_factors, dict) else (json.loads(result.priority_factors) if isinstance(result.priority_factors, str) else {}),
+                        'cms_detected': result.detected_cms,
+                        'cms_version': result.detected_cms_version,
+                        'cms_confidence': float(result.cms_detection_confidence) if result.cms_detection_confidence else 0.0,
+                        'tool': result.enumeration_tool or 'unknown',
+                        'wordlist': result.wordlist_used or 'default',
+                        'content_length': result.path_content_length,
+                        'content_type': result.path_content_type,
+                        'response_time': result.path_response_time_ms,
+                        'created_at': result.created_at,
+                        'egg_record_id': egg_record_id
+                    }
+                    serialized = _serialize_row(row_dict)
+                    serialized['full_data_json'] = json.dumps(serialized)
+                    enumeration_results.append(serialized)
                 
-                enumeration_results.append({
-                    'id': str(req.id),
-                    'target': target,
-                    'path': req.url or '',
-                    'status': req.status_code or 0,
-                    'tool': enumeration_metadata.get('tool', 'unknown'),
-                    'enumeration_type': enumeration_metadata.get('enumeration_type', 'wordlist'),
-                    'created_at': req.created_at,
-                    'full_data_json': json.dumps(serialized_row)
-                })
+                # Get total count
+                context['total_enumerations'] = DirectoryEnumerationResult.objects.using('customer_eggs').count()
+                
+            except ImportError:
+                # Fallback: use RequestMetadata (legacy format)
+                logger.debug("DirectoryEnumerationResult model not available, using RequestMetadata")
+                suzu_requests = PostgresRequestMetadata.objects.using('customer_eggs').filter(
+                    Q(user_agent__icontains='Suzu') | Q(session_id__startswith='suzu-')
+                ).select_related('record_id').order_by('-created_at')[:100]
+                
+                for req in suzu_requests:
+                    eggrecord = req.record_id
+                    target = eggrecord.subDomain or eggrecord.domainname or 'unknown'
+                    
+                    row_dict = {
+                        'id': str(req.id),
+                        'target': target,
+                        'path': req.url or '',
+                        'status': req.status_code or 0,
+                        'priority_score': 0.0,
+                        'cms_detected': None,
+                        'tool': 'legacy',
+                        'wordlist': 'unknown',
+                        'created_at': req.created_at,
+                        'egg_record_id': str(req.record_id.id)
+                    }
+                    serialized = _serialize_row(row_dict)
+                    serialized['full_data_json'] = json.dumps(serialized)
+                    enumeration_results.append(serialized)
+                
+                context['total_enumerations'] = PostgresRequestMetadata.objects.using('customer_eggs').filter(
+                    Q(user_agent__icontains='Suzu') | Q(session_id__startswith='suzu-')
+                ).count()
+                
         except Exception as e:
             logger.warning(f"Could not query Suzu enumeration results: {e}", exc_info=True)
+            context['total_enumerations'] = 0
     
     # Pagination
     paginator = Paginator(enumeration_results, 25)
@@ -1431,16 +2209,8 @@ def suzu_dashboard(request):
     context['enumeration_results'] = results_page
     context['enumeration_count'] = len(enumeration_results)
     
-    # Get total enumeration count using Django ORM
-    if 'customer_eggs' in connections.databases:
-        try:
-            context['total_enumerations'] = PostgresRequestMetadata.objects.using('customer_eggs').filter(
-                Q(user_agent__icontains='Suzu') | Q(session_id__startswith='suzu-')
-            ).count()
-        except Exception:
-            context['total_enumerations'] = 0
-    else:
-        context['total_enumerations'] = 0
+    if 'total_enumerations' not in context:
+        context['total_enumerations'] = len(enumeration_results)
     
     return render(request, 'reconnaissance/suzu_dashboard.html', context)
 
@@ -1573,6 +2343,11 @@ def ryu_dashboard(request):
     return render(request, 'reconnaissance/ryu_dashboard.html', context)
 
 
+def surge_dashboard(request):
+    """Surge Nuclei Scanner - Redirect to Surge app dashboard"""
+    return redirect('surge:dashboard_about')
+
+
 def monitoring_dashboard(request):
     """Comprehensive monitoring dashboard for all personalities"""
     context = {
@@ -1601,6 +2376,84 @@ def monitoring_dashboard(request):
 
 def network_visualizer_dashboard(request):
     """Network visualizer dashboard - interactive network graph"""
+    # #region agent log
+    import json
+    import traceback
+    try:
+        from django.urls import reverse, get_resolver, NoReverseMatch
+        from django.conf import settings
+        from django.urls import get_urlconf
+        
+        # Get current URLconf
+        urlconf = get_urlconf()
+        
+        # Try to resolve the URL
+        try:
+            surge_url = reverse('surge:dashboard_about')
+            url_resolved = True
+            error_msg = None
+        except NoReverseMatch as e:
+            surge_url = None
+            url_resolved = False
+            error_msg = str(e)
+        
+        # Get resolver info
+        resolver = get_resolver()
+        namespaces = []
+        if hasattr(resolver, 'namespace_dict'):
+            namespaces = list(resolver.namespace_dict.keys())
+        
+        # Check INSTALLED_APPS
+        installed_apps = getattr(settings, 'INSTALLED_APPS', [])
+        surge_in_apps = 'surge' in installed_apps
+        
+        log_path = '/home/ego/github_public/.cursor/debug.log'
+        try:
+            import os
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'post-fix-detailed',
+                    'hypothesisId': 'A',
+                    'location': 'views.py:2271',
+                    'message': 'URL resolution test - detailed',
+                    'data': {
+                        'url_resolved': url_resolved,
+                        'resolved_url': surge_url,
+                        'error': error_msg,
+                        'available_namespaces': namespaces,
+                        'urlconf': str(urlconf),
+                        'surge_in_installed_apps': surge_in_apps,
+                        'resolver_type': type(resolver).__name__
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+        except (OSError, IOError):
+            pass  # Silently fail if we can't write logs
+    except Exception as e:
+        log_path = '/home/ego/github_public/.cursor/debug.log'
+        try:
+            import os
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'post-fix-detailed',
+                    'hypothesisId': 'A',
+                    'location': 'views.py:2271',
+                    'message': 'URL resolution test - exception during check',
+                    'data': {
+                        'error': str(e),
+                        'error_type': type(e).__name__,
+                        'traceback': traceback.format_exc()
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+        except (OSError, IOError):
+            pass  # Silently fail if we can't write logs
+    # #endregion
+    
     context = {
         'personality': 'network',
         'title': 'Network Mapping Visualizer',
@@ -2807,4 +3660,316 @@ def check_egg_queue_status_api(request, egg_id):
             'success': False,
             'error': str(e)
         })
+
+
+# ============================================================================
+# Terminal Execution API Endpoints (AI Agent Bridge)
+# ============================================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def terminal_execute_api(request):
+    """
+    API: Execute a terminal command (with optional approval workflow)
+    
+    POST /reconnaissance/api/terminal/execute/
+    
+    Request body (JSON):
+        {
+            "command": "ls -la",
+            "working_directory": "/path/to/dir",  # Optional
+            "timeout": 30,  # Optional, default: 30
+            "require_approval": true,  # Optional, default: auto-detect
+            "user_id": "user123",  # Optional
+            "session_id": "session456",  # Optional
+            "metadata": {}  # Optional
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "request_id": "cmd_1234567890_12345",
+            "status": "pending_approval" | "completed" | "failed",
+            "result": { ... }  # If executed immediately
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        data = json.loads(request.body)
+        command = data.get('command')
+        
+        if not command:
+            return JsonResponse({
+                'success': False,
+                'error': 'Command is required'
+            }, status=400)
+        
+        service = get_terminal_service()
+        
+        result = service.submit_command(
+            command=command,
+            working_directory=data.get('working_directory'),
+            timeout=data.get('timeout'),
+            require_approval=data.get('require_approval'),
+            user_id=data.get('user_id'),
+            session_id=data.get('session_id'),
+            metadata=data.get('metadata')
+        )
+        
+        return JsonResponse(result)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error in terminal_execute_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def terminal_approve_api(request, request_id):
+    """
+    API: Approve a pending command
+    
+    POST /reconnaissance/api/terminal/approve/<request_id>/
+    
+    Request body (JSON, optional):
+        {
+            "user_id": "user123"  # Optional
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "request_id": "cmd_1234567890_12345",
+            "result": { ... }
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        data = json.loads(request.body) if request.body else {}
+        service = get_terminal_service()
+        
+        result = service.approve_command(
+            request_id=request_id,
+            user_id=data.get('user_id')
+        )
+        
+        status_code = 200 if result.get('success') else 400
+        return JsonResponse(result, status=status_code)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error in terminal_approve_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def terminal_reject_api(request, request_id):
+    """
+    API: Reject a pending command
+    
+    POST /reconnaissance/api/terminal/reject/<request_id>/
+    
+    Request body (JSON, optional):
+        {
+            "user_id": "user123"  # Optional
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "request_id": "cmd_1234567890_12345",
+            "status": "rejected"
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        data = json.loads(request.body) if request.body else {}
+        service = get_terminal_service()
+        
+        result = service.reject_command(
+            request_id=request_id,
+            user_id=data.get('user_id')
+        )
+        
+        return JsonResponse(result)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error in terminal_reject_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def terminal_pending_api(request):
+    """
+    API: Get all pending approval requests
+    
+    GET /reconnaissance/api/terminal/pending/
+    
+    Returns:
+        {
+            "success": true,
+            "pending": [
+                {
+                    "request_id": "cmd_1234567890_12345",
+                    "request": { ... }
+                }
+            ]
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        service = get_terminal_service()
+        pending = service.get_pending_approvals()
+        
+        return JsonResponse({
+            'success': True,
+            'pending': pending,
+            'count': len(pending)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in terminal_pending_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def terminal_history_api(request):
+    """
+    API: Get command execution history
+    
+    GET /reconnaissance/api/terminal/history/
+    
+    Query params:
+        - limit: Number of commands to return (default: 50, max: 500)
+    
+    Returns:
+        {
+            "success": true,
+            "history": [ ... ],
+            "count": 50
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        limit = min(int(request.GET.get('limit', 50)), 500)
+        service = get_terminal_service()
+        history = service.get_command_history(limit=limit)
+        
+        return JsonResponse({
+            'success': True,
+            'history': history,
+            'count': len(history)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in terminal_history_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def terminal_stats_api(request):
+    """
+    API: Get terminal execution service statistics
+    
+    GET /reconnaissance/api/terminal/stats/
+    
+    Returns:
+        {
+            "success": true,
+            "stats": {
+                "total_commands": 100,
+                "approved_commands": 80,
+                "rejected_commands": 10,
+                "blocked_commands": 5,
+                "failed_commands": 5,
+                "pending_approvals": 2,
+                "running_commands": 1,
+                "history_size": 50
+            }
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        service = get_terminal_service()
+        stats = service.get_stats()
+        
+        return JsonResponse({
+            'success': True,
+            'stats': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in terminal_stats_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def terminal_cancel_api(request, request_id):
+    """
+    API: Cancel a running command
+    
+    POST /reconnaissance/api/terminal/cancel/<request_id>/
+    
+    Returns:
+        {
+            "success": true,
+            "request_id": "cmd_1234567890_12345",
+            "message": "Command cancelled"
+        }
+    """
+    try:
+        from .terminal_execution_service import get_terminal_service
+        
+        service = get_terminal_service()
+        result = service.cancel_command(request_id)
+        
+        status_code = 200 if result.get('success') else 404
+        return JsonResponse(result, status=status_code)
+        
+    except Exception as e:
+        logger.error(f"Error in terminal_cancel_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 

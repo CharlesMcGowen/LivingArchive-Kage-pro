@@ -45,6 +45,50 @@
 
 <h3 style="margin-bottom: 15px; color: #f59e0b;">📊 Recent Nmap Scans</h3>
 
+<!-- Search and Filter Form -->
+<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+    <form method="GET" action="" id="filterForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Target</label>
+            <input type="text" name="target" value="{{ filters.target }}" placeholder="Filter by target..." 
+                   style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+        </div>
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Port</label>
+            <input type="text" name="port" value="{{ filters.port }}" placeholder="Filter by port..." 
+                   style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+        </div>
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Service</label>
+            <input type="text" name="service" value="{{ filters.service }}" placeholder="Filter by service..." 
+                   style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+        </div>
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Status</label>
+            <select name="status" style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+                <option value="">All Statuses</option>
+                <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>Completed</option>
+                <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>Failed</option>
+                <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>Pending</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Date From</label>
+            <input type="date" name="date_from" value="{{ filters.date_from }}" 
+                   style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+        </div>
+        <div>
+            <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Date To</label>
+            <input type="date" name="date_to" value="{{ filters.date_to }}" 
+                   style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" style="padding: 8px 20px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; flex: 1;">🔍 Filter</button>
+            <a href="?" style="padding: 8px 20px; background: #64748b; color: white; border: none; border-radius: 4px; text-decoration: none; text-align: center; font-weight: 500;">Clear</a>
+        </div>
+    </form>
+</div>
+
 <div class="data-table">
     <table>
         <thead>
@@ -83,19 +127,33 @@
 </div>
 
 {% if scans.has_other_pages %}
-<div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+<div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap;">
     {% if scans.has_previous %}
-        <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">« First</a>
-        <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+        {% with query_params=request.GET.urlencode %}
+            {% if query_params %}
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page=1" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">« First</a>
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+            {% else %}
+                <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">« First</a>
+                <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+            {% endif %}
+        {% endwith %}
     {% endif %}
     
     <span style="color: #94a3b8; padding: 8px 12px;">
-        Page {{ scans.number }} of {{ scans.paginator.num_pages }} ({{ scan_count }} total)
+        Page {{ scans.number }} of {{ scans.paginator.num_pages }} ({{ total_scans }} total)
     </span>
     
     {% if scans.has_next %}
-        <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Next ›</a>
-        <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Last »</a>
+        {% with query_params=request.GET.urlencode %}
+            {% if query_params %}
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Next ›</a>
+                <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Last »</a>
+            {% else %}
+                <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Next ›</a>
+                <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #f59e0b; border-radius: 4px; text-decoration: none;">Last »</a>
+            {% endif %}
+        {% endwith %}
     {% endif %}
 </div>
 {% endif %}

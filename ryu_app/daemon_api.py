@@ -1,6 +1,6 @@
 """
-Daemon API Endpoints for Kage, Kumo, and Ryu
-===========================================
+Daemon API Endpoints for Kage, Kaze, Kumo, Ryu, and Suzu
+========================================================
 API endpoints for standalone daemon processes to interact with Django.
 """
 
@@ -24,26 +24,53 @@ def daemon_get_eggrecords(request, personality):
     API: Get eggrecords for a daemon to process
     
     Args:
-        personality: 'kage', 'kumo', or 'ryu'
+        personality: 'kage', 'kaze', 'kumo', 'ryu', or 'suzu'
         limit: Optional query param for max records (default: 10)
-        scan_type: For kage/ryu - 'kage_port_scan' or 'ryu_port_scan'
+        scan_type: For kage/kaze/ryu - 'kage_port_scan', 'kaze_port_scan', or 'ryu_port_scan'
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu', 'suzu']:
+        if personality not in ['kage', 'kaze', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality'}, status=400)
         
         limit = int(request.GET.get('limit', 10))
-        scan_type = request.GET.get('scan_type', f'{personality}_port_scan' if personality in ['kage', 'ryu'] else None)
+        scan_type = request.GET.get('scan_type', f'{personality}_port_scan' if personality in ['kage', 'kaze', 'ryu'] else None)
         
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
-            if personality == 'kage':
+            # Handle Ryu scan requests (distinguish between scans and assessments)
+            if personality == 'ryu' and scan_type == 'ryu_port_scan':
+                # Get eggrecords that need Ryu Nmap scanning
+                cursor.execute("""
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    FROM customer_eggs_eggrecords_general_models_eggrecord e
+                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
+                        AND n.scan_type = 'ryu_port_scan'
+                    WHERE e.alive = true
+                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    ORDER BY e.updated_at ASC
+                    LIMIT %s
+                """, [limit])
+                
+            elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
                         AND n.scan_type = 'kage_port_scan'
+                    WHERE e.alive = true
+                    AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
+                    ORDER BY e.updated_at ASC
+                    LIMIT %s
+                """, [limit])
+                
+            elif personality == 'kaze':
+                # Get eggrecords that need high-speed Nmap scanning
+                cursor.execute("""
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    FROM customer_eggs_eggrecords_general_models_eggrecord e
+                    LEFT JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id 
+                        AND n.scan_type = 'kaze_port_scan'
                     WHERE e.alive = true
                     AND (n.id IS NULL OR n.created_at < NOW() - INTERVAL '24 hours')
                     ORDER BY e.updated_at ASC
@@ -67,6 +94,7 @@ def daemon_get_eggrecords(request, personality):
                 
             elif personality == 'ryu':
                 # Get eggrecords that need assessment (have scan or HTTP data)
+                # Note: This is used when scan_type is NOT 'ryu_port_scan' (defaults to assessment query)
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at,
                         CASE 
@@ -164,7 +192,7 @@ def daemon_submit_scan(request, personality):
     {
         "eggrecord_id": "uuid",
         "target": "hostname",
-        "scan_type": "kage_port_scan" or "ryu_port_scan",
+        "scan_type": "kage_port_scan", "kaze_port_scan", or "ryu_port_scan",
         "result": {
             "open_ports": [...],
             "scan_command": "...",
@@ -173,7 +201,7 @@ def daemon_submit_scan(request, personality):
     }
     """
     try:
-        if personality not in ['kage', 'ryu']:
+        if personality not in ['kage', 'kaze', 'ryu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality for scan submission'}, status=400)
         
         data = json.loads(request.body)
@@ -322,67 +350,186 @@ def daemon_submit_spider(request):
 @csrf_exempt
 def daemon_submit_enumeration(request):
     """
-    API: Submit directory enumeration results from Suzu daemon
+    API: Submit directory enumeration results from Suzu daemon with full heuristics.
     
-    Expected JSON:
+    Expected JSON (new format with heuristics):
+    {
+        "eggrecord_id": "uuid",
+        "target": "domain.com",
+        "result": {
+            "success": true,
+            "paths_discovered": 10,
+            "enumeration_results": [
+                {
+                    "success": true,
+                    "paths": [
+                        {
+                            "path": "/admin",
+                            "status": 200,
+                            "size": 1234,
+                            "content_type": "text/html",
+                            "priority_score": 0.75,
+                            "priority_factors": {...}
+                        }
+                    ],
+                    "tool": "dirsearch",
+                    ...
+                }
+            ],
+            "cms_detection": {
+                "cms": "wordpress",
+                "confidence": 0.85,
+                ...
+            },
+            "enumeration_metadata": {...}
+        }
+    }
+    
+    Legacy format (backward compatible):
     {
         "eggrecord_id": "uuid",
         "target": "url",
         "result": {
-            "tool": "dirsearch" or "ffuf",
-            "paths_found": 10,
-            "paths": ["/admin", "/api", ...],
-            ...
+            "tool": "dirsearch",
+            "paths": ["/admin", "/api", ...]
         }
     }
     """
     try:
         data = json.loads(request.body)
         eggrecord_id = data.get('eggrecord_id')
-        target_url = data.get('target', 'unknown')
+        target = data.get('target', 'unknown')
         result = data.get('result', {})
         
         if not eggrecord_id:
             return JsonResponse({'success': False, 'error': 'eggrecord_id required'}, status=400)
         
-        paths = result.get('paths', [])
-        if not paths:
-            return JsonResponse({'success': False, 'error': 'No paths in result'}, status=400)
-        
         conn = connections['customer_eggs']
-        with conn.cursor() as cursor:
-            # Insert enumeration results as RequestMetadata entries
-            # Suzu uses RequestMetadata table with user_agent='Suzu' to identify enumeration results
-            for path in paths[:100]:  # Limit to 100 paths
-                full_url = urljoin(target_url, path) if isinstance(path, str) else target_url
-                cursor.execute("""
-                    INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
-                        id, record_id_id, target_url, request_method, response_status,
-                        response_time_ms, user_agent, session_id, timestamp, created_at, updated_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                    )
-                    ON CONFLICT DO NOTHING
-                """, [
-                    str(uuid.uuid4()),
-                    eggrecord_id,
-                    full_url,
-                    'GET',
-                    200,  # Assume found paths are accessible
-                    0,
-                    'Suzu/1.0',
-                    f'suzu-{eggrecord_id}',
-                    timezone.now(),
-                    timezone.now(),
-                    timezone.now()
-                ])
-            conn.commit()
+        paths_inserted = 0
+        
+        # Check if this is the new format with heuristics
+        paths_discovered = result.get('paths_discovered', [])  # This is the list of paths with priority scores
+        enumeration_results = result.get('enumeration_results', [])  # Raw tool output (for reference)
+        cms_detection = result.get('cms_detection')
+        enumeration_metadata = result.get('enumeration_metadata', {})
+        
+        if paths_discovered:
+            # New format: Store in DirectoryEnumerationResult with priority scores
+            with conn.cursor() as cursor:
+                tool = enumeration_metadata.get('tool_used') or (enumeration_results[0].get('tool') if enumeration_results else 'unknown')
+                wordlist_used = enumeration_metadata.get('wordlist_used') or 'default'
+                
+                for path_data in paths_discovered[:200]:  # Limit to 200 paths per enumeration
+                    try:
+                        # Extract path data (paths_discovered already has priority scores)
+                        if isinstance(path_data, dict):
+                            discovered_path = path_data.get('path', '')
+                            status_code = path_data.get('status', 0)
+                            content_length = path_data.get('size', 0)
+                            content_type = path_data.get('content_type', '')
+                            priority_score = path_data.get('priority_score', 0.0)
+                            priority_factors = path_data.get('priority_factors', {})
+                            response_time = path_data.get('response_time', 0.0)
+                        else:
+                            # Fallback: path_data is a string
+                            discovered_path = str(path_data)
+                            status_code = 200
+                            content_length = 0
+                            content_type = ''
+                            priority_score = 0.0
+                            priority_factors = {}
+                            response_time = 0.0
+                        
+                        if not discovered_path:
+                            continue
+                        
+                        # Extract CMS info from detection
+                        detected_cms = None
+                        detected_cms_version = None
+                        cms_detection_confidence = 0.0
+                        if cms_detection:
+                            detected_cms = cms_detection.get('cms') or cms_detection.get('cms_name')
+                            detected_cms_version = cms_detection.get('version') or cms_detection.get('cms_version')
+                            cms_detection_confidence = cms_detection.get('confidence', 0.0)
+                        
+                        # Insert into DirectoryEnumerationResult
+                        cursor.execute("""
+                            INSERT INTO customer_eggs_eggrecords_general_models_directoryenumerationresult (
+                                id, egg_record_id, discovered_path, path_status_code,
+                                path_content_length, path_content_type, path_response_time_ms,
+                                detected_cms, detected_cms_version, cms_detection_confidence,
+                                priority_score, priority_factors,
+                                enumeration_tool, wordlist_used, enumeration_depth,
+                                created_at, updated_at
+                            ) VALUES (
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            )
+                            ON CONFLICT DO NOTHING
+                        """, [
+                            str(uuid.uuid4()),
+                            eggrecord_id,
+                            discovered_path,
+                            status_code if status_code else None,
+                            content_length if content_length else None,
+                            content_type if content_type else None,
+                            response_time if response_time else None,
+                            detected_cms,
+                            detected_cms_version,
+                            cms_detection_confidence,
+                            priority_score,
+                            json.dumps(priority_factors) if priority_factors else None,
+                            tool,
+                            wordlist_used,
+                            1,  # enumeration_depth
+                            timezone.now(),
+                            timezone.now()
+                        ])
+                        paths_inserted += 1
+                    except Exception as e:
+                        logger.warning(f"Error inserting path {path_data}: {e}")
+                        continue
+                
+                conn.commit()
+        else:
+            # Legacy format: backward compatibility
+            paths = result.get('paths', [])
+            if not paths:
+                return JsonResponse({'success': False, 'error': 'No paths in result'}, status=400)
             
-            return JsonResponse({
-                'success': True,
-                'message': f'Enumeration result submitted for {target_url}',
-                'paths_inserted': len(paths)
-            })
+            with conn.cursor() as cursor:
+                # Store as RequestMetadata for backward compatibility
+                for path in paths[:100]:
+                    full_url = urljoin(target, path) if isinstance(path, str) else target
+                    cursor.execute("""
+                        INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
+                            id, record_id_id, target_url, request_method, response_status,
+                            response_time_ms, user_agent, session_id, timestamp, created_at, updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        )
+                        ON CONFLICT DO NOTHING
+                    """, [
+                        str(uuid.uuid4()),
+                        eggrecord_id,
+                        full_url,
+                        'GET',
+                        200,
+                        0,
+                        'Suzu/1.0',
+                        f'suzu-{eggrecord_id}',
+                        timezone.now(),
+                        timezone.now(),
+                        timezone.now()
+                    ])
+                conn.commit()
+                paths_inserted = len(paths)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Enumeration result submitted for {target}',
+            'paths_inserted': paths_inserted,
+            'format': 'heuristics' if enumeration_results else 'legacy'
+        })
             
     except Exception as e:
         logger.error(f"Error submitting enumeration result: {e}", exc_info=True)
@@ -390,6 +537,81 @@ def daemon_submit_enumeration(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+# Global progress storage (in-memory, shared across requests)
+# In production, consider using Redis or database
+_suzu_progress = {
+    'status': 'idle',
+    'current_target': None,
+    'current_eggrecord_id': None,
+    'current_step': None,
+    'progress_percent': 0,
+    'cycle_number': 0,
+    'enumerated_this_cycle': 0,
+    'total_in_queue': 0,
+    'paths_found': 0,
+    'cms_detected': None,
+    'started_at': None,
+    'estimated_completion': None
+}
+
+
+@csrf_exempt
+def suzu_update_progress(request):
+    """
+    API: Update Suzu daemon progress (called by daemon)
+    
+    POST /reconnaissance/api/daemon/suzu/progress/
+    {
+        "status": "enumerating",
+        "current_target": "example.com",
+        "current_step": "cms_detection",
+        "progress_percent": 50,
+        ...
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        global _suzu_progress
+        
+        # Update progress (merge with existing)
+        _suzu_progress.update({
+            'status': data.get('status', _suzu_progress.get('status', 'idle')),
+            'current_target': data.get('current_target'),
+            'current_eggrecord_id': data.get('current_eggrecord_id'),
+            'current_step': data.get('current_step'),
+            'progress_percent': data.get('progress_percent', 0),
+            'cycle_number': data.get('cycle_number', _suzu_progress.get('cycle_number', 0)),
+            'enumerated_this_cycle': data.get('enumerated_this_cycle', 0),
+            'total_in_queue': data.get('total_in_queue', 0),
+            'paths_found': data.get('paths_found', _suzu_progress.get('paths_found', 0)),
+            'cms_detected': data.get('cms_detected'),
+            'started_at': data.get('started_at'),
+            'estimated_completion': data.get('estimated_completion'),
+            'last_updated': timezone.now().isoformat()
+        })
+        
+        return JsonResponse({'success': True, 'message': 'Progress updated'})
+    except Exception as e:
+        logger.error(f"Error updating progress: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def suzu_get_progress(request):
+    """
+    API: Get Suzu daemon progress (for dashboard)
+    
+    GET /reconnaissance/api/suzu/progress/
+    """
+    global _suzu_progress
+    return JsonResponse({
+        'success': True,
+        'progress': _suzu_progress
+    })
 
 
 @csrf_exempt
@@ -462,7 +684,7 @@ def daemon_health_check(request, personality):
     Returns health status for monitoring and container health checks.
     """
     try:
-        if personality not in ['kage', 'kumo', 'ryu', 'suzu']:
+        if personality not in ['kage', 'kaze', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({
                 'success': False,
                 'error': 'Invalid personality'
