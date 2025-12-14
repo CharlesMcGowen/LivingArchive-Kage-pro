@@ -162,8 +162,12 @@ class RyuDaemon:
                 if result_data.get('success'):
                     logger.info(f"✅ Scan result submitted for {target}")
                     return True
+                else:
+                    logger.warning(f"❌ API returned error: {result_data.get('error')}")
+            else:
+                logger.warning(f"❌ API request failed: {response.status_code}: {response.text[:200]}")
         except Exception as e:
-            logger.error(f"Error submitting scan result: {e}")
+            logger.error(f"❌ Error submitting scan result: {e}", exc_info=True)
         return False
     
     def _submit_assessment(self, eggrecord_id, assessment_data):
@@ -290,7 +294,8 @@ class RyuDaemon:
                                 
                                 logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
                                 # Set write_to_db=False so we submit via API for consistent timestamping
-                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan', write_to_db=False)
+                                # Pass eggrecord data to avoid Django model lookup
+                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan', write_to_db=False, egg_record_data=eggrecord)
                                 
                                 if result.get('success'):
                                     self._submit_scan_result(eggrecord_id, target, result)
