@@ -1,0 +1,41 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Bugsy Bug Bounty{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🐛</div>
+    <div>
+        <h2>Bugsy Bug Bounty</h2>
+        <p class="subtitle">Bug Bounty & Vulnerability Curation</p>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Vulnerabilities</div>
+        <div class="value">{{ vulnerability_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Curations</div>
+        <div class="value">{{ curation_count|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Bug Bounties</div>
+        <div class="value">{{ bounty_count|default:0 }}</div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <h3>About Bugsy</h3>
+    <p><strong>Specialization:</strong> Bug Bounty & Vulnerability Curation</p>
+    <p><strong>Personality:</strong> Bug Hunter</p>
+    <p><strong>Focus:</strong> Vulnerability discovery, curation, and bug bounty management</p>
+</div>
+{% endblock %}

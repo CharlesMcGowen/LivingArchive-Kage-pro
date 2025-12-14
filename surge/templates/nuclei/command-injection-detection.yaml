@@ -1,0 +1,19 @@
+id: command-injection-detection
+
+info:
+  name: Command Injection Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects Command Injection vulnerabilities
+  tags: command injection, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

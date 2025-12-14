@@ -1,0 +1,267 @@
+{% extends "surge/base.html" %}
+
+{% block title %}⚡ Surge - Electric Nuclei Scanner{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>⚡ Surge Dashboard</h1>
+    <p>Electric Nuclei Vulnerability Scanner</p>
+    <div class="dashboard-nav">
+        <span class="nav-btn current">⚡ Surge</span>
+        <a href="/koga/dashboard/" class="nav-btn">🥷 Koga</a>
+        <a href="/bugsy/" class="nav-btn">🐛 Bugsy</a>
+        <span class="nav-separator">|</span>
+        <a href="/surge/upload-templates/" class="nav-btn upload-btn">📤 Upload Templates</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>About Surge</h2>
+    <p><strong>Specialization:</strong> High-Speed Nuclei Vulnerability Scanning</p>
+    <p><strong>Status:</strong> <span class="status-badge status-active">Active</span></p>
+    <p><strong>Personality:</strong> Electric, Fast, Comprehensive Coverage</p>
+    <p><strong>Focus:</strong> Speed and comprehensive vulnerability detection</p>
+</div>
+
+<div class="card">
+    <h2>Nuclei Scanning Capabilities</h2>
+    <p>Surge executes real Nuclei scans with intelligent template selection and comprehensive coverage.</p>
+    
+    <h3>Core Arguments (Surge's Standard Configuration)</h3>
+    <div class="code-block">
+nuclei -u &lt;target&gt; \
+  -jsonl \
+  -nc \
+  -no-color \
+  -retries 1 \
+  -rate-limit 10 \
+  -concurrency 5 \
+  -s critical,high,medium,low,info \
+  -t http/cves/ \
+  -t http/exposures/ \
+  -t http/vulnerabilities/
+    </div>
+    
+    <h3>Scan Types Supported</h3>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h4>Comprehensive</h4>
+            <p>Full coverage scan with all severity levels</p>
+            <p><strong>Templates:</strong> CVEs, Exposures, Vulnerabilities</p>
+        </div>
+        <div class="feature-card">
+            <h4>Critical Only</h4>
+            <p>Focus on high-impact vulnerabilities</p>
+            <p><strong>Templates:</strong> CVEs, Vulnerabilities</p>
+        </div>
+        <div class="feature-card">
+            <h4>Web Only</h4>
+            <p>Web-facing security issues</p>
+            <p><strong>Templates:</strong> Exposures, Vulnerabilities, Technologies</p>
+        </div>
+        <div class="feature-card">
+            <h4>Intelligent</h4>
+            <p>Technology-aware template selection</p>
+            <p><strong>Uses:</strong> Technology fingerprinting</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Performance Characteristics</h2>
+    <table class="comparison-table">
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Surge Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Rate Limit</strong></td>
+                <td>10 req/s</td>
+                <td>Balanced speed for comprehensive scanning</td>
+            </tr>
+            <tr>
+                <td><strong>Concurrency</strong></td>
+                <td>5</td>
+                <td>5 templates running simultaneously</td>
+            </tr>
+            <tr>
+                <td><strong>Retries</strong></td>
+                <td>1</td>
+                <td>One retry for failed requests</td>
+            </tr>
+            <tr>
+                <td><strong>Output Format</strong></td>
+                <td>JSONL</td>
+                <td>Streaming JSON Lines for real-time processing</td>
+            </tr>
+            <tr>
+                <td><strong>Template Path</strong></td>
+                <td>/home/ego/nuclei-templates</td>
+                <td>Shared Nuclei template directory</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Template Selection Logic</h2>
+    <p>Surge uses intelligent template selection based on scan type:</p>
+    <ul>
+        <li><strong>Comprehensive:</strong> All template categories (CVEs, Exposures, Vulnerabilities)</li>
+        <li><strong>Critical Only:</strong> High-impact templates (CVEs, Vulnerabilities)</li>
+        <li><strong>Web Only:</strong> Web-specific templates (Exposures, Vulnerabilities, Technologies)</li>
+        <li><strong>Intelligent:</strong> Technology detection → Technology-specific templates + baseline</li>
+    </ul>
+    
+    <h3>Technology Detection</h3>
+    <p>Surge can detect and target specific technologies:</p>
+    <div class="code-block">
+WordPress → http/exposed-panels/wordpress/
+Apache → http/misconfiguration/apache/
+Jenkins → http/exposed-panels/jenkins/
+Grafana → http/exposed-panels/grafana/
+... and more
+    </div>
+</div>
+
+<div class="card">
+    <h2>Kontrol Team</h2>
+    <p>Surge coordinates with an electric-type Kontrol team for enhanced scanning:</p>
+    <ul>
+        <li><strong>Sparky:</strong> Basic scanning operations</li>
+        <li><strong>Thunder:</strong> Advanced analysis</li>
+        <li><strong>Electabuzz:</strong> Power scanning</li>
+        <li><strong>Jolteon:</strong> Agile reconnaissance</li>
+        <li><strong>Zapdos:</strong> Elite scanning</li>
+        <li><strong>Magnemite:</strong> Detection operations</li>
+        <li><strong>Voltorb:</strong> Explosive scanning</li>
+    </ul>
+</div>
+
+<div class="card">
+    <h2>Integration Features</h2>
+    <ul>
+        <li>✅ Real Nuclei binary execution</li>
+        <li>✅ JSONL streaming output</li>
+        <li>✅ Template path resolution</li>
+        <li>✅ Technology-aware scanning</li>
+        <li>✅ Kontrol team coordination</li>
+        <li>✅ Database integration</li>
+        <li>✅ Autonomous scanning service</li>
+        <li>✅ Production scanner with full DB integration</li>
+    </ul>
+</div>
+
+<div class="card">
+    <h2>Scanner Controls</h2>
+    <div id="scannerStatus" class="status-display">
+        <p><strong>Status:</strong> <span id="statusText">Checking...</span></p>
+        <p><strong>Stats:</strong> <span id="statsText">-</span></p>
+    </div>
+    <div class="btn-group">
+        <button id="startBtn" class="btn" style="background: #10b981; border: none; cursor: pointer; display: none;">
+            ▶️ Start Scanner
+        </button>
+        <button id="stopBtn" class="btn" style="background: #ef4444; border: none; cursor: pointer; display: none;">
+            ⏹️ Stop Scanner
+        </button>
+        <button id="refreshBtn" class="btn" style="background: #6366f1; border: none; cursor: pointer;">
+            🔄 Refresh Status
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Quick Links</h2>
+    <div class="btn-group">
+        <a href="/" class="btn">Back to Main Dashboard</a>
+        <a href="/surge/api/status/" class="btn">API Status</a>
+    </div>
+</div>
+
+<script>
+let statusCheckInterval = null;
+
+async function checkStatus() {
+    try {
+        const response = await fetch('/surge/api/scanner/status/');
+        const data = await response.json();
+        
+        const statusText = document.getElementById('statusText');
+        const statsText = document.getElementById('statsText');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        if (data.running) {
+            statusText.textContent = '🟢 Running';
+            statusText.style.color = '#10b981';
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            
+            if (data.stats) {
+                const stats = data.stats;
+                statsText.textContent = `Scans: ${stats.total_scans || 0} | Success: ${stats.successful_scans || 0} | Vulns: ${stats.total_vulnerabilities || 0}`;
+            }
+        } else {
+            statusText.textContent = '🔴 Stopped';
+            statusText.style.color = '#ef4444';
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            statsText.textContent = 'Scanner is stopped';
+        }
+    } catch (error) {
+        document.getElementById('statusText').textContent = '❌ Error';
+        document.getElementById('statusText').style.color = '#ef4444';
+    }
+}
+
+document.getElementById('startBtn').addEventListener('click', async function() {
+    try {
+        const response = await fetch('/surge/api/scanner/start/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({batch_size: 5, scan_type: 'quick'})
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            checkStatus();
+        } else {
+            alert('❌ ' + (data.error || data.message));
+        }
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+});
+
+document.getElementById('stopBtn').addEventListener('click', async function() {
+    if (!confirm('Are you sure you want to stop the scanner?')) return;
+    try {
+        const response = await fetch('/surge/api/scanner/stop/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            checkStatus();
+        } else {
+            alert('❌ ' + (data.error || data.message));
+        }
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+});
+
+document.getElementById('refreshBtn').addEventListener('click', checkStatus);
+
+// Initial status check and auto-refresh every 5 seconds
+checkStatus();
+statusCheckInterval = setInterval(checkStatus, 5000);
+</script>
+{% endblock %}
+

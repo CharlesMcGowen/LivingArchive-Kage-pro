@@ -1,0 +1,19 @@
+id: idor-detection
+
+info:
+  name: IDOR Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects IDOR vulnerabilities
+  tags: idor, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

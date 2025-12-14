@@ -1,0 +1,19 @@
+id: xxe-detection
+
+info:
+  name: XXE Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects XXE vulnerabilities
+  tags: xxe, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

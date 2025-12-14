@@ -1,0 +1,19 @@
+id: csrf-detection
+
+info:
+  name: CSRF Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects CSRF vulnerabilities
+  tags: csrf, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

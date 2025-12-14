@@ -1,0 +1,59 @@
+PinkiePie Fix Request - Bridge.go ExecuteWithResults Segfault
+==============================================================
+
+FILE: artificial_intelligence/personalities/security/surge/surge_nuclei_memory_bridge/bridge.go
+LINE: 329
+FUNCTION: StartScan() -> goroutine -> ExecuteWithResults()
+
+CRITICAL BUG:
+- ExecuteWithResults(ctx, nil, nil, callback) causes segfault
+- Error: nil pointer dereference at execute_options.go:38
+- Engine requires non-nil templates and inputProvider
+
+REQUIRED FIX:
+1. Load templates from /home/ego/nuclei-templates
+   - Use Nuclei v3 template loading API
+   - Filter by options.Templates, options.Tags, options.Severities
+   - Create []*templates.Template slice
+
+2. Create input provider from targets
+   - Use options.Targets (goflags.StringSlice)
+   - Create provider.InputProvider instance
+   - Must be non-nil
+
+3. Replace ExecuteWithResults call:
+   FROM: engine.ExecuteWithResults(ctx, nil, nil, callback)
+   TO: engine.ExecuteWithResults(ctx, loadedTemplates, inputProvider, callback)
+
+CONTEXT:
+- Options struct already has Templates, Tags, Severities, Targets configured
+- Engine is created with: core.New(options)
+- Callback is set: engine.Callback = func(event *output.ResultEvent) { outputWriter.Write(event) }
+- Templates path: /home/ego/nuclei-templates
+- Target: string from function parameter
+
+AVAILABLE PACKAGES:
+- github.com/projectdiscovery/nuclei/v3/pkg/core
+- github.com/projectdiscovery/nuclei/v3/pkg/templates
+- github.com/projectdiscovery/nuclei/v3/pkg/catalog
+- github.com/projectdiscovery/nuclei/v3/pkg/input
+- github.com/projectdiscovery/nuclei/v3/pkg/types
+- github.com/projectdiscovery/nuclei/v3/pkg/output
+
+CURRENT CODE LOCATION:
+Lines 314-329 in bridge.go (goroutine function)
+
+Please implement the template loading and input provider creation to fix the segfault!
+
+
+
+
+
+
+
+
+
+
+
+
+

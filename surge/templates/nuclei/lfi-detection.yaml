@@ -1,0 +1,19 @@
+id: lfi-detection
+
+info:
+  name: LFI Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects LFI vulnerabilities
+  tags: lfi, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

@@ -1,0 +1,8 @@
+id: test-template
+info:
+  name: Test Template
+  severity: info
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"

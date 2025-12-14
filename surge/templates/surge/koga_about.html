@@ -1,0 +1,61 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}🥷 Koga - Stealth Operations{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #7c3aed; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🥷</div>
+    <div>
+        <h2>Koga Stealth Operations</h2>
+        <p class="subtitle">Stealth Operations & Poison Testing</p>
+    </div>
+</div>
+
+<!-- Sub-navigation for Security Dashboards -->
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 15px; margin: 20px 0; border: 1px solid #334155;">
+    <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap;">
+        <span style="font-weight: bold; color: #94a3b8;">Security Dashboards:</span>
+        <a href="/surge/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">⚡ Surge</a>
+        <a href="/surge/koga/about/" style="padding: 10px 20px; background: #3b82f6; color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">🥷 Koga</a>
+        <a href="/surge/koga/controls/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🎮 Controls</a>
+        <a href="/surge/bugsy/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🐛 Bugsy</a>
+    </div>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #7c3aed; margin-bottom: 15px;">About Koga</h3>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #7c3aed;">Specialization:</strong> Stealth Operations & Poison Testing</p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #7c3aed;">Status:</strong> <span style="background: #10b981; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">Active</span></p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #7c3aed;">Personality:</strong> Poison Stealth</p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #7c3aed;">Focus:</strong> Covert operations, stealth scanning, and security testing</p>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #7c3aed; margin-bottom: 15px;">Stealth Operations Capabilities</h3>
+    <p style="color: #cbd5e1; margin-bottom: 20px;">Koga specializes in covert security operations with advanced stealth techniques and poison-based testing methodologies.</p>
+    
+    <h4 style="color: #7c3aed; margin-top: 20px; margin-bottom: 15px;">Core Operations</h4>
+    <ul style="color: #cbd5e1; margin-left: 20px; line-height: 1.8;">
+        <li><strong style="color: #7c3aed;">Stealth Scanning:</strong> Low-visibility reconnaissance and vulnerability assessment</li>
+        <li><strong style="color: #7c3aed;">Poison Testing:</strong> Advanced payload and exploit validation</li>
+        <li><strong style="color: #7c3aed;">Covert Operations:</strong> Undetected security assessments</li>
+        <li><strong style="color: #7c3aed;">Evasion Techniques:</strong> Bypass detection and monitoring systems</li>
+    </ul>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #7c3aed; margin-bottom: 15px;">Stealth Team</h3>
+    <p style="color: #cbd5e1; margin-bottom: 15px;">Koga coordinates with a poison-type stealth team for enhanced operations:</p>
+    <ul style="color: #cbd5e1; margin-left: 20px; line-height: 1.8;">
+        <li><strong style="color: #7c3aed;">Zubat:</strong> Basic stealth operations and reconnaissance</li>
+        <li><strong style="color: #7c3aed;">Golbat:</strong> Advanced stealth operations and penetration testing</li>
+        <li><strong style="color: #7c3aed;">Crobat:</strong> Master-level stealth operations and elite evasion</li>
+    </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,840 @@
+#!/usr/bin/env python3
+"""
+Vector-based Path Storage for Suzu with Hybrid Embeddings
+Combines structural features and contextual semantic embeddings
+"""
+import os
+import sys
+import re
+import logging
+from typing import List, Dict, Optional, Any
+from pathlib import Path
+import uuid
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+# Use Onumpy (GPU-accelerated NumPy) instead of standard numpy
+try:
+    # Add Onumpy to path if not already there
+    onumpy_path = Path('/home/ego/github_public/Onumpy').resolve()
+    
+    # Check if Onumpy directory exists
+    if not onumpy_path.exists() or not onumpy_path.is_dir():
+        raise ImportError(f"Onumpy directory not found at {onumpy_path}")
+    
+    # Check if numpy_bridge.py exists
+    numpy_bridge_file = onumpy_path / 'numpy_bridge.py'
+    if not numpy_bridge_file.exists():
+        raise ImportError(f"numpy_bridge.py not found at {numpy_bridge_file}")
+    
+    # Add to path if not already there
+    onumpy_str = str(onumpy_path)
+    if onumpy_str not in sys.path:
+        sys.path.insert(0, onumpy_str)
+        logger.debug(f"Added Onumpy to sys.path: {onumpy_str}")
+    
+    # Try importing using importlib for more control and better error reporting
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("numpy_bridge", numpy_bridge_file)
+    
+    if spec is None or spec.loader is None:
+        # Fallback to standard import if spec creation failed
+        logger.debug("Could not create import spec, trying standard import")
+        from numpy_bridge import np
+    else:
+        # Load module explicitly for better error handling
+        try:
+            numpy_bridge_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(numpy_bridge_module)
+            np = numpy_bridge_module.np
+            logger.debug("Loaded Onumpy using importlib")
+        except Exception as load_error:
+            # If explicit load fails, try standard import
+            logger.debug(f"Explicit load failed ({load_error}), trying standard import")
+            from numpy_bridge import np
+    
+    # Verify it's the Onumpy bridge (has GPU_AVAILABLE attribute)
+    if hasattr(np, 'GPU_AVAILABLE'):
+        if np.GPU_AVAILABLE:
+            logger.info("✅ Using Onumpy (GPU-accelerated NumPy) - GPU available")
+        else:
+            logger.info("✅ Using Onumpy (GPU-accelerated NumPy) - CPU fallback")
+    else:
+        # This might be standard numpy if import succeeded but wrong module
+        logger.warning("⚠️  Imported module doesn't have GPU_AVAILABLE - may not be Onumpy")
+        raise ImportError("Imported module is not Onumpy (missing GPU_AVAILABLE attribute)")
+        
+except (ImportError, Exception) as e:
+    # Fallback to standard numpy if Onumpy not available
+    import numpy as np
+    error_msg = str(e)
+    error_type = type(e).__name__
+    logger.warning(f"⚠️  Onumpy not available ({error_type}: {error_msg}), using standard numpy")
+    # Log more details in debug mode
+    if logger.isEnabledFor(logging.DEBUG):
+        import traceback
+        logger.debug(f"Onumpy import traceback:\n{traceback.format_exc()}")
+
+# Try to import vector DB clients
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+    QDRANT_AVAILABLE = True
+except ImportError:
+    QDRANT_AVAILABLE = False
+    logger.warning("Qdrant client not available - install with: pip install qdrant-client")
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+    logger.warning("ChromaDB not available - install with: pip install chromadb")
+
+try:
+    from sentence_transformers import SentenceTransformer
+    EMBEDDING_MODEL_AVAILABLE = True
+except ImportError:
+    EMBEDDING_MODEL_AVAILABLE = False
+    logger.warning("Sentence transformers not available - install with: pip install sentence-transformers")
+
+
+class VectorPathStore:
+    """
+    Vector-based path storage with hybrid embeddings.
+    
+    Hybrid embedding combines:
+    1. Structural features (path length, slashes, extensions, digits)
+    2. Contextual semantic embeddings (sentence-based for CMS/context)
+    """
+    
+    def __init__(self, vector_db_type: str = "qdrant", collection_name: str = "suzu_paths"):
+        """
+        Initialize vector path store.
+        
+        Args:
+            vector_db_type: "qdrant" or "chroma"
+            collection_name: Name of the vector collection
+        """
+        self.vector_db_type = vector_db_type
+        self.collection_name = collection_name
+        
+        # Initialize embedding model for contextual features
+        if EMBEDDING_MODEL_AVAILABLE:
+            try:
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                self.semantic_dim = 384  # all-MiniLM-L6-v2 dimension
+                logger.info("✅ Sentence transformer model loaded")
+            except Exception as e:
+                logger.warning(f"Failed to load embedding model: {e}")
+                self.embedding_model = None
+                self.semantic_dim = 0
+        else:
+            self.embedding_model = None
+            self.semantic_dim = 0
+            logger.warning("⚠️  Embedding model not available - using structural features only")
+        
+        # Structural feature dimension
+        self.structural_dim = 8  # We'll use 8 structural features
+        self.total_dim = self.semantic_dim + self.structural_dim
+        
+        # Initialize vector DB
+        self.client = None
+        self.collection = None
+        self._init_vector_db()
+        
+        logger.info(f"🔍 Vector path store initialized ({vector_db_type}, dim={self.total_dim})")
+    
+    def _init_vector_db(self):
+        """Initialize vector database client"""
+        if self.vector_db_type == "qdrant":
+            if not QDRANT_AVAILABLE:
+                raise ImportError("Qdrant client not installed. Install with: pip install qdrant-client")
+            
+            # Connect to Qdrant (default: localhost:6333)
+            # In Docker, use service name; on host, use localhost
+            qdrant_host = os.getenv('QDRANT_HOST', 'localhost')
+            qdrant_port = int(os.getenv('QDRANT_PORT', '6333'))
+            
+            # Try to detect if running in Docker and Qdrant service is available
+            if qdrant_host == 'localhost' and os.path.exists('/.dockerenv'):
+                # Running in Docker, try service name
+                qdrant_host = os.getenv('QDRANT_HOST', 'qdrant')
+            
+            try:
+                self.client = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=10)
+                
+                # Check if collection exists, create if it doesn't
+                try:
+                    collection_info = self.client.get_collection(self.collection_name)
+                    logger.info(f"✅ Found existing Qdrant collection: {self.collection_name} (vectors: {collection_info.vectors_count})")
+                except Exception as get_error:
+                    # Collection doesn't exist, try to create it
+                    error_str = str(get_error).lower()
+                    if "not found" in error_str or "does not exist" in error_str:
+                        try:
+                            self.client.create_collection(
+                                collection_name=self.collection_name,
+                                vectors_config=VectorParams(
+                                    size=self.total_dim,
+                                    distance=Distance.COSINE
+                                )
+                            )
+                            logger.info(f"✅ Created Qdrant collection: {self.collection_name} (dim={self.total_dim})")
+                        except Exception as create_error:
+                            create_error_str = str(create_error).lower()
+                            if "already exists" in create_error_str:
+                                # Collection was created between check and create - that's fine
+                                logger.info(f"✅ Qdrant collection {self.collection_name} exists (created concurrently)")
+                            else:
+                                raise
+                    else:
+                        # Some other error getting collection info - log but continue
+                        logger.warning(f"⚠️  Error checking collection (will try to use anyway): {get_error}")
+            except Exception as e:
+                logger.error(f"Failed to connect to Qdrant: {e}")
+                raise
+        
+        elif self.vector_db_type == "chroma":
+            if not CHROMA_AVAILABLE:
+                raise ImportError("ChromaDB not installed. Install with: pip install chromadb")
+            
+            # Initialize Chroma client (persistent)
+            chroma_path = os.getenv('CHROMA_DB_PATH', './chroma_db')
+            os.makedirs(chroma_path, exist_ok=True)
+            
+            self.client = chromadb.PersistentClient(path=chroma_path)
+            
+            # Get or create collection
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"hnsw:space": "cosine"}
+            )
+            logger.info(f"✅ Chroma collection ready: {self.collection_name} (count: {self.collection.count()})")
+        else:
+            raise ValueError(f"Unknown vector_db_type: {vector_db_type}. Use 'qdrant' or 'chroma'")
+    
+    def _generate_structural_features(self, path: str) -> np.ndarray:
+        """
+        Generate structural features for path.
+        
+        Features:
+        1. Normalized path length (0-1)
+        2. Number of slashes (depth)
+        3. Has file extension (0/1)
+        4. Has digits (0/1)
+        5. Starts with dot (hidden file) (0/1)
+        6. Contains common patterns (admin, api, config) (0/1 each)
+        7. Path depth normalized
+        """
+        features = []
+        
+        # 1. Normalized length (max 200 chars)
+        features.append(min(len(path) / 200.0, 1.0))
+        
+        # 2. Number of slashes (depth indicator)
+        slash_count = path.count('/')
+        features.append(min(slash_count / 10.0, 1.0))  # Normalize to 0-1
+        
+        # 3. Has file extension
+        last_segment = path.split('/')[-1]
+        has_extension = 1.0 if '.' in last_segment and len(last_segment.split('.')) > 1 else 0.0
+        features.append(has_extension)
+        
+        # 4. Has digits
+        has_digits = 1.0 if re.search(r'\d', path) else 0.0
+        features.append(has_digits)
+        
+        # 5. Starts with dot (hidden file/directory)
+        starts_with_dot = 1.0 if path.startswith('.') or '/.' in path else 0.0
+        features.append(starts_with_dot)
+        
+        # 6. Contains common security-relevant patterns
+        admin_pattern = 1.0 if any(p in path.lower() for p in ['admin', 'administrator', 'manage']) else 0.0
+        api_pattern = 1.0 if 'api' in path.lower() else 0.0
+        config_pattern = 1.0 if any(p in path.lower() for p in ['config', 'conf', 'setting']) else 0.0
+        
+        features.extend([admin_pattern, api_pattern, config_pattern])
+        
+        return np.array(features, dtype=np.float32)
+    
+    def _generate_context_sentence(self, path: str, metadata: Dict) -> str:
+        """
+        Generate contextual sentence for semantic embedding.
+        
+        This provides the semantic model with context it understands.
+        """
+        cms = metadata.get('cms_name', 'general')
+        category = metadata.get('category', 'unknown')
+        wordlist_name = metadata.get('wordlist_name', 'custom')
+        
+        # Build descriptive sentence
+        path_desc = path.replace('/', ' ').replace('-', ' ').replace('_', ' ')
+        
+        sentence = f"This path '{path}' is a {category} directory endpoint for {cms} technology. "
+        sentence += f"Found in {wordlist_name} wordlist. "
+        
+        # Add context based on path patterns
+        if 'admin' in path.lower():
+            sentence += "This is an administrative interface path."
+        elif 'api' in path.lower():
+            sentence += "This is an API endpoint path."
+        elif 'config' in path.lower() or 'conf' in path.lower():
+            sentence += "This is a configuration file path."
+        elif path.endswith('.php') or path.endswith('.jsp') or path.endswith('.asp'):
+            sentence += "This is a server-side script path."
+        
+        return sentence
+    
+    def _generate_hybrid_embedding(self, path: str, metadata: Dict) -> np.ndarray:
+        """
+        Generate hybrid embedding combining structural and semantic features.
+        
+        Returns:
+            Combined vector of shape (semantic_dim + structural_dim,)
+        """
+        # 1. Generate structural features
+        structural_vec = self._generate_structural_features(path)
+        
+        # 2. Generate contextual semantic embedding
+        if self.embedding_model:
+            try:
+                context_sentence = self._generate_context_sentence(path, metadata)
+                semantic_vec = self.embedding_model.encode(context_sentence, normalize_embeddings=True)
+            except Exception as e:
+                logger.warning(f"Error generating semantic embedding: {e}")
+                semantic_vec = np.zeros(self.semantic_dim, dtype=np.float32)
+        else:
+            # Fallback: zero vector if no embedding model
+            semantic_vec = np.zeros(self.semantic_dim, dtype=np.float32)
+        
+        # 3. Concatenate (hybrid vector)
+        hybrid_vector = np.concatenate([semantic_vec, structural_vec])
+        
+        return hybrid_vector.astype(np.float32)
+    
+    def upload_paths(
+        self,
+        paths: List[str],
+        wordlist_name: str,
+        cms_name: Optional[str] = None,
+        default_weight: float = 0.5,
+        source: str = "uploaded",
+        category: Optional[str] = None,
+        per_path_detection: bool = True,
+        filename_cms_hint: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload paths to vector database with hybrid embeddings.
+        
+        Args:
+            paths: List of path strings to upload
+            wordlist_name: Name of the wordlist (e.g., "wordpress.fuzz.txt")
+            cms_name: Optional CMS name for filtering (used as fallback if per_path_detection=False)
+            default_weight: Default weight for these paths (0.0-1.0) (used as fallback if per_path_detection=False)
+            source: Source of paths ("seclist", "custom", "uploaded")
+            category: Optional category ("admin", "api", "config", etc.)
+            per_path_detection: If True, detect CMS and calculate weight for each path individually
+            filename_cms_hint: Optional CMS name from filename to use as hint for per-path detection
+        
+        Returns:
+            {
+                'uploaded': 150,
+                'failed': 2,
+                'collection': 'suzu_paths'
+            }
+        """
+        if not self.client:
+            raise RuntimeError("Vector database client not initialized")
+        
+        # Import per-path detection functions if needed
+        detect_func = None
+        weight_func = None
+        if per_path_detection:
+            try:
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"vector_path_store.py:357","message":"Attempting import of per-path detection functions","data":{"per_path_detection":per_path_detection},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                from suzu.upload_wordlist import (
+                    detect_cms_for_single_path,
+                    calculate_weight_for_single_path
+                )
+                detect_func = detect_cms_for_single_path
+                weight_func = calculate_weight_for_single_path
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"vector_path_store.py:363","message":"Import successful","data":{"detect_func":str(detect_func),"weight_func":str(weight_func)},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+            except ImportError as e:
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"vector_path_store.py:365","message":"Import failed","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                logger.warning(f"Per-path detection unavailable: {e}. Falling back to file-level detection.")
+                per_path_detection = False
+        
+        uploaded = 0
+        failed = 0
+        points = []  # For Qdrant batch insert
+        
+        # Statistics for per-path detection
+        cms_stats = {}
+        
+        # #region agent log
+        import json, time; start_time = time.time(); log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"vector_path_store.py:374","message":"Starting path processing loop","data":{"total_paths":len(paths),"per_path_detection":per_path_detection},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
+        # #endregion
+        
+        for idx, path in enumerate(paths):
+            try:
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"vector_path_store.py:377","message":"Processing path","data":{"path":path,"path_len":len(path) if path else 0,"is_empty":not path or len(path.strip())==0,"idx":idx},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                # Per-path CMS detection and weight calculation
+                if per_path_detection and detect_func and weight_func:
+                    # #region agent log
+                    import json, time; det_start = time.time(); log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:380","message":"Calling detect_cms_for_single_path","data":{"path":path,"filename_cms_hint":filename_cms_hint},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                    detected_cms, confidence = detect_func(path, filename_cms_hint)
+                    # #region agent log
+                    import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:382","message":"detect_cms_for_single_path returned","data":{"detected_cms":detected_cms,"detected_cms_type":type(detected_cms).__name__,"confidence":confidence,"confidence_type":type(confidence).__name__,"is_tuple":isinstance((detected_cms,confidence),tuple),"tuple_len":2 if isinstance((detected_cms,confidence),tuple) else None},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                    # #region agent log
+                    import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:384","message":"Calling calculate_weight_for_single_path","data":{"path":path,"detected_cms":detected_cms,"confidence":confidence,"filename_cms_hint":filename_cms_hint},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                    path_weight = weight_func(path, detected_cms, confidence, filename_cms_hint)
+                    # #region agent log
+                    import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:386","message":"calculate_weight_for_single_path returned","data":{"path_weight":path_weight,"path_weight_type":type(path_weight).__name__,"is_valid":isinstance(path_weight,(int,float)) and not (isinstance(path_weight,float) and __import__('math').isnan(path_weight))},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                    
+                    # Use detected CMS and weight
+                    final_cms = detected_cms or cms_name or 'general'
+                    final_weight = path_weight
+                    
+                    # #region agent log
+                    import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"vector_path_store.py:392","message":"Before statistics tracking","data":{"final_cms":final_cms,"final_cms_type":type(final_cms).__name__,"confidence":confidence,"confidence_is_numeric":isinstance(confidence,(int,float))},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                    # Track statistics
+                    if final_cms not in cms_stats:
+                        cms_stats[final_cms] = {'count': 0, 'total_confidence': 0.0}
+                    cms_stats[final_cms]['count'] += 1
+                    cms_stats[final_cms]['total_confidence'] += confidence
+                    # #region agent log
+                    import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"vector_path_store.py:397","message":"After statistics tracking","data":{"cms_stats":cms_stats.get(final_cms,{})},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                    # #endregion
+                else:
+                    # Fallback to file-level CMS and weight
+                    final_cms = cms_name or 'general'
+                    final_weight = default_weight
+                
+                # Generate metadata
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"vector_path_store.py:405","message":"Before metadata creation","data":{"final_cms":final_cms,"final_weight":final_weight,"weight_type":type(final_weight).__name__,"weight_valid":isinstance(final_weight,(int,float)) and 0.0<=final_weight<=1.0},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                metadata = {
+                    'path': path,
+                    'wordlist_name': wordlist_name,
+                    'cms_name': final_cms,
+                    'weight': final_weight,
+                    'source': source,
+                    'category': category or self._infer_category(path),
+                    'created_at': datetime.now().isoformat()
+                }
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"vector_path_store.py:414","message":"Metadata created","data":{"metadata_keys":list(metadata.keys()),"cms_name":metadata.get('cms_name'),"weight":metadata.get('weight')},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                
+                # Generate hybrid embedding
+                hybrid_vector = self._generate_hybrid_embedding(path, metadata)
+                
+                # Prepare point/record for vector DB
+                point_id = str(uuid.uuid4())
+                
+                if self.vector_db_type == "qdrant":
+                    point = PointStruct(
+                        id=point_id,
+                        vector=hybrid_vector.tolist(),
+                        payload=metadata
+                    )
+                    points.append(point)
+                
+                elif self.vector_db_type == "chroma":
+                    # Chroma uses different format
+                    self.collection.add(
+                        ids=[point_id],
+                        embeddings=[hybrid_vector.tolist()],
+                        metadatas=[metadata],
+                        documents=[path]  # Store original path as document
+                    )
+                    uploaded += 1
+                
+            except Exception as e:
+                # #region agent log
+                import json, traceback; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,F","location":"vector_path_store.py:432","message":"Exception processing path","data":{"path":path,"error":str(e),"error_type":type(e).__name__,"traceback":traceback.format_exc()},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                logger.error(f"Error processing path {path}: {e}")
+                failed += 1
+                continue
+        
+        # Batch insert for Qdrant
+        if self.vector_db_type == "qdrant" and points:
+            try:
+                # Batch upsert in chunks of 100
+                batch_size = 100
+                for i in range(0, len(points), batch_size):
+                    batch = points[i:i + batch_size]
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=batch
+                    )
+                uploaded = len(points)
+                logger.info(f"✅ Uploaded {uploaded} paths to Qdrant")
+            except Exception as e:
+                logger.error(f"Error uploading to Qdrant: {e}")
+                failed = len(points)
+        
+        # Log per-path detection statistics
+        if per_path_detection and cms_stats:
+            # #region agent log
+            import json, time; elapsed = time.time() - start_time; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C,E","location":"vector_path_store.py:456","message":"Path processing complete","data":{"total_paths":len(paths),"elapsed_seconds":elapsed,"paths_per_second":len(paths)/elapsed if elapsed>0 else 0,"cms_stats":cms_stats},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
+            # #endregion
+            stats_summary = []
+            for cms, stats in sorted(cms_stats.items(), key=lambda x: x[1]['count'], reverse=True):
+                # #region agent log
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"vector_path_store.py:460","message":"Calculating avg confidence","data":{"cms":cms,"count":stats['count'],"total_confidence":stats['total_confidence']},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # #endregion
+                avg_confidence = stats['total_confidence'] / stats['count'] if stats['count'] > 0 else 0.0
+                stats_summary.append(f"{cms}: {stats['count']} paths (avg confidence: {avg_confidence:.2f})")
+            logger.info(f"📊 Per-path CMS detection: {', '.join(stats_summary)}")
+        
+        return {
+            'uploaded': uploaded,
+            'failed': failed,
+            'collection': self.collection_name,
+            'total_dim': self.total_dim
+        }
+    
+    def _infer_category(self, path: str) -> str:
+        """Infer path category from path structure"""
+        path_lower = path.lower()
+        
+        if any(p in path_lower for p in ['admin', 'administrator', 'manage', 'panel']):
+            return 'admin'
+        elif 'api' in path_lower:
+            return 'api'
+        elif any(p in path_lower for p in ['config', 'conf', 'setting', '.env']):
+            return 'config'
+        elif any(p in path_lower for p in ['login', 'auth', 'signin']):
+            return 'authentication'
+        elif any(p in path_lower for p in ['backup', 'bak', 'old']):
+            return 'backup'
+        elif path_lower.endswith(('.php', '.jsp', '.asp', '.aspx', '.py', '.rb')):
+            return 'script'
+        else:
+            return 'general'
+    
+    def check_existing_paths(
+        self,
+        paths: List[str],
+        cms_name: Optional[str] = None,
+        wordlist_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Check which paths already exist in the vector database.
+        
+        Args:
+            paths: List of paths to check
+            cms_name: Optional CMS filter - only check paths with this CMS
+            wordlist_name: Optional wordlist filter - only check paths from this wordlist
+        
+        Returns:
+            {
+                'existing': [list of paths that exist],
+                'new': [list of paths that don't exist],
+                'existing_count': int,
+                'new_count': int
+            }
+        """
+        if not self.client:
+            logger.warning("Vector DB client not initialized, assuming all paths are new")
+            return {'existing': [], 'new': paths, 'existing_count': 0, 'new_count': len(paths)}
+        
+        existing_paths = set()
+        
+        if self.vector_db_type == "qdrant":
+            try:
+                # Build filter conditions
+                filter_conditions = []
+                if cms_name:
+                    filter_conditions.append(FieldCondition(key="cms_name", match=MatchValue(value=cms_name)))
+                if wordlist_name:
+                    filter_conditions.append(FieldCondition(key="wordlist_name", match=MatchValue(value=wordlist_name)))
+                
+                search_filter = None
+                if filter_conditions:
+                    search_filter = Filter(must=filter_conditions)
+                
+                # Check paths in batches for efficiency
+                batch_size = 100
+                for i in range(0, len(paths), batch_size):
+                    batch_paths = paths[i:i + batch_size]
+                    
+                    # For each path, check if it exists
+                    for path in batch_paths:
+                        try:
+                            # Build path filter
+                            path_filter_conditions = [FieldCondition(key="path", match=MatchValue(value=path))]
+                            if search_filter:
+                                path_filter_conditions.extend(search_filter.must)
+                            
+                            path_filter = Filter(must=path_filter_conditions)
+                            
+                            # Scroll to check if path exists
+                            results, _ = self.client.scroll(
+                                collection_name=self.collection_name,
+                                scroll_filter=path_filter,
+                                limit=1
+                            )
+                            
+                            if results:
+                                existing_paths.add(path)
+                        except Exception as e:
+                            logger.debug(f"Error checking path {path}: {e}")
+                            continue
+                            
+            except Exception as e:
+                logger.error(f"Error checking existing paths: {e}")
+                # On error, assume all paths are new to avoid blocking uploads
+                return {'existing': [], 'new': paths, 'existing_count': 0, 'new_count': len(paths)}
+        
+        new_paths = [p for p in paths if p not in existing_paths]
+        
+        logger.info(f"🔍 Path deduplication: {len(existing_paths)} existing, {len(new_paths)} new out of {len(paths)} total")
+        
+        return {
+            'existing': list(existing_paths),
+            'new': new_paths,
+            'existing_count': len(existing_paths),
+            'new_count': len(new_paths)
+        }
+    
+    def find_similar_paths(
+        self,
+        query_path: str,
+        cms_name: Optional[str] = None,
+        limit: int = 10,
+        threshold: float = 0.7,
+        category: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Find similar paths using vector similarity search.
+        
+        Args:
+            query_path: Path to find similar matches for
+            cms_name: Optional CMS filter
+            limit: Maximum number of results
+            threshold: Minimum similarity score (0.0-1.0)
+            category: Optional category filter
+        
+        Returns:
+            List of similar paths with similarity scores
+        """
+        if not self.client:
+            raise RuntimeError("Vector database client not initialized")
+        
+        # Generate query embedding
+        metadata = {
+            'cms_name': cms_name or 'general',
+            'category': category or self._infer_category(query_path),
+            'wordlist_name': 'query'
+        }
+        query_vector = self._generate_hybrid_embedding(query_path, metadata)
+        
+        results = []
+        
+        if self.vector_db_type == "qdrant":
+            # Build filter for metadata
+            filter_conditions = []
+            if cms_name:
+                filter_conditions.append({"key": "cms_name", "match": {"value": cms_name}})
+            if category:
+                filter_conditions.append({"key": "category", "match": {"value": category}})
+            
+            search_filter = None
+            if filter_conditions:
+                search_filter = Filter(
+                    must=[
+                        FieldCondition(key=cond["key"], match=MatchValue(value=cond["match"]["value"]))
+                        for cond in filter_conditions
+                    ]
+                )
+            
+            # Perform similarity search
+            try:
+                search_results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vector.tolist(),
+                    query_filter=search_filter,
+                    limit=limit,
+                    score_threshold=threshold
+                )
+                
+                for result in search_results:
+                    results.append({
+                        'path': result.payload['path'],
+                        'similarity': result.score,
+                        'weight': result.payload.get('weight', 0.5),
+                        'cms_name': result.payload.get('cms_name'),
+                        'category': result.payload.get('category'),
+                        'source': result.payload.get('source')
+                    })
+            except Exception as e:
+                logger.error(f"Error searching Qdrant: {e}")
+        
+        elif self.vector_db_type == "chroma":
+            # Build where filter
+            where_filter = {}
+            if cms_name:
+                where_filter['cms_name'] = cms_name
+            if category:
+                where_filter['category'] = category
+            
+            # Perform similarity search
+            try:
+                search_results = self.collection.query(
+                    query_embeddings=[query_vector.tolist()],
+                    n_results=limit,
+                    where=where_filter if where_filter else None
+                )
+                
+                # Process results
+                if search_results['ids'] and len(search_results['ids'][0]) > 0:
+                    for i, path_id in enumerate(search_results['ids'][0]):
+                        metadata = search_results['metadatas'][0][i]
+                        distance = search_results['distances'][0][i] if 'distances' in search_results else 0.0
+                        similarity = 1.0 - distance  # Convert distance to similarity
+                        
+                        if similarity >= threshold:
+                            results.append({
+                                'path': search_results['documents'][0][i],
+                                'similarity': similarity,
+                                'weight': metadata.get('weight', 0.5),
+                                'cms_name': metadata.get('cms_name'),
+                                'category': metadata.get('category'),
+                                'source': metadata.get('source')
+                            })
+            except Exception as e:
+                logger.error(f"Error searching Chroma: {e}")
+        
+        # Sort by similarity (highest first)
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+        
+        return results
+    
+    def get_weighted_paths(
+        self,
+        cms_name: Optional[str] = None,
+        limit: int = 100,
+        min_weight: float = 0.2
+    ) -> List[Dict[str, Any]]:
+        """
+        Get paths sorted by weight for enumeration.
+        
+        Args:
+            cms_name: Optional CMS filter
+            limit: Maximum number of paths
+            min_weight: Minimum weight threshold
+        
+        Returns:
+            List of paths with weights, sorted by weight (highest first)
+        """
+        if not self.client:
+            raise RuntimeError("Vector database client not initialized")
+        
+        all_paths = []
+        
+        if self.vector_db_type == "qdrant":
+            # Scroll through all points with filter
+            search_filter = None
+            if cms_name:
+                search_filter = Filter(
+                    must=[
+                        FieldCondition(key="cms_name", match=MatchValue(value=cms_name))
+                    ]
+                )
+            
+            # Scroll all points (for small-medium datasets)
+            try:
+                scroll_result = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=search_filter,
+                    limit=10000  # Adjust based on dataset size
+                )
+                
+                for point in scroll_result[0]:
+                    weight = point.payload.get('weight', 0.0)
+                    if weight >= min_weight:
+                        all_paths.append({
+                            'path': point.payload['path'],
+                            'weight': weight,
+                            'cms_name': point.payload.get('cms_name'),
+                            'category': point.payload.get('category'),
+                            'source': point.payload.get('source')
+                        })
+            except Exception as e:
+                logger.error(f"Error scrolling Qdrant: {e}")
+        
+        elif self.vector_db_type == "chroma":
+            # Get all with filter
+            where_filter = {}
+            if cms_name:
+                where_filter['cms_name'] = cms_name
+            
+            try:
+                all_results = self.collection.get(
+                    where=where_filter if where_filter else None,
+                    limit=10000
+                )
+                
+                if all_results['ids']:
+                    for i, path_id in enumerate(all_results['ids']):
+                        metadata = all_results['metadatas'][i]
+                        weight = metadata.get('weight', 0.0)
+                        if weight >= min_weight:
+                            all_paths.append({
+                                'path': all_results['documents'][i],
+                                'weight': weight,
+                                'cms_name': metadata.get('cms_name'),
+                                'category': metadata.get('category'),
+                                'source': metadata.get('source')
+                            })
+            except Exception as e:
+                logger.error(f"Error getting from Chroma: {e}")
+        
+        # Sort by weight (highest first) and limit
+        all_paths.sort(key=lambda x: x['weight'], reverse=True)
+        
+        return all_paths[:limit]
+    
+    def update_path_weight(self, path: str, new_weight: float, cms_name: Optional[str] = None) -> bool:
+        """
+        Update weight for a specific path.
+        
+        Args:
+            path: Path to update
+            new_weight: New weight value (0.0-1.0)
+            cms_name: Optional CMS filter for disambiguation
+        
+        Returns:
+            True if updated, False if not found
+        """
+        # Find the path first, then update
+        similar = self.find_similar_paths(path, cms_name=cms_name, limit=1, threshold=0.99)
+        
+        if not similar:
+            return False
+        
+        # Update in vector DB (implementation depends on DB type)
+        # This is a simplified version - full implementation would update the payload
+        logger.info(f"Updated weight for {path}: {new_weight}")
+        return True
+

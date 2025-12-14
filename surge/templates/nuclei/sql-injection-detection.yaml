@@ -1,0 +1,32 @@
+id: sql-injection-detection
+
+info:
+  name: SQL Injection Detection
+  author: Twilight Sparkle
+  severity: high
+  description: Detects SQL Injection vulnerabilities
+  tags: sql injection, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+        - "' OR '1'='1"
+        - "' OR 1=1--"
+        - "admin'--"
+        - "SLEEP("
+        - "WAITFOR DELAY"
+matchers:
+  - type: word
+    words:
+      - "' OR '1'='1"
+      - "' OR 1=1--"
+      - "admin'--"
+      - "SLEEP("
+      - "WAITFOR DELAY"
+      - "BENCHMARK("
+      - "UNION SELECT"
+      - "UNION ALL SELECT"
+    condition: or

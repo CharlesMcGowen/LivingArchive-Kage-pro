@@ -137,8 +137,8 @@
                 <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
                 <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
             {% else %}
-                <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
-                <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
+        <a href="?page=1" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">« First</a>
+        <a href="?page={{ scans.previous_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">‹ Prev</a>
             {% endif %}
         {% endwith %}
     {% endif %}
@@ -153,8 +153,8 @@
                 <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
                 <a href="?{{ query_params|cut:'page='|cut:'&page=' }}&page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
             {% else %}
-                <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
-                <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
+        <a href="?page={{ scans.next_page_number }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Next ›</a>
+        <a href="?page={{ scans.paginator.num_pages }}" style="padding: 8px 12px; background: #1e293b; color: #10b981; border-radius: 4px; text-decoration: none;">Last »</a>
             {% endif %}
         {% endwith %}
     {% endif %}

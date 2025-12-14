@@ -1,0 +1,43 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}🐛 Bugsy - Bug Bounty - Controls{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🐛</div>
+    <div>
+        <h2>Bugsy Bug Bounty</h2>
+        <p class="subtitle">Bug Bounty & Vulnerability Curation</p>
+    </div>
+</div>
+
+<!-- Sub-navigation for Security Dashboards -->
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 15px; margin: 20px 0; border: 1px solid #334155;">
+    <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap;">
+        <span style="font-weight: bold; color: #94a3b8;">Security Dashboards:</span>
+        <a href="/surge/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">⚡ Surge</a>
+        <a href="/surge/koga/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🥷 Koga</a>
+        <a href="/surge/bugsy/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">📋 About</a>
+        <a href="/surge/bugsy/controls/" style="padding: 10px 20px; background: #3b82f6; color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">🎮 Controls</a>
+    </div>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">Curation Controls</h3>
+    <div style="margin-bottom: 20px;">
+        <p style="color: #e2e8f0; margin-bottom: 8px;"><strong>Status:</strong> <span id="statusText" style="color: #94a3b8;">Not Available</span></p>
+        <p style="color: #e2e8f0;"><strong>Curations:</strong> <span id="curationsText" style="color: #94a3b8;">-</span></p>
+    </div>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button style="background: #10b981; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600; opacity: 0.5; cursor: not-allowed;" disabled>▶️ Start Curation</button>
+        <button style="background: #6366f1; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600;">🔄 Refresh Status</button>
+    </div>
+    <p style="color: #94a3b8; font-size: 0.9rem; margin-top: 15px;">Bugsy curation controls will be available once the curation service is implemented.</p>
+</div>
+{% endblock %}

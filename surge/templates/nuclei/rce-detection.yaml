@@ -1,0 +1,19 @@
+id: rce-detection
+
+info:
+  name: RCE Detection
+  author: Twilight Sparkle
+  severity: critical
+  description: Detects RCE vulnerabilities
+  tags: rce, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

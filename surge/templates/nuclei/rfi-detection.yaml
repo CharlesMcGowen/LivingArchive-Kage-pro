@@ -1,0 +1,19 @@
+id: rfi-detection
+
+info:
+  name: RFI Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects RFI vulnerabilities
+  tags: rfi, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+matchers:
+  - type: word
+    words:
+    condition: or

@@ -1,0 +1,226 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}⚡ Surge - Electric Nuclei Scanner - Controls{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">⚡</div>
+    <div>
+        <h2>Surge Dashboard</h2>
+        <p class="subtitle">Electric Nuclei Vulnerability Scanner</p>
+    </div>
+</div>
+
+<!-- Sub-navigation for Security Dashboards -->
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 15px; margin: 20px 0; border: 1px solid #334155;">
+    <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap;">
+        <span style="font-weight: bold; color: #94a3b8;">Security Dashboards:</span>
+        <a href="/surge/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">📋 About</a>
+        <a href="/surge/controls/" style="padding: 10px 20px; background: #3b82f6; color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">🎮 Controls</a>
+        <a href="/surge/koga/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🥷 Koga</a>
+        <a href="/surge/bugsy/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🐛 Bugsy</a>
+    </div>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">Scanner Controls</h3>
+    <div id="scannerStatus" style="margin-bottom: 20px;">
+        <p style="color: #e2e8f0; margin-bottom: 8px;"><strong>Status:</strong> <span id="statusText" style="color: #94a3b8;">Checking...</span></p>
+        <p style="color: #e2e8f0;"><strong>Stats:</strong> <span id="statsText" style="color: #94a3b8;">-</span></p>
+    </div>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button id="startBtn" style="background: #10b981; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600; display: none;">▶️ Start Scanner</button>
+        <button id="stopBtn" style="background: #ef4444; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600; display: none;">⏹️ Stop Scanner</button>
+        <button id="refreshBtn" style="background: #6366f1; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600;">🔄 Refresh Status</button>
+    </div>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">Recent Findings</h3>
+    <div id="findingsContainer" style="max-height: 500px; overflow-y: auto; margin-bottom: 15px;">
+        <p id="findingsStatus" style="color: #94a3b8;">Loading findings...</p>
+        <div id="findingsList"></div>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button id="refreshFindingsBtn" style="background: #6366f1; color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: 600;">🔄 Refresh Findings</button>
+        <select id="severityFilter" style="padding: 10px; border-radius: 8px; background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; color: #e2e8f0;">
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+        </select>
+    </div>
+</div>
+
+<script>
+let statusCheckInterval = null;
+
+async function checkStatus() {
+    try {
+        const response = await fetch('/surge/api/scanner/status/');
+        const data = await response.json();
+        
+        const statusText = document.getElementById('statusText');
+        const statsText = document.getElementById('statsText');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        if (data.running) {
+            statusText.textContent = '🟢 Running';
+            statusText.style.color = '#10b981';
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            
+            if (data.stats) {
+                const stats = data.stats;
+                statsText.textContent = `Scans: ${stats.total_scans || 0} | Success: ${stats.successful_scans || 0} | Vulns: ${stats.total_vulnerabilities || 0}`;
+                statsText.style.color = '#e2e8f0';
+            }
+        } else {
+            statusText.textContent = '🔴 Stopped';
+            statusText.style.color = '#ef4444';
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            statsText.textContent = 'Scanner is stopped';
+            statsText.style.color = '#94a3b8';
+        }
+    } catch (error) {
+        document.getElementById('statusText').textContent = '❌ Error';
+        document.getElementById('statusText').style.color = '#ef4444';
+    }
+}
+
+document.getElementById('startBtn').addEventListener('click', async function() {
+    try {
+        const response = await fetch('/surge/api/scanner/start/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({batch_size: 5, scan_type: 'quick'})
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            checkStatus();
+        } else {
+            alert('❌ ' + (data.error || data.message));
+        }
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+});
+
+document.getElementById('stopBtn').addEventListener('click', async function() {
+    if (!confirm('Are you sure you want to stop the scanner?')) return;
+    try {
+        const response = await fetch('/surge/api/scanner/stop/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            checkStatus();
+        } else {
+            alert('❌ ' + (data.error || data.message));
+        }
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+});
+
+document.getElementById('refreshBtn').addEventListener('click', checkStatus);
+
+function getSeverityColor(severity) {
+    const colors = {
+        'critical': '#ef4444',
+        'high': '#f59e0b',
+        'medium': '#3b82f6',
+        'low': '#10b981',
+        'info': '#6b7280'
+    };
+    return colors[severity?.toLowerCase()] || '#6b7280';
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'Unknown';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+async function loadFindings() {
+    const severity = document.getElementById('severityFilter').value;
+    const params = new URLSearchParams({
+        limit: 20,
+        days: 7
+    });
+    if (severity) {
+        params.append('severity', severity);
+    }
+    
+    try {
+        const response = await fetch(`/surge/api/findings/?${params}`);
+        const data = await response.json();
+        
+        const findingsList = document.getElementById('findingsList');
+        const findingsStatus = document.getElementById('findingsStatus');
+        
+        if (data.success && data.findings && data.findings.length > 0) {
+            findingsStatus.textContent = `Found ${data.count} findings`;
+            findingsStatus.style.color = '#10b981';
+            
+            findingsList.innerHTML = data.findings.map(finding => {
+                const severityColor = getSeverityColor(finding.severity);
+                return `
+                    <div style="border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: rgba(15, 23, 42, 0.6);">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="flex: 1;">
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                    <span style="background: ${severityColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">
+                                        ${finding.severity?.toUpperCase() || 'UNKNOWN'}
+                                    </span>
+                                    ${finding.cve_id ? `<span style="color: #3b82f6; font-weight: bold;">${finding.cve_id}</span>` : ''}
+                                </div>
+                                <h4 style="margin: 0 0 8px 0; color: #e2e8f0;">${finding.vulnerability_name || finding.template_name || 'Unknown Vulnerability'}</h4>
+                                <p style="margin: 4px 0; color: #94a3b8; font-size: 14px;">
+                                    <strong>Target:</strong> ${finding.target || 'N/A'}<br>
+                                    <strong>Template:</strong> ${finding.template_id || 'N/A'}<br>
+                                    <strong>Found:</strong> ${formatDate(finding.created_at)}
+                                </p>
+                                ${finding.description ? `<p style="margin: 8px 0 0 0; color: #cbd5e1; font-size: 13px;">${finding.description.substring(0, 150)}${finding.description.length > 150 ? '...' : ''}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            findingsStatus.textContent = 'No findings found';
+            findingsStatus.style.color = '#94a3b8';
+            findingsList.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 20px;">No vulnerabilities found in the last 7 days.</p>';
+        }
+    } catch (error) {
+        document.getElementById('findingsStatus').textContent = '❌ Error loading findings';
+        document.getElementById('findingsStatus').style.color = '#ef4444';
+        console.error('Error loading findings:', error);
+    }
+}
+
+document.getElementById('refreshFindingsBtn').addEventListener('click', loadFindings);
+document.getElementById('severityFilter').addEventListener('change', loadFindings);
+
+// Initial status check and auto-refresh every 5 seconds
+checkStatus();
+statusCheckInterval = setInterval(checkStatus, 5000);
+
+// Load findings on page load and refresh every 30 seconds
+loadFindings();
+setInterval(loadFindings, 30000);
+</script>
+{% endblock %}

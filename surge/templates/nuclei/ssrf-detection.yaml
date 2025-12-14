@@ -1,0 +1,30 @@
+id: ssrf-detection
+
+info:
+  name: SSRF Detection
+  author: Twilight Sparkle
+  severity: high
+  description: Detects SSRF vulnerabilities
+  tags: ssrf, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+        - "192.168."
+        - "10."
+        - "127.0.0.1"
+        - "localhost"
+        - "169.254.169.254"
+matchers:
+  - type: word
+    words:
+      - "192.168."
+      - "10."
+      - "127.0.0.1"
+      - "localhost"
+      - "169.254.169.254"
+      - "metadata.google.internal"
+    condition: or

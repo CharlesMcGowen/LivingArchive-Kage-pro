@@ -1,0 +1,62 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}🐛 Bugsy - Bug Bounty{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #f59e0b; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🐛</div>
+    <div>
+        <h2>Bugsy Bug Bounty</h2>
+        <p class="subtitle">Bug Bounty & Vulnerability Curation</p>
+    </div>
+</div>
+
+<!-- Sub-navigation for Security Dashboards -->
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 15px; margin: 20px 0; border: 1px solid #334155;">
+    <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap;">
+        <span style="font-weight: bold; color: #94a3b8;">Security Dashboards:</span>
+        <a href="/surge/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">⚡ Surge</a>
+        <a href="/surge/koga/about/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🥷 Koga</a>
+        <a href="/surge/bugsy/about/" style="padding: 10px 20px; background: #3b82f6; color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">🐛 Bugsy</a>
+        <a href="/surge/bugsy/controls/" style="padding: 10px 20px; background: rgba(59, 130, 246, 0.3); color: #94a3b8; border-radius: 8px; text-decoration: none;">🎮 Controls</a>
+    </div>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">About Bugsy</h3>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #f59e0b;">Specialization:</strong> Bug Bounty & Vulnerability Curation</p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #f59e0b;">Status:</strong> <span style="background: #10b981; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">Active</span></p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #f59e0b;">Personality:</strong> Bug Hunter</p>
+    <p style="color: #e2e8f0; margin-bottom: 10px;"><strong style="color: #f59e0b;">Focus:</strong> Vulnerability discovery, curation, and bug bounty management</p>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">Bug Bounty Capabilities</h3>
+    <p style="color: #cbd5e1; margin-bottom: 20px;">Bugsy specializes in comprehensive vulnerability discovery and intelligent curation for bug bounty programs.</p>
+    
+    <h4 style="color: #f59e0b; margin-top: 20px; margin-bottom: 15px;">Core Features</h4>
+    <ul style="color: #cbd5e1; margin-left: 20px; line-height: 1.8;">
+        <li><strong style="color: #f59e0b;">Vulnerability Discovery:</strong> Automated and manual vulnerability identification</li>
+        <li><strong style="color: #f59e0b;">Curation:</strong> Intelligent vulnerability assessment and prioritization</li>
+        <li><strong style="color: #f59e0b;">Bug Bounty Management:</strong> Submission tracking and reward management</li>
+        <li><strong style="color: #f59e0b;">Reporting:</strong> Comprehensive vulnerability reports and documentation</li>
+    </ul>
+</div>
+
+<div style="background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px;">Curation Intelligence</h3>
+    <p style="color: #cbd5e1; margin-bottom: 15px;">Bugsy uses advanced curation algorithms to prioritize and validate vulnerabilities:</p>
+    <ul style="color: #cbd5e1; margin-left: 20px; line-height: 1.8;">
+        <li><strong style="color: #f59e0b;">Severity Assessment:</strong> Automatic classification by impact and exploitability</li>
+        <li><strong style="color: #f59e0b;">Duplicate Detection:</strong> Intelligent matching of similar vulnerabilities</li>
+        <li><strong style="color: #f59e0b;">False Positive Filtering:</strong> Advanced heuristics to reduce noise</li>
+        <li><strong style="color: #f59e0b;">Priority Scoring:</strong> Risk-based ranking for efficient triage</li>
+    </ul>
+</div>
+{% endblock %}

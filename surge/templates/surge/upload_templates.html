@@ -1,0 +1,113 @@
+{% extends "surge/base.html" %}
+
+{% block title %}📤 Upload Nuclei Templates - Surge{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>📤 Upload Nuclei Templates</h1>
+    <p>Upload templates for Surge, Koga, and Bugsy</p>
+    <div class="dashboard-nav">
+        <a href="/surge/" class="nav-btn">⚡ Surge</a>
+        <a href="/koga/dashboard/" class="nav-btn">🥷 Koga</a>
+        <a href="/bugsy/" class="nav-btn">🐛 Bugsy</a>
+        <span class="nav-separator">|</span>
+        <span class="nav-btn current upload-btn">📤 Upload Templates</span>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Template Upload</h2>
+    <p>Templates uploaded here will be available to all Nuclei scanning agents (Surge, Koga, Bugsy).</p>
+    <p><strong>Templates Directory:</strong> <code>{{ templates_dir }}</code></p>
+    
+    <form id="uploadForm" enctype="multipart/form-data" method="post">
+        {% csrf_token %}
+        <div style="margin: 20px 0;">
+            <label for="files" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                Select Template Files or Folders (ZIP):
+            </label>
+            <input type="file" id="files" name="files" multiple accept=".yaml,.yml,.zip" 
+                   style="padding: 10px; border: 2px dashed #f59e0b; border-radius: 8px; width: 100%; cursor: pointer;">
+            <p style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+                You can upload:
+                <ul style="margin-left: 20px; margin-top: 5px;">
+                    <li>Single template files (.yaml, .yml)</li>
+                    <li>Multiple template files at once</li>
+                    <li>ZIP archives containing template folders</li>
+                </ul>
+            </p>
+        </div>
+        
+        <div class="btn-group">
+            <button type="submit" class="btn" style="background: #10b981; border: none; cursor: pointer;">
+                📤 Upload Templates
+            </button>
+            <a href="/surge/" class="btn" style="background: #6b7280;">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<div id="uploadStatus" style="display: none;" class="card">
+    <h2>Upload Status</h2>
+    <div id="statusContent"></div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const statusDiv = document.getElementById('uploadStatus');
+    const statusContent = document.getElementById('statusContent');
+    
+    statusDiv.style.display = 'block';
+    statusContent.innerHTML = '<p>⏳ Uploading templates...</p>';
+    
+    try {
+        const response = await fetch('/surge/upload-templates/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            let html = `<p style="color: #10b981; font-weight: bold;">✅ Upload successful!</p>`;
+            html += `<p><strong>Uploaded:</strong> ${data.uploaded_count} template(s)</p>`;
+            
+            if (data.uploaded_files && data.uploaded_files.length > 0) {
+                html += `<p><strong>Files:</strong></p><ul>`;
+                data.uploaded_files.slice(0, 20).forEach(file => {
+                    html += `<li><code>${file}</code></li>`;
+                });
+                if (data.uploaded_files.length > 20) {
+                    html += `<li><em>... and ${data.uploaded_files.length - 20} more</em></li>`;
+                }
+                html += `</ul>`;
+            }
+            
+            if (data.errors && data.errors.length > 0) {
+                html += `<p style="color: #ef4444;"><strong>Errors:</strong></p><ul>`;
+                data.errors.forEach(error => {
+                    html += `<li>${error}</li>`;
+                });
+                html += `</ul>`;
+            }
+            
+            statusContent.innerHTML = html;
+            
+            // Reset form
+            document.getElementById('files').value = '';
+        } else {
+            statusContent.innerHTML = `<p style="color: #ef4444;">❌ Upload failed: ${data.error || 'Unknown error'}</p>`;
+        }
+    } catch (error) {
+        statusContent.innerHTML = `<p style="color: #ef4444;">❌ Error: ${error.message}</p>`;
+    }
+});
+</script>
+{% endblock %}
+

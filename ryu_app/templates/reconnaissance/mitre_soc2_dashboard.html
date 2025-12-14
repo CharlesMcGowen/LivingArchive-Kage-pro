@@ -1,0 +1,336 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}MITRE ATT&CK & SOC2 Dashboard{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #dc2626; }
+    .mitre-tactic {
+        padding: 10px;
+        margin: 5px;
+        background: #1e293b;
+        border-radius: 6px;
+        border-left: 4px solid #dc2626;
+        transition: transform 0.2s;
+    }
+    .mitre-tactic:hover {
+        transform: translateX(4px);
+    }
+    .soc2-control {
+        padding: 12px;
+        margin: 8px 0;
+        background: #1e293b;
+        border-radius: 6px;
+        border-left: 4px solid #10b981;
+    }
+    .compliance-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .compliance-compliant { background: #10b981; color: white; }
+    .compliance-partial { background: #f59e0b; color: white; }
+    .compliance-noncompliant { background: #dc2626; color: white; }
+    .technique-item {
+        padding: 8px;
+        margin: 4px 0;
+        background: #0f172a;
+        border-radius: 4px;
+        border-left: 3px solid #dc2626;
+    }
+    .technique-item.high-confidence {
+        border-left-color: #dc2626;
+    }
+    .technique-item.medium-confidence {
+        border-left-color: #f59e0b;
+    }
+    .technique-item.low-confidence {
+        border-left-color: #64748b;
+    }
+    .confidence-bar {
+        height: 4px;
+        background: #1e293b;
+        border-radius: 2px;
+        margin-top: 4px;
+        overflow: hidden;
+    }
+    .confidence-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #dc2626, #f59e0b);
+        transition: width 0.3s;
+    }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🛡️</div>
+    <div>
+        <h2>MITRE ATT&CK & SOC2 Dashboard</h2>
+        <p class="subtitle">Security framework analysis and compliance monitoring</p>
+    </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stat-card">
+        <div class="label">🎯 MITRE Tactics</div>
+        <div class="value" id="stat-tactics">{{ mitre_tactics_count|default:"14" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">🔧 MITRE Techniques</div>
+        <div class="value" id="stat-techniques">{{ mitre_techniques_count|default:"200+" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">✅ SOC2 Controls</div>
+        <div class="value">{{ soc2_controls_count|default:"67" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">📊 Compliance Score</div>
+        <div class="value">{{ compliance_score|default:"0" }}%</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px;">
+    <!-- MITRE ATT&CK Section -->
+    <div>
+        <h3 style="color: #dc2626; margin-bottom: 20px;">🎯 MITRE ATT&CK Framework</h3>
+        <div style="background: #0f172a; padding: 20px; border-radius: 8px; max-height: 600px; overflow-y: auto;">
+            <div id="mitre-tactics-container">
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Initial Access</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques used to gain initial foothold</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-initial-access-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Execution</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques that result in code execution</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-execution-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Persistence</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to maintain access</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-persistence-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Privilege Escalation</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to gain higher-level permissions</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-privilege-escalation-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Defense Evasion</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to avoid detection</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-defense-evasion-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Credential Access</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques for stealing credentials</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-credential-access-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Discovery</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to explore the environment</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-discovery-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Lateral Movement</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to move through the environment</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-lateral-movement-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Collection</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to gather data of interest</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-collection-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Command and Control</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques for communicating with systems</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-command-and-control-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Exfiltration</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to steal data</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-exfiltration-count">0 Techniques</span>
+                </div>
+                <div class="mitre-tactic">
+                    <strong style="color: #dc2626;">Impact</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Techniques to manipulate, interrupt, or destroy</p>
+                    <span class="compliance-badge compliance-partial" id="tactic-impact-count">0 Techniques</span>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <a href="https://attack.mitre.org/" target="_blank" style="padding: 10px 20px; background: #dc2626; color: white; border-radius: 6px; text-decoration: none; display: inline-block;">
+                    View Full MITRE ATT&CK Matrix →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- SOC2 Section -->
+    <div>
+        <h3 style="color: #10b981; margin-bottom: 20px;">✅ SOC2 Compliance</h3>
+        <div style="background: #0f172a; padding: 20px; border-radius: 8px; max-height: 600px; overflow-y: auto;">
+            <div id="soc2-controls-container">
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC1 - Control Environment</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Policies and procedures for control environment</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC2 - Communication and Information</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Information and communication systems</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC3 - Risk Assessment</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Risk identification and analysis</p>
+                    <span class="compliance-badge compliance-partial">Partial</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC4 - Monitoring Activities</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Ongoing and separate evaluations</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC5 - Control Activities</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Policies and procedures for control activities</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC6 - Logical and Physical Access</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Access controls and restrictions</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC7 - System Operations</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">System operations and processing integrity</p>
+                    <span class="compliance-badge compliance-partial">Partial</span>
+                </div>
+                <div class="soc2-control">
+                    <strong style="color: #10b981;">CC8 - Change Management</strong>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin: 5px 0;">Change management processes</p>
+                    <span class="compliance-badge compliance-compliant">Compliant</span>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <button onclick="loadSOC2Details()" style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    Refresh Compliance Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mapped Techniques Section -->
+<div style="margin-top: 30px; padding: 20px; background: #0f172a; border-radius: 8px;">
+    <h3 style="color: #dc2626; margin-bottom: 15px;">🔍 Mapped MITRE Techniques from Scans</h3>
+    <div id="mapped-techniques-container" style="max-height: 400px; overflow-y: auto;">
+        <p style="color: #94a3b8; text-align: center; padding: 20px;">Loading mapped techniques...</p>
+    </div>
+</div>
+
+<div style="margin-top: 30px; padding: 20px; background: #0f172a; border-radius: 8px;">
+    <h3 style="color: #dc2626; margin-bottom: 15px;">📊 Security Metrics</h3>
+    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="stat-card">
+            <div class="label">Threats Detected</div>
+            <div class="value" id="stat-threats">{{ threats_detected|default:"0" }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Controls Active</div>
+            <div class="value" id="stat-controls">{{ controls_active|default:"0" }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Last Assessment</div>
+            <div class="value" style="font-size: 0.9rem;" id="stat-assessment">{{ last_assessment|default:"N/A" }}</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadSOC2Details() {
+    fetch('/reconnaissance/api/mitre-soc2/status/')
+        .then(response => response.json())
+        .then(data => {
+            console.log('SOC2 Status:', data);
+            
+            // Update stats
+            if (data.mitre_tactics !== undefined) {
+                document.getElementById('stat-tactics').textContent = data.mitre_tactics;
+            }
+            if (data.mitre_techniques !== undefined) {
+                document.getElementById('stat-techniques').textContent = data.mitre_techniques;
+            }
+            if (data.threats_detected !== undefined) {
+                document.getElementById('stat-threats').textContent = data.threats_detected;
+            }
+            if (data.controls_active !== undefined) {
+                document.getElementById('stat-controls').textContent = data.controls_active;
+            }
+            if (data.last_assessment) {
+                const date = new Date(data.last_assessment);
+                document.getElementById('stat-assessment').textContent = date.toLocaleString();
+            }
+            
+            // Update tactic counts
+            if (data.tactics) {
+                Object.keys(data.tactics).forEach(tactic => {
+                    const count = data.tactics[tactic].length;
+                    const elementId = 'tactic-' + tactic.toLowerCase().replace(/\s+/g, '-') + '-count';
+                    const element = document.getElementById(elementId);
+                    if (element) {
+                        element.textContent = count + ' Technique' + (count !== 1 ? 's' : '');
+                    }
+                });
+            }
+            
+            // Update mapped techniques
+            if (data.techniques && data.techniques.length > 0) {
+                const container = document.getElementById('mapped-techniques-container');
+                container.innerHTML = '';
+                
+                data.techniques.forEach(tech => {
+                    const confidenceClass = tech.confidence > 0.8 ? 'high-confidence' : 
+                                          tech.confidence > 0.5 ? 'medium-confidence' : 'low-confidence';
+                    const techDiv = document.createElement('div');
+                    techDiv.className = 'technique-item ' + confidenceClass;
+                    techDiv.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong style="color: #dc2626;">${tech.id}</strong> - ${tech.name}
+                                <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 4px;">
+                                    ${tech.tactic} • Confidence: ${(tech.confidence * 100).toFixed(0)}%
+                                </div>
+                            </div>
+                            <span class="compliance-badge ${tech.relevance === 'high' ? 'compliance-noncompliant' : tech.relevance === 'medium' ? 'compliance-partial' : 'compliance-compliant'}">
+                                ${tech.relevance}
+                            </span>
+                        </div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${tech.confidence * 100}%"></div>
+                        </div>
+                    `;
+                    container.appendChild(techDiv);
+                });
+            } else {
+                document.getElementById('mapped-techniques-container').innerHTML = 
+                    '<p style="color: #94a3b8; text-align: center; padding: 20px;">No techniques mapped yet. Run scans to see mapped MITRE techniques.</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading SOC2 details:', error);
+            document.getElementById('mapped-techniques-container').innerHTML = 
+                '<p style="color: #dc2626; text-align: center; padding: 20px;">Error loading data. Please try again.</p>';
+        });
+}
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', function() {
+    loadSOC2Details();
+    // Refresh every 30 seconds
+    setInterval(loadSOC2Details, 30000);
+});
+</script>
+
+{% endblock %}

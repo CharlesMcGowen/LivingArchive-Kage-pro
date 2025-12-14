@@ -1,0 +1,46 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Koga Stealth Operations{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #7c3aed; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🥷</div>
+    <div>
+        <h2>Koga Stealth Operations</h2>
+        <p class="subtitle">Stealth Operations & Poison Testing</p>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Stealth Operations</div>
+        <div class="value">{{ stealth_operations|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Poison Tests</div>
+        <div class="value">{{ poison_tests|default:0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Recent Scans</div>
+        <div class="value">{{ scan_count_24h|default:0 }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Scans</div>
+        <div class="value">{{ scan_count|default:0 }}</div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <h3>About Koga</h3>
+    <p><strong>Specialization:</strong> Stealth Operations & Poison Testing</p>
+    <p><strong>Personality:</strong> Poison Stealth</p>
+    <p><strong>Focus:</strong> Covert operations, stealth scanning, and security testing</p>
+</div>
+{% endblock %}

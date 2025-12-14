@@ -1,0 +1,34 @@
+id: xss-detection
+
+info:
+  name: XSS Detection
+  author: Twilight Sparkle
+  severity: medium
+  description: Detects XSS vulnerabilities
+  tags: xss, twilight-sparkle
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    payloads:
+      payloads:
+        - "<script>"
+        - "javascript:"
+        - "alert("
+        - "onerror="
+        - "<img src=x onerror="
+matchers:
+  - type: word
+    words:
+      - "<script>"
+      - "javascript:"
+      - "alert("
+      - "onerror="
+      - "<img src=x onerror="
+      - "onclick="
+      - "document.cookie"
+      - "location.hash"
+      - "document.write("
+      - "eval("
+    condition: or
