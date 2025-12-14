@@ -699,10 +699,41 @@ function handleFiles(files) {
     updateFileList();
     document.getElementById('file-upload-form').style.display = 'block';
     
-    // Auto-infer CMS from first filename if all have same CMS
-    const firstCMS = inferCMSFromFilename(validFiles[0].name);
-    if (firstCMS && validFiles.every(f => inferCMSFromFilename(f.name) === firstCMS)) {
-        document.getElementById('file-cms-name').value = firstCMS;
+    // Auto-infer CMS from filenames - find most common CMS
+    const cmsCounts = {};
+    validFiles.forEach(file => {
+        const cms = inferCMSFromFilename(file.name);
+        if (cms) {
+            cmsCounts[cms] = (cmsCounts[cms] || 0) + 1;
+        }
+    });
+    
+    // Find the most common CMS
+    let mostCommonCMS = null;
+    let maxCount = 0;
+    for (const [cms, count] of Object.entries(cmsCounts)) {
+        if (count > maxCount) {
+            maxCount = count;
+            mostCommonCMS = cms;
+        }
+    }
+    
+    // Auto-populate if we found a dominant CMS (appears in at least 50% of files or is the only one)
+    if (mostCommonCMS && (maxCount >= validFiles.length * 0.5 || Object.keys(cmsCounts).length === 1)) {
+        document.getElementById('file-cms-name').value = mostCommonCMS;
+        
+        // Show info about detected CMSs if there are multiple
+        if (Object.keys(cmsCounts).length > 1) {
+            const cmsList = Object.entries(cmsCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cms, count]) => `${cms} (${count})`)
+                .join(', ');
+            console.log(`Detected CMSs: ${cmsList}. Using most common: ${mostCommonCMS}`);
+        }
+    } else if (Object.keys(cmsCounts).length > 0) {
+        // Multiple CMSs detected but no dominant one - show all options
+        const cmsList = Object.keys(cmsCounts).join(', ');
+        console.log(`Multiple CMSs detected: ${cmsList}. Consider specifying manually.`);
     }
 }
 
@@ -753,7 +784,8 @@ function cancelFileUpload() {
 
 function inferCMSFromFilename(filename) {
     const lower = filename.toLowerCase();
-    if (lower.includes('wordpress') || lower.includes('wp-')) return 'wordpress';
+    // Check for specific CMS patterns (order matters - more specific first)
+    if (lower.includes('wordpress') || lower.includes('wp-') || lower.includes('wp_')) return 'wordpress';
     if (lower.includes('drupal')) return 'drupal';
     if (lower.includes('joomla')) return 'joomla';
     if (lower.includes('magento')) return 'magento';
@@ -761,6 +793,20 @@ function inferCMSFromFilename(filename) {
     if (lower.includes('sitecore')) return 'sitecore';
     if (lower.includes('vbulletin') || lower.includes('vb-')) return 'vbulletin';
     if (lower.includes('aem') || lower.includes('adobe')) return 'aem';
+    if (lower.includes('django')) return 'django';
+    if (lower.includes('laravel')) return 'laravel';
+    if (lower.includes('asp.net') || lower.includes('aspnet') || lower.includes('aspx')) return 'aspnet';
+    if (lower.includes('coldfusion') || lower.includes('cf-')) return 'coldfusion';
+    if (lower.includes('box-cms') || lower.includes('boxcms')) return 'box-cms';
+    if (lower.includes('sap')) return 'sap';
+    if (lower.includes('typo3')) return 'typo3';
+    if (lower.includes('prestashop')) return 'prestashop';
+    if (lower.includes('ghost')) return 'ghost';
+    if (lower.includes('moodle')) return 'moodle';
+    if (lower.includes('liferay')) return 'liferay';
+    if (lower.includes('kentico')) return 'kentico';
+    if (lower.includes('tikiwiki') || lower.includes('tiki-wiki')) return 'tikiwiki';
+    if (lower.includes('blogger')) return 'blogger';
     return null;
 }
 

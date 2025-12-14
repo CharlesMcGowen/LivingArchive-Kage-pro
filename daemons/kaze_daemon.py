@@ -240,10 +240,11 @@ class KazeDaemon:
                         logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
                         
                         # Perform scan (pass eggrecord data to avoid Django model lookup)
-                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kaze_port_scan', egg_record_data=eggrecord)
+                        # Set write_to_db=False so we submit via API for consistent timestamping
+                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kaze_port_scan', write_to_db=False, egg_record_data=eggrecord)
                         
                         if result.get('success'):
-                            # Submit result to API
+                            # Submit result to API (this will write to database with consistent timestamping)
                             self._submit_scan_result(
                                 eggrecord_id,
                                 target,

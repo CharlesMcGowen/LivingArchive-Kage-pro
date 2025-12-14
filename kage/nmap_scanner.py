@@ -211,7 +211,7 @@ class KageNmapScanner:
         if self.nmap_knowledge:
             logger.info(f"📚 Loaded Nmap knowledge base ({self.nmap_knowledge.get('total_pages', 0)} pages)")
     
-    def scan_egg_record(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan', eggrecord_data: Dict[str, Any] = None) -> Dict[str, Any]:
+    def scan_egg_record(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan', write_to_db: bool = True, eggrecord_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Scan an EggRecord and create Nmap entries.
         
@@ -219,12 +219,13 @@ class KageNmapScanner:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
             scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
+            write_to_db: If False, return results without writing to database (for REST API mode)
             eggrecord_data: Optional pre-fetched eggrecord data (avoids Django model lookup)
         
         Wrapped in try-except to catch and log the exact location of 'int has no len()' errors.
         """
         try:
-            return self._scan_egg_record_impl(egg_record_id, ports, scan_type, eggrecord_data)
+            return self._scan_egg_record_impl(egg_record_id, ports, scan_type, write_to_db, eggrecord_data)
         except TypeError as e:
             if "'int' has no len()" in str(e) or "object of type 'int' has no len()" in str(e):
                 import traceback
@@ -238,7 +239,7 @@ class KageNmapScanner:
                 }
             raise
     
-    def _scan_egg_record_impl(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan', eggrecord_data: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _scan_egg_record_impl(self, egg_record_id: str, ports: List[int] = None, scan_type: str = 'kage_port_scan', write_to_db: bool = True, eggrecord_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Internal implementation of scan_egg_record.
         
@@ -246,6 +247,7 @@ class KageNmapScanner:
             egg_record_id: EggRecord UUID string to scan
             ports: List of ports to scan (defaults to common ports)
             scan_type: Type of scan (default: 'kage_port_scan', use 'ryu_port_scan' for Ryu)
+            write_to_db: If False, return results without writing to database (for REST API mode)
             eggrecord_data: Optional pre-fetched eggrecord data (avoids Django model lookup)
             
         Returns:
@@ -660,8 +662,9 @@ class KageNmapScanner:
         # Create Nmap scan entries for Bugsy
         nmap_entries_created = 0
         nmap_scan_id = None
-        if open_ports:
+        if open_ports and write_to_db:
             # Create Nmap entries using raw SQL (table: customer_eggs_eggrecords_general_models_nmap)
+            # Only write if write_to_db=True (daemons should use write_to_db=False and submit via API)
             try:
                 import uuid
                 import hkagelib
@@ -805,44 +808,46 @@ class KageNmapScanner:
                 import traceback
                 traceback.print_exc()
                 # Fallback: Store in open_ports JSON field on egg_record
-                import json
-                try:
-                    db = connections['customer_eggs']
-                    with db.cursor() as cursor:
-                        cursor.execute("""
-                            SELECT open_ports FROM customer_eggs_eggrecords_general_models_eggrecord
-                            WHERE id = %s
-                        """, [str(egg_record_id)])
-                        row = cursor.fetchone()
-                        current_ports = json.loads(row[0]) if row and row[0] else []
+                # Only if write_to_db=True
+                if write_to_db:
+                    import json
+                    try:
+                        db = connections['customer_eggs']
+                        with db.cursor() as cursor:
+                            cursor.execute("""
+                                SELECT open_ports FROM customer_eggs_eggrecords_general_models_eggrecord
+                                WHERE id = %s
+                            """, [str(egg_record_id)])
+                            row = cursor.fetchone()
+                            current_ports = json.loads(row[0]) if row and row[0] else []
+                            
+                            new_ports = [{
+                                'port': result['port'],
+                                'protocol': result.get('protocol', 'tcp'),
+                                'service': result.get('service_name', ''),
+                                'version': result.get('service_version', ''),
+                                'state': 'open',
+                                'scanned_at': datetime.now().isoformat()
+                            } for result in open_ports]
+                            
+                            # Merge with existing ports
+                            existing_ports = {port.get('port', port.get('port')): port for port in current_ports if isinstance(port, dict)}
+                            for new_port in new_ports:
+                                existing_ports[new_port['port']] = new_port
+                            
+                            updated_ports = list(existing_ports.values())
+                            
+                            # Update
+                            cursor.execute("""
+                                UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                                SET open_ports = %s
+                                WHERE id = %s
+                            """, [json.dumps(updated_ports), str(egg_record_id)])
+                            db.commit()  # Commit the fallback update
                         
-                        new_ports = [{
-                            'port': result['port'],
-                            'protocol': result.get('protocol', 'tcp'),
-                            'service': result.get('service_name', ''),
-                            'version': result.get('service_version', ''),
-                            'state': 'open',
-                            'scanned_at': datetime.now().isoformat()
-                        } for result in open_ports]
-                        
-                        # Merge with existing ports
-                        existing_ports = {port.get('port', port.get('port')): port for port in current_ports if isinstance(port, dict)}
-                        for new_port in new_ports:
-                            existing_ports[new_port['port']] = new_port
-                        
-                        updated_ports = list(existing_ports.values())
-                        
-                        # Update
-                        cursor.execute("""
-                            UPDATE customer_eggs_eggrecords_general_models_eggrecord
-                            SET open_ports = %s
-                            WHERE id = %s
-                        """, [json.dumps(updated_ports), str(egg_record_id)])
-                        db.commit()  # Commit the fallback update
-                    
-                    logger.info(f"  ✅ Updated egg record with {len(open_ports)} open ports (JSON fallback)")
-                except Exception as e2:
-                    logger.error(f"Fallback also failed: {e2}")
+                        logger.info(f"  ✅ Updated egg record with {len(open_ports)} open ports (JSON fallback)")
+                    except Exception as e2:
+                        logger.error(f"Fallback also failed: {e2}")
         
         duration = time.time() - start_time
         

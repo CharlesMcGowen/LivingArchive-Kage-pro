@@ -240,7 +240,8 @@ class KageDaemon:
                         logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
                         
                         # Perform scan (pass eggrecord data to avoid Django model lookup)
-                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kage_port_scan', eggrecord_data=eggrecord)
+                        # Set write_to_db=False so we submit via API for consistent timestamping
+                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kage_port_scan', write_to_db=False, eggrecord_data=eggrecord)
                         
                         if result.get('success'):
                             # Submit result to API

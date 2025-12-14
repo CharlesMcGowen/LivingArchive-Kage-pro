@@ -205,7 +205,8 @@ class KumoDaemon:
                         logger.info(f"🕷️  Spidering {target_url} ({eggrecord_id})")
                         
                         # Perform spidering (pass eggrecord data to avoid Django model lookup)
-                        result = self.spider.spider_egg_record(eggrecord_id, eggrecord_data=eggrecord)
+                        # Set write_to_db=False so we submit via API for consistent timestamping
+                        result = self.spider.spider_egg_record(eggrecord_id, write_to_db=False, eggrecord_data=eggrecord)
                         
                         if result.get('success'):
                             # Submit result to API

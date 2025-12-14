@@ -289,7 +289,8 @@ class RyuDaemon:
                                 self._current_task = f"scan:{eggrecord_id}"
                                 
                                 logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
-                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan')
+                                # Set write_to_db=False so we submit via API for consistent timestamping
+                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan', write_to_db=False)
                                 
                                 if result.get('success'):
                                     self._submit_scan_result(eggrecord_id, target, result)

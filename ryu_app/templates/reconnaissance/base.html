@@ -470,6 +470,7 @@
                 <a href="{% if surge_dashboard_url %}{{ surge_dashboard_url }}{% else %}/surge/about/{% endif %}" class="{% if personality == 'surge' %}active{% endif %}">⚡ Surge</a>
             </div>
             <span class="nav-separator">|</span>
+            <a href="/reconnaissance/mitre-soc2/" class="{% if personality == 'mitre_soc2' %}active{% endif %}">📊 Report Framework</a>
             <a href="/reconnaissance/network/" class="{% if personality == 'network' %}active{% endif %}">🗺️ Network</a>
             <a href="/reconnaissance/learning/" class="{% if personality == 'learning' %}active{% endif %}">🧠 Learning</a>
             <a href="/reconnaissance/eggrecords/" class="{% if personality == 'eggrecords' %}active{% endif %}">🥚 EggRecords</a>
@@ -1221,4 +1222,3 @@
     </script>
 </body>
 </html>
-
