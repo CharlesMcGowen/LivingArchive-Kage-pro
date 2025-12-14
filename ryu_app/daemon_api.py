@@ -66,7 +66,7 @@ def daemon_get_eggrecords(request, personality):
             elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
                 # Prevent scanning if:
-                # 1. Scanned by Kage within last 24 hours
+                # 1. Scanned by EITHER Kage OR Kaze within last 24 hours (prevent duplicate work)
                 # 2. Total scans (Kage + Kaze) >= 2 within last year
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
@@ -75,7 +75,7 @@ def daemon_get_eggrecords(request, personality):
                     AND NOT EXISTS (
                         SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
                         WHERE n.record_id_id = e.id
-                        AND n.scan_type = 'kage_port_scan'
+                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
                         AND n.created_at > NOW() - INTERVAL '24 hours'
                     )
                     AND (
@@ -257,19 +257,20 @@ def daemon_submit_scan(request, personality):
         with conn.cursor() as cursor:
             # Check for very recent duplicate scans (within last hour) to prevent race conditions
             # This is a safety check in addition to the 24-hour check in daemon_get_eggrecords
+            # Check for ANY scan from Kage, Kaze, or Ryu (not just same scan_type)
             cursor.execute("""
                 SELECT COUNT(*) as recent_scan_count
                 FROM customer_eggs_eggrecords_general_models_nmap n
                 WHERE n.record_id_id = %s
-                AND n.scan_type = %s
+                AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
                 AND n.created_at > NOW() - INTERVAL '1 hour'
-            """, [eggrecord_id, scan_type])
+            """, [eggrecord_id])
             recent_count = cursor.fetchone()[0]
             
             if recent_count > 0:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Domain has been scanned very recently (within last hour). Found {recent_count} recent scan(s). Skipping duplicate.',
+                    'error': f'Domain has been scanned very recently (within last hour) by another scanner. Found {recent_count} recent scan(s). Skipping duplicate.',
                     'skip_reason': 'very_recent_scan_exists'
                 }, status=409)  # 409 Conflict
             
