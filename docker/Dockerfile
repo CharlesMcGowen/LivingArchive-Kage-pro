@@ -41,6 +41,9 @@ COPY daemons/ /app/daemons/
 COPY kage/ /app/kage/
 COPY kumo/ /app/kumo/
 COPY ryu/ /app/ryu/
+COPY suzu/ /app/suzu/
+COPY ryu_project/ /app/ryu_project/
+COPY ryu_app/ /app/ryu_app/
 COPY artificial_intelligence/ /app/artificial_intelligence/
 COPY *.py /app/
 COPY __init__.py /app/

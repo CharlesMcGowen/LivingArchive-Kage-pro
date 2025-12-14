@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'ryu_app',
+    'surge',  # Surge Nuclei Scanner (integrated)
     # Add Oak and reconnaissance apps if available
     # 'artificial_intelligence.personalities.coordination.oak',  # Oak target curation
     # 'artificial_intelligence.personalities.reconnaissance',  # Nmap agents (Kage, Kaze, etc.)
@@ -65,6 +66,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'ryu_app.context_processors.surge_urls',  # Add surge URLs to all templates
             ],
         },
     },

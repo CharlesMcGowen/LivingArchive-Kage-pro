@@ -10,7 +10,8 @@ from .daemon_api import (
     daemon_submit_spider,
     daemon_submit_assessment,
     daemon_submit_enumeration,
-    daemon_health_check
+    daemon_health_check,
+    suzu_update_progress
 )
 
 app_name = 'ryu_app'
@@ -23,9 +24,12 @@ urlpatterns = [
     path('kumo/', views.kumo_dashboard, name='kumo_dashboard'),
     path('suzu/', views.suzu_dashboard, name='suzu_dashboard'),
     path('ryu/', views.ryu_dashboard, name='ryu_dashboard'),
+    path('koga/', views.koga_dashboard, name='koga_dashboard'),
+    path('bugsy/', views.bugsy_dashboard, name='bugsy_dashboard'),
     path('learning/', views.learning_dashboard, name='learning_dashboard'),
     path('monitoring/', views.monitoring_dashboard, name='monitoring_dashboard'),
     path('network/', views.network_visualizer_dashboard, name='network_visualizer_dashboard'),
+    path('mitre-soc2/', views.mitre_soc2_dashboard, name='mitre_soc2_dashboard'),
     path('eggrecords/', views.eggrecord_list, name='eggrecord_list'),
     path('eggrecords/<uuid:eggrecord_id>/', views.eggrecord_detail, name='eggrecord_detail'),
     path('api/check-empty/', views.check_empty, name='check_empty'),
@@ -36,6 +40,17 @@ urlpatterns = [
     path('api/learning/heuristics/', views.learning_heuristics_api, name='learning_heuristics_api'),
     path('api/learning/techniques/', views.learning_techniques_api, name='learning_techniques_api'),
     path('api/learning/ip-effectiveness/', views.learning_ip_effectiveness_api, name='learning_ip_effectiveness_api'),
+    # Suzu Vector Path API endpoints
+    path('api/suzu/paths/upload/', csrf_exempt(views.suzu_upload_paths_api), name='suzu_upload_paths_api'),
+    path('api/suzu/paths/upload-file/', csrf_exempt(views.suzu_upload_file_api), name='suzu_upload_file_api'),
+    path('api/suzu/paths/upload-directory/', csrf_exempt(views.suzu_upload_directory_api), name='suzu_upload_directory_api'),
+    path('api/suzu/paths/similar/', csrf_exempt(views.suzu_similar_paths_api), name='suzu_similar_paths_api'),
+    path('api/suzu/paths/weighted/', views.suzu_weighted_paths_api, name='suzu_weighted_paths_api'),
+    path('api/suzu/upload-history/', views.suzu_upload_history_api, name='suzu_upload_history_api'),
+    path('api/suzu/check-duplicates/', csrf_exempt(views.suzu_check_duplicates_api), name='suzu_check_duplicates_api'),
+    # Suzu Progress API endpoints
+    path('api/suzu/progress/', views.suzu_get_progress, name='suzu_get_progress'),
+    path('api/daemon/suzu/progress/', csrf_exempt(suzu_update_progress), name='suzu_update_progress'),
     # Network visualization API endpoints (must come before generic personality routes)
     path('api/network/graph/', views.network_graph_api, name='network_graph_api'),
     path('api/network/options/', views.network_options_api, name='network_options_api'),
@@ -59,5 +74,17 @@ urlpatterns = [
     path('api/<str:personality>/logs/', views.personality_logs_api, name='personality_logs_api'),  # Must come before generic action route
     path('api/<str:personality>/<str:action>/', views.personality_control_api, name='personality_control_api'),
     path('api/eggs/<int:egg_id>/queue-status/', views.check_egg_queue_status_api, name='check_egg_queue_status_api'),
+    # Terminal Execution API endpoints (AI Agent Bridge)
+    path('api/terminal/execute/', csrf_exempt(views.terminal_execute_api), name='terminal_execute_api'),
+    path('api/terminal/approve/<str:request_id>/', csrf_exempt(views.terminal_approve_api), name='terminal_approve_api'),
+    path('api/terminal/reject/<str:request_id>/', csrf_exempt(views.terminal_reject_api), name='terminal_reject_api'),
+    path('api/terminal/pending/', views.terminal_pending_api, name='terminal_pending_api'),
+    path('api/terminal/history/', views.terminal_history_api, name='terminal_history_api'),
+    path('api/terminal/stats/', views.terminal_stats_api, name='terminal_stats_api'),
+    path('api/terminal/cancel/<str:request_id>/', csrf_exempt(views.terminal_cancel_api), name='terminal_cancel_api'),
+    # MITRE ATT&CK and SOC2 API endpoints
+    path('api/mitre-soc2/status/', views.mitre_soc2_status_api, name='mitre_soc2_status_api'),
+    path('api/mitre-soc2/map/', csrf_exempt(views.mitre_map_finding_api), name='mitre_map_finding_api'),
+    path('api/mitre-soc2/analyze/', views.mitre_analyze_scans_api, name='mitre_analyze_scans_api'),
 ]
 

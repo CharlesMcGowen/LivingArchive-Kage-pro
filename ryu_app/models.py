@@ -58,3 +58,28 @@ class EggRecord(models.Model):
     def __str__(self):
         return self.subDomain or self.domainname or self.ip_address or str(self.id)
 
+
+class WordlistUpload(models.Model):
+    """Track wordlist uploads to Suzu vector database"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wordlist_name = models.CharField(max_length=255, db_index=True)
+    filename = models.CharField(max_length=255)
+    cms_name = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    source = models.CharField(max_length=50, default='uploaded')
+    paths_count = models.IntegerField(default=0)
+    uploaded_count = models.IntegerField(default=0)
+    failed_count = models.IntegerField(default=0)
+    file_hash = models.CharField(max_length=64, null=True, blank=True, db_index=True, help_text="SHA256 hash of file content for deduplication")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['wordlist_name', 'created_at']),
+            models.Index(fields=['cms_name', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.wordlist_name} ({self.uploaded_count} paths) - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+

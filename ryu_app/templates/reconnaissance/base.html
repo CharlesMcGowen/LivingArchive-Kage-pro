@@ -465,6 +465,11 @@
                 <a href="/reconnaissance/suzu/" class="{% if personality == 'suzu' %}active{% endif %}">🔔 Suzu</a>
             </div>
             <span class="nav-separator">|</span>
+            <div class="nav-group">
+                <span class="nav-group-label">Security</span>
+                <a href="{% if surge_dashboard_url %}{{ surge_dashboard_url }}{% else %}/surge/about/{% endif %}" class="{% if personality == 'surge' %}active{% endif %}">⚡ Surge</a>
+            </div>
+            <span class="nav-separator">|</span>
             <a href="/reconnaissance/network/" class="{% if personality == 'network' %}active{% endif %}">🗺️ Network</a>
             <a href="/reconnaissance/learning/" class="{% if personality == 'learning' %}active{% endif %}">🧠 Learning</a>
             <a href="/reconnaissance/eggrecords/" class="{% if personality == 'eggrecords' %}active{% endif %}">🥚 EggRecords</a>
@@ -604,17 +609,37 @@
     // Track server connection state
     let serverConnected = true;
     let connectionErrorCount = 0;
+    let statusChecksDisabled = false;
+    let lastSuccessTime = Date.now();
     
     // Check status for all personalities
     async function checkPersonalityStatus(personality) {
-        // Skip status checks if server is clearly disconnected
-        if (!serverConnected && connectionErrorCount > 3) {
+        // Skip status checks if disabled due to repeated failures
+        if (statusChecksDisabled) {
             return;
+        }
+        
+        // Skip if we've had too many errors and server is clearly disconnected
+        if (!serverConnected && connectionErrorCount > 5) {
+            // Re-enable checks after 30 seconds to allow server recovery
+            if (Date.now() - lastSuccessTime > 30000) {
+                connectionErrorCount = 0;
+                serverConnected = true;
+            } else {
+                return;
+            }
         }
         
         try {
             const response = await fetch(`/reconnaissance/api/${personality}/status/`, {
-                signal: AbortSignal.timeout(3000) // 3 second timeout
+                signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 3)
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            }).catch(err => {
+                // Catch network errors before they reach the try block
+                throw new Error('NetworkError');
             });
             
             if (!response.ok) {
@@ -626,20 +651,28 @@
                 updatePersonalityStatus(personality, data.status);
                 serverConnected = true;
                 connectionErrorCount = 0;
+                lastSuccessTime = Date.now();
+                statusChecksDisabled = false; // Re-enable if we get a success
             }
         } catch (error) {
             connectionErrorCount++;
             
-            // Only log connection errors occasionally to reduce console noise
-            if (connectionErrorCount === 1 || connectionErrorCount % 10 === 0) {
-                if (error.name === 'AbortError' || error.message.includes('Failed to fetch') || error.message.includes('SOCKET_NOT_CONNECTED')) {
-                    serverConnected = false;
-                    if (connectionErrorCount === 1) {
-                        console.warn(`Server connection issue detected. Status checks will be limited.`);
-                    }
-                } else {
-                    console.error(`Error checking ${personality} status:`, error);
+            // Disable status checks after 10 consecutive failures (all 5 personalities failed twice)
+            if (connectionErrorCount >= 10) {
+                if (!statusChecksDisabled) {
+                    statusChecksDisabled = true;
+                    console.warn('Status checks temporarily disabled due to repeated connection failures. Will retry in 30 seconds.');
                 }
+                return;
+            }
+            
+            // Only log connection errors on first failure or every 20th failure to reduce noise
+            if (connectionErrorCount === 1) {
+                // Silent - don't log first error, just mark server as disconnected
+                serverConnected = false;
+            } else if (connectionErrorCount % 20 === 0) {
+                // Log every 20th error (once per ~100 seconds with 5s interval)
+                console.debug(`Status check errors: ${connectionErrorCount} (server may be unavailable)`);
             }
             
             // Only update to unknown if we haven't had too many connection errors
@@ -1176,11 +1209,13 @@
             checkPersonalityStatus(personality);
         });
         
-        // Auto-refresh status every 5 seconds
+        // Auto-refresh status every 5 seconds (only if checks are enabled)
         setInterval(() => {
-            personalities.forEach(personality => {
-                checkPersonalityStatus(personality);
-            });
+            if (!statusChecksDisabled) {
+                personalities.forEach(personality => {
+                    checkPersonalityStatus(personality);
+                });
+            }
         }, 5000);
     }
     </script>

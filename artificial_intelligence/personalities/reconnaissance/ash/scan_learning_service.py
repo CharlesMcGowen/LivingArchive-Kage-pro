@@ -60,15 +60,15 @@ def get_learning_session_local():
         logger.warning(f"Could not use Django connection for learning service: {e}, falling back to default")
     
     # Fallback to original method
-try:
-    from EgoQT.src.database import SessionLocal, init_database
+    try:
+        from EgoQT.src.database import SessionLocal, init_database
         init_database()
         return SessionLocal
-except ImportError:
-    try:
-        from database import SessionLocal, init_database
-            return SessionLocal
     except ImportError:
+        try:
+            from database import SessionLocal, init_database
+            return SessionLocal
+        except ImportError:
             return None
 
 # Initialize on import
@@ -77,8 +77,8 @@ try:
     init_database = lambda: True  # No-op since we're using Django connection
 except Exception as e:
     logger.warning(f"Learning service initialization failed: {e}")
-        SessionLocal = None
-        init_database = None
+    SessionLocal = None
+    init_database = None
 
 from artificial_intelligence.personalities.reconnaissance.ash.scan_learning_models import (
     TechniqueEffectiveness,

@@ -240,7 +240,7 @@ class KazeDaemon:
                         logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
                         
                         # Perform scan (pass eggrecord data to avoid Django model lookup)
-                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kaze_port_scan', eggrecord_data=eggrecord)
+                        result = self.scanner.scan_egg_record(eggrecord_id, scan_type='kaze_port_scan', egg_record_data=eggrecord)
                         
                         if result.get('success'):
                             # Submit result to API

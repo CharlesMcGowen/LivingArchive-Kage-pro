@@ -13,7 +13,151 @@
     <div class="icon">🔔</div>
     <div>
         <h2>Suzu Dashboard</h2>
-        <p class="subtitle">Directory Enumerator - Wordlist-based path discovery with pattern learning</p>
+        <p class="subtitle">Directory Enumerator - Wordlist-based path discovery with pattern learning and heuristics</p>
+    </div>
+</div>
+
+<!-- Progress Bar Section -->
+<div id="suzu-progress-container" style="margin: 20px 0; padding: 20px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+        <span id="progress-icon">⏸️</span>
+        <span id="progress-title">Suzu Status: Idle</span>
+    </h3>
+    
+    <!-- Progress Bar -->
+    <div style="margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+            <span style="color: #94a3b8; font-size: 0.9rem;">Progress</span>
+            <span id="progress-percent" style="color: #f59e0b; font-weight: bold;">0%</span>
+        </div>
+        <div style="width: 100%; height: 24px; background: #0f172a; border-radius: 12px; overflow: hidden; border: 1px solid #334155;">
+            <div id="progress-bar" style="height: 100%; background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
+                <span id="progress-bar-text" style="color: #0f172a; font-size: 0.75rem; font-weight: bold; padding: 0 8px;"></span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Progress Details -->
+    <div id="progress-details" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">Current Target</div>
+            <div id="progress-target" style="color: #e2e8f0; font-weight: 500;">-</div>
+        </div>
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">Current Step</div>
+            <div id="progress-step" style="color: #e2e8f0; font-weight: 500;">-</div>
+        </div>
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">Cycle #</div>
+            <div id="progress-cycle" style="color: #e2e8f0; font-weight: 500;">0</div>
+        </div>
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">Paths Found</div>
+            <div id="progress-paths" style="color: #e2e8f0; font-weight: 500;">0</div>
+        </div>
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">CMS Detected</div>
+            <div id="progress-cms" style="color: #e2e8f0; font-weight: 500;">-</div>
+        </div>
+        <div style="padding: 10px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="color: #64748b; font-size: 0.8rem; margin-bottom: 5px;">In Queue</div>
+            <div id="progress-queue" style="color: #e2e8f0; font-weight: 500;">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- Wordlist Upload Section -->
+<div style="margin: 30px 0; padding: 20px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
+    <h3 style="color: #f59e0b; margin-bottom: 20px;">📤 Upload Wordlists</h3>
+    
+    <!-- File Upload Section -->
+    <div style="margin-bottom: 30px;">
+        <h4 style="color: #94a3b8; margin-bottom: 15px; font-size: 1.1rem;">File Upload</h4>
+        <div id="file-upload-area" style="border: 2px dashed #334155; border-radius: 8px; padding: 30px; text-align: center; background: #0f172a; cursor: pointer; transition: all 0.3s;"
+             ondrop="handleFileDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+            <div style="font-size: 3rem; margin-bottom: 10px;">📁</div>
+            <p style="color: #94a3b8; margin: 10px 0;">Drag & drop wordlist file(s) here</p>
+            <p style="color: #64748b; font-size: 0.9rem; margin: 5px 0;">or</p>
+            <input type="file" id="file-input" accept=".txt,.fuzz,.lst,.wordlist" multiple style="display: none;" onchange="handleFileSelect(event)">
+            <button onclick="document.getElementById('file-input').click()" style="padding: 10px 20px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">Browse Files</button>
+            <p style="color: #64748b; font-size: 0.85rem; margin-top: 10px;">Supported: .txt, .fuzz, .lst, .wordlist (multiple files supported)</p>
+        </div>
+        
+        <div id="file-upload-form" style="display: none; margin-top: 20px; padding: 15px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; color: #94a3b8; margin-bottom: 5px; font-size: 0.9rem;">Selected Files (<span id="file-count">0</span>):</label>
+                <div id="selected-files-list" style="max-height: 150px; overflow-y: auto; margin-top: 10px;"></div>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; color: #94a3b8; margin-bottom: 5px; font-size: 0.9rem;">CMS Name (optional, auto-inferred from filename and path content):</label>
+                <input type="text" id="file-cms-name" placeholder="e.g., wordpress, drupal" style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;">
+                <p style="color: #64748b; font-size: 0.85rem; margin-top: 5px;">💡 Weight is automatically calculated based on CMS detection and path patterns</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="uploadFiles()" id="file-upload-btn" style="flex: 1; padding: 10px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">Upload All Files</button>
+                <button onclick="cancelFileUpload()" style="padding: 10px 20px; background: #64748b; color: white; border: none; border-radius: 6px; cursor: pointer;">Cancel</button>
+            </div>
+            <div id="file-upload-progress" style="display: none; margin-top: 15px;">
+                <div style="width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden;">
+                    <div id="file-upload-progress-bar" style="height: 100%; background: #10b981; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="file-upload-status" style="color: #94a3b8; font-size: 0.9rem; margin-top: 5px; text-align: center;"></p>
+                <div id="file-upload-details" style="margin-top: 10px; font-size: 0.85rem; color: #64748b;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Directory Upload Section -->
+    <div style="margin-bottom: 30px; padding-top: 20px; border-top: 1px solid #334155;">
+        <h4 style="color: #94a3b8; margin-bottom: 15px; font-size: 1.1rem;">Directory Upload</h4>
+        <div style="padding: 15px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; color: #94a3b8; margin-bottom: 5px; font-size: 0.9rem;">Directory Path:</label>
+                <input type="text" id="directory-path" placeholder="/home/ego/webapps-nvme/tools/SecLists/Discovery/Web-Content/CMS/" 
+                       value="/home/ego/webapps-nvme/tools/SecLists/Discovery/Web-Content/CMS/" 
+                       style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-family: monospace;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: flex; align-items: center; gap: 8px; color: #94a3b8; cursor: pointer;">
+                    <input type="checkbox" id="directory-recursive" style="cursor: pointer;">
+                    <span>Recursive (process subdirectories)</span>
+                </label>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <p style="color: #64748b; font-size: 0.85rem;">💡 Weight is automatically calculated based on CMS detection and path patterns</p>
+            </div>
+            <button onclick="uploadDirectory()" id="directory-upload-btn" style="width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">Upload Directory</button>
+            <div id="directory-upload-progress" style="display: none; margin-top: 15px;">
+                <div style="width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden;">
+                    <div id="directory-upload-progress-bar" style="height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="directory-upload-status" style="color: #94a3b8; font-size: 0.9rem; margin-top: 5px; text-align: center;"></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Upload History Section -->
+    <div style="padding-top: 20px; border-top: 1px solid #334155;">
+        <h4 style="color: #94a3b8; margin-bottom: 15px; font-size: 1.1rem;">Upload History</h4>
+        <div id="upload-history" style="max-height: 300px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #0f172a; border-bottom: 1px solid #334155;">
+                        <th style="padding: 10px; text-align: left; color: #94a3b8; font-size: 0.9rem;">Type</th>
+                        <th style="padding: 10px; text-align: left; color: #94a3b8; font-size: 0.9rem;">Name/Path</th>
+                        <th style="padding: 10px; text-align: left; color: #94a3b8; font-size: 0.9rem;">CMS</th>
+                        <th style="padding: 10px; text-align: center; color: #94a3b8; font-size: 0.9rem;">Status</th>
+                        <th style="padding: 10px; text-align: right; color: #94a3b8; font-size: 0.9rem;">Paths</th>
+                        <th style="padding: 10px; text-align: right; color: #94a3b8; font-size: 0.9rem;">Time</th>
+                    </tr>
+                </thead>
+                <tbody id="upload-history-body">
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 20px; color: #64748b;">No uploads yet</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -34,6 +178,51 @@
     </div>
 </div>
 
+<h3 style="margin-bottom: 15px; color: #f59e0b;">📁 Uploaded Wordlist Files</h3>
+
+<div class="data-table" style="margin-bottom: 30px;">
+    <table>
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Wordlist Name</th>
+                <th>CMS</th>
+                <th>Paths</th>
+                <th>Uploaded</th>
+                <th>Failed</th>
+                <th>Source</th>
+                <th>Uploaded At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for wordlist in uploaded_wordlists %}
+            <tr>
+                <td style="font-family: monospace; font-size: 0.9rem; color: #e2e8f0;">{{ wordlist.filename|truncatechars:40 }}</td>
+                <td style="color: #e2e8f0;">{{ wordlist.wordlist_name|truncatechars:40 }}</td>
+                <td>
+                    {% if wordlist.cms_name %}
+                        <span style="color: #3b82f6;">{{ wordlist.cms_name }}</span>
+                    {% else %}
+                        <span style="color: #64748b;">-</span>
+                    {% endif %}
+                </td>
+                <td style="text-align: right; color: #e2e8f0;">{{ wordlist.paths_count }}</td>
+                <td style="text-align: right; color: #10b981;">{{ wordlist.uploaded_count }}</td>
+                <td style="text-align: right; color: {% if wordlist.failed_count > 0 %}#ef4444{% else %}#64748b{% endif %};">{{ wordlist.failed_count }}</td>
+                <td style="color: #94a3b8; font-size: 0.85rem;">{{ wordlist.source }}</td>
+                <td style="color: #64748b; font-size: 0.85rem;">{{ wordlist.created_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 20px; color: #94a3b8;">
+                    No wordlist files uploaded yet. Use the upload section above to add wordlists.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
 <h3 style="margin-bottom: 15px; color: #f59e0b;">📊 Directory Enumeration Results</h3>
 
 <div class="data-table">
@@ -41,12 +230,13 @@
         <thead>
             <tr>
                 <th>Target</th>
-                <th>Scan Type</th>
+                <th>Path</th>
                 <th>Status</th>
-                <th>Port</th>
-                <th>Service</th>
-                <th>Open Ports</th>
+                <th>Priority</th>
+                <th>CMS</th>
+                <th>Tool</th>
                 <th>Created</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -59,14 +249,37 @@
                         {{ result.status }}
                     </span>
                 </td>
+                <td>
+                    <span style="color: {% if result.priority_score >= 0.7 %}#10b981{% elif result.priority_score >= 0.4 %}#f59e0b{% else %}#64748b{% endif %}; font-weight: bold;">
+                        {{ result.priority_score|floatformat:2 }}
+                    </span>
+                </td>
+                <td>
+                    {% if result.cms_detected %}
+                        <span style="color: #3b82f6;">{{ result.cms_detected }}</span>
+                        {% if result.cms_version %}
+                            <span style="color: #64748b; font-size: 0.85em;">({{ result.cms_version }})</span>
+                        {% endif %}
+                    {% else %}
+                        <span style="color: #64748b;">-</span>
+                    {% endif %}
+                </td>
                 <td>{{ result.tool|default:"unknown" }}</td>
-                <td>{{ result.enumeration_type|default:"wordlist" }}</td>
-                <td>{{ result.created_at }}</td>
+                <td>{{ result.created_at|date:"Y-m-d H:i" }}</td>
                 <td><button onclick="showJsonModal({{ forloop.counter0 }})" style="padding: 4px 8px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer;">View</button></td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="7" style="text-align: center; color: #94a3b8;">No enumeration data available</td>
+                <td colspan="8" style="text-align: center; padding: 40px; color: #94a3b8;">
+                    <div style="margin-bottom: 10px;">No enumeration data available</div>
+                    <div style="font-size: 0.9em; color: #64748b;">
+                        {% if query_error %}
+                            <div style="color: #ef4444; margin-bottom: 10px;">Error: {{ query_error }}</div>
+                        {% endif %}
+                        <div>Uploading wordlists makes them available for enumeration, but results appear here only after the Suzu daemon runs directory enumeration on targets.</div>
+                        <div style="margin-top: 10px;">Check the Suzu Status section above to see if enumeration is running.</div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -289,6 +502,9 @@ const enumerationData = [
 let currentJsonData = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Load upload history on page load
+    loadUploadHistory();
+    
     const rows = document.querySelectorAll('.clickable-row');
     rows.forEach((row, index) => {
         row.addEventListener('click', function() {
@@ -363,6 +579,625 @@ document.addEventListener('keydown', function(e) {
         closeJsonModal();
     }
 });
+
+// Progress Bar Auto-Refresh
+let progressUpdateInterval = null;
+
+function updateProgress() {
+    fetch('/reconnaissance/api/suzu/progress/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.progress) {
+                const progress = data.progress;
+                
+                // Update progress bar
+                const progressBar = document.getElementById('progress-bar');
+                const progressPercent = document.getElementById('progress-percent');
+                const progressBarText = document.getElementById('progress-bar-text');
+                const percent = progress.progress_percent || 0;
+                
+                progressBar.style.width = percent + '%';
+                progressPercent.textContent = percent + '%';
+                progressBarText.textContent = percent >= 10 ? percent + '%' : '';
+                
+                // Update status
+                const progressIcon = document.getElementById('progress-icon');
+                const progressTitle = document.getElementById('progress-title');
+                const status = progress.status || 'idle';
+                
+                if (status === 'enumerating') {
+                    progressIcon.textContent = '🔄';
+                    progressTitle.textContent = 'Suzu Status: Enumerating';
+                } else if (status === 'processing') {
+                    progressIcon.textContent = '⚙️';
+                    progressTitle.textContent = 'Suzu Status: Processing';
+                } else if (status === 'completed') {
+                    progressIcon.textContent = '✅';
+                    progressTitle.textContent = 'Suzu Status: Cycle Complete';
+                } else {
+                    progressIcon.textContent = '⏸️';
+                    progressTitle.textContent = 'Suzu Status: Idle';
+                }
+                
+                // Update details
+                document.getElementById('progress-target').textContent = progress.current_target || '-';
+                document.getElementById('progress-step').textContent = progress.current_step || '-';
+                document.getElementById('progress-cycle').textContent = progress.cycle_number || 0;
+                document.getElementById('progress-paths').textContent = progress.paths_found || 0;
+                document.getElementById('progress-cms').textContent = progress.cms_detected || '-';
+                document.getElementById('progress-queue').textContent = progress.total_in_queue || 0;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching progress:', error);
+        });
+}
+
+// Start auto-refresh on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateProgress(); // Initial update
+    progressUpdateInterval = setInterval(updateProgress, 2000); // Update every 2 seconds
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (progressUpdateInterval) {
+        clearInterval(progressUpdateInterval);
+    }
+});
+
+// File Upload Handlers
+let selectedFiles = [];
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('file-upload-area').style.borderColor = '#f59e0b';
+    document.getElementById('file-upload-area').style.background = '#1e293b';
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('file-upload-area').style.borderColor = '#334155';
+    document.getElementById('file-upload-area').style.background = '#0f172a';
+}
+
+function handleFileDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('file-upload-area').style.borderColor = '#334155';
+    document.getElementById('file-upload-area').style.background = '#0f172a';
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+        handleFiles(files);
+    }
+}
+
+function handleFileSelect(e) {
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+        handleFiles(files);
+    }
+}
+
+function handleFiles(files) {
+    // Filter to only wordlist files
+    const wordlistExts = ['.txt', '.fuzz', '.lst', '.wordlist'];
+    const validFiles = files.filter(file => {
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        return wordlistExts.includes(ext);
+    });
+    
+    if (validFiles.length === 0) {
+        alert('No valid wordlist files found. Supported: .txt, .fuzz, .lst, .wordlist');
+        return;
+    }
+    
+    selectedFiles = validFiles;
+    updateFileList();
+    document.getElementById('file-upload-form').style.display = 'block';
+    
+    // Auto-infer CMS from first filename if all have same CMS
+    const firstCMS = inferCMSFromFilename(validFiles[0].name);
+    if (firstCMS && validFiles.every(f => inferCMSFromFilename(f.name) === firstCMS)) {
+        document.getElementById('file-cms-name').value = firstCMS;
+    }
+}
+
+function updateFileList() {
+    const listDiv = document.getElementById('selected-files-list');
+    const countSpan = document.getElementById('file-count');
+    
+    countSpan.textContent = selectedFiles.length;
+    
+    if (selectedFiles.length === 0) {
+        listDiv.innerHTML = '<p style="color: #64748b; font-size: 0.9rem;">No files selected</p>';
+        return;
+    }
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    selectedFiles.forEach((file, index) => {
+        const cms = inferCMSFromFilename(file.name) || 'unknown';
+        const size = (file.size / 1024).toFixed(1) + ' KB';
+        html += `
+            <div style="padding: 8px; background: #1e293b; border-radius: 4px; border: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <div style="color: #e2e8f0; font-weight: 500; font-size: 0.9rem;">${file.name}</div>
+                    <div style="color: #64748b; font-size: 0.8rem; margin-top: 2px;">${size} • CMS: ${cms}</div>
+                </div>
+                <button onclick="removeFile(${index})" style="padding: 4px 8px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Remove</button>
+            </div>
+        `;
+    });
+    html += '</div>';
+    listDiv.innerHTML = html;
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    updateFileList();
+    if (selectedFiles.length === 0) {
+        cancelFileUpload();
+    }
+}
+
+function cancelFileUpload() {
+    selectedFiles = [];
+    document.getElementById('file-input').value = '';
+    document.getElementById('file-upload-form').style.display = 'none';
+    document.getElementById('file-upload-progress').style.display = 'none';
+    updateFileList();
+}
+
+function inferCMSFromFilename(filename) {
+    const lower = filename.toLowerCase();
+    if (lower.includes('wordpress') || lower.includes('wp-')) return 'wordpress';
+    if (lower.includes('drupal')) return 'drupal';
+    if (lower.includes('joomla')) return 'joomla';
+    if (lower.includes('magento')) return 'magento';
+    if (lower.includes('shopify')) return 'shopify';
+    if (lower.includes('sitecore')) return 'sitecore';
+    if (lower.includes('vbulletin') || lower.includes('vb-')) return 'vbulletin';
+    if (lower.includes('aem') || lower.includes('adobe')) return 'aem';
+    return null;
+}
+
+async function uploadFiles() {
+    if (selectedFiles.length === 0) {
+        alert('Please select at least one file first');
+        return;
+    }
+    
+    const uploadBtn = document.getElementById('file-upload-btn');
+    const progressDiv = document.getElementById('file-upload-progress');
+    const progressBar = document.getElementById('file-upload-progress-bar');
+    const statusText = document.getElementById('file-upload-status');
+    const detailsDiv = document.getElementById('file-upload-details');
+    
+    const cmsName = document.getElementById('file-cms-name').value.trim() || null;
+    
+    // Check for duplicates before uploading
+    statusText.textContent = 'Checking for duplicates...';
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    
+    let hasDuplicates = false;
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const fileCMS = cmsName || inferCMSFromFilename(file.name);
+        
+        // Read file content to check paths
+        const fileText = await file.text();
+        const paths = fileText.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#'))
+            .map(line => line.startsWith('/') ? line : '/' + line);
+        
+        // Check for duplicates (non-blocking - if it fails, we proceed anyway)
+        const duplicateCheck = await checkDuplicates(file.name, paths, fileCMS);
+        
+        if (duplicateCheck) {
+            if (duplicateCheck.wordlist_exists) {
+                const confirmMsg = `⚠️ Wordlist "${file.name}" already exists (uploaded ${duplicateCheck.existing_upload.uploaded_count} paths on ${new Date(duplicateCheck.existing_upload.created_at).toLocaleDateString()}).\n\nContinue anyway?`;
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+                hasDuplicates = true;
+            }
+            
+            if (duplicateCheck.duplicate_count > 0) {
+                let msg = `⚠️ ${duplicateCheck.duplicate_count} out of ${paths.length} paths already exist in the database.\n\nOnly ${duplicateCheck.new_count} new paths will be uploaded.`;
+                if (duplicateCheck.sample_checked) {
+                    msg += `\n\n(Note: Only checked sample of ${duplicateCheck.sample_size} paths due to file size)`;
+                }
+                msg += `\n\nContinue?`;
+                if (!confirm(msg)) {
+                    return;
+                }
+                hasDuplicates = true;
+            }
+        } else {
+            // Duplicate check failed or timed out - proceed with upload anyway
+            console.log('Duplicate check unavailable or timed out, proceeding with upload');
+        }
+    }
+    
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading...';
+    progressBar.style.width = '0%';
+    statusText.textContent = `Uploading ${selectedFiles.length} file(s)...`;
+    detailsDiv.innerHTML = '';
+    
+    // Weight is now automatically calculated - no user input needed
+    
+    let totalUploaded = 0;
+    let totalFailed = 0;
+    let totalDuplicates = 0;
+    let successCount = 0;
+    let failCount = 0;
+    
+    // Upload files sequentially
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const fileCMS = cmsName || inferCMSFromFilename(file.name);
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        if (fileCMS) {
+            formData.append('cms_name', fileCMS);
+        }
+        // Weight is automatically calculated from filename and path content
+        formData.append('source', 'uploaded');
+        
+        const fileProgress = ((i + 1) / selectedFiles.length) * 100;
+        progressBar.style.width = fileProgress + '%';
+        statusText.textContent = `Uploading ${i + 1}/${selectedFiles.length}: ${file.name}`;
+        
+        try {
+            const response = await fetch('/reconnaissance/api/suzu/paths/upload-file/', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                totalUploaded += data.uploaded || 0;
+                totalFailed += data.failed || 0;
+                totalDuplicates += data.duplicate_count || 0;
+                successCount++;
+                
+                let statusMsg = `✅ ${file.name}: ${data.uploaded} paths uploaded`;
+                if (data.duplicate_count > 0) {
+                    statusMsg += ` (${data.duplicate_count} duplicates skipped)`;
+                }
+                if (data.failed > 0) {
+                    statusMsg += `, ${data.failed} failed`;
+                }
+                
+                addUploadHistory({
+                    type: 'File',
+                    name: data.wordlist_name || file.name,
+                    cms: data.cms_name || fileCMS || '-',
+                    status: 'success',
+                    paths: data.uploaded || 0,
+                    failed: data.failed || 0,
+                    time: new Date().toLocaleTimeString()
+                });
+                
+                detailsDiv.innerHTML += `<div style="color: #10b981; margin: 2px 0;">${statusMsg}</div>`;
+            } else {
+                failCount++;
+                addUploadHistory({
+                    type: 'File',
+                    name: file.name,
+                    cms: fileCMS || '-',
+                    status: 'failed',
+                    paths: 0,
+                    failed: 0,
+                    error: data.error || 'Unknown error',
+                    time: new Date().toLocaleTimeString()
+                });
+                detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${file.name}: ${data.error || 'Failed'}</div>`;
+            }
+        } catch (error) {
+            failCount++;
+            addUploadHistory({
+                type: 'File',
+                name: file.name,
+                cms: fileCMS || '-',
+                status: 'failed',
+                paths: 0,
+                failed: 0,
+                error: error.message,
+                time: new Date().toLocaleTimeString()
+            });
+            detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${file.name}: ${error.message}</div>`;
+        }
+    }
+    
+    // Final status
+    progressBar.style.width = '100%';
+    if (failCount === 0) {
+        progressBar.style.background = '#10b981';
+        let statusMsg = `✅ All ${successCount} file(s) uploaded: ${totalUploaded} paths`;
+        if (totalDuplicates > 0) {
+            statusMsg += `, ${totalDuplicates} duplicates skipped`;
+        }
+        if (totalFailed > 0) {
+            statusMsg += `, ${totalFailed} failed`;
+        }
+        statusText.textContent = statusMsg;
+        statusText.style.color = '#10b981';
+    } else if (successCount === 0) {
+        progressBar.style.background = '#ef4444';
+        statusText.textContent = `❌ All ${failCount} file(s) failed`;
+        statusText.style.color = '#ef4444';
+    } else {
+        progressBar.style.background = '#f59e0b';
+        let statusMsg = `⚠️ ${successCount} succeeded, ${failCount} failed: ${totalUploaded} paths uploaded`;
+        if (totalDuplicates > 0) {
+            statusMsg += `, ${totalDuplicates} duplicates skipped`;
+        }
+        statusText.textContent = statusMsg;
+        statusText.style.color = '#f59e0b';
+    }
+    
+    // Reload history after upload
+    loadUploadHistory();
+    
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = 'Upload All Files';
+    
+    // Reset form after 3 seconds if all succeeded
+    if (failCount === 0) {
+        setTimeout(() => {
+            cancelFileUpload();
+        }, 3000);
+    }
+}
+
+async function uploadDirectory() {
+    const directoryPath = document.getElementById('directory-path').value.trim();
+    if (!directoryPath) {
+        alert('Please enter a directory path');
+        return;
+    }
+    
+    const recursive = document.getElementById('directory-recursive').checked;
+    // Weight is now automatically calculated - no user input needed
+    
+    const uploadBtn = document.getElementById('directory-upload-btn');
+    const progressDiv = document.getElementById('directory-upload-progress');
+    const progressBar = document.getElementById('directory-upload-progress-bar');
+    const statusText = document.getElementById('directory-upload-status');
+    
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading...';
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    statusText.textContent = 'Scanning directory...';
+    
+    try {
+        const response = await fetch('/reconnaissance/api/suzu/paths/upload-directory/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                directory_path: directoryPath,
+                recursive: recursive,
+                // Weight is automatically calculated from filename and path content
+                source: 'seclist'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            progressBar.style.width = '100%';
+            statusText.textContent = `✅ Processed ${data.files_processed} files: ${data.total_uploaded} paths uploaded, ${data.total_failed} failed`;
+            statusText.style.color = '#10b981';
+            
+            // Add to history
+            addUploadHistory({
+                type: 'Directory',
+                name: directoryPath,
+                cms: 'Multiple',
+                status: 'success',
+                paths: data.total_uploaded,
+                failed: data.total_failed,
+                files: data.files_processed,
+                time: new Date().toLocaleTimeString()
+            });
+        } else {
+            progressBar.style.width = '100%';
+            progressBar.style.background = '#ef4444';
+            statusText.textContent = `❌ Error: ${data.error}`;
+            statusText.style.color = '#ef4444';
+            
+            addUploadHistory({
+                type: 'Directory',
+                name: directoryPath,
+                cms: '-',
+                status: 'failed',
+                paths: 0,
+                failed: 0,
+                error: data.error,
+                time: new Date().toLocaleTimeString()
+            });
+        }
+    } catch (error) {
+        progressBar.style.width = '100%';
+        progressBar.style.background = '#ef4444';
+        statusText.textContent = `❌ Upload failed: ${error.message}`;
+        statusText.style.color = '#ef4444';
+        
+        addUploadHistory({
+            type: 'Directory',
+            name: directoryPath,
+            cms: '-',
+            status: 'failed',
+            paths: 0,
+            failed: 0,
+            error: error.message,
+            time: new Date().toLocaleTimeString()
+        });
+    } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload Directory';
+    }
+}
+
+async function loadUploadHistory() {
+    try {
+        const response = await fetch('/reconnaissance/api/suzu/upload-history/?limit=50');
+        if (!response.ok) {
+            console.warn('Failed to load upload history');
+            return;
+        }
+        
+        const data = await response.json();
+        if (data.success && data.uploads) {
+            const tbody = document.getElementById('upload-history-body');
+            tbody.innerHTML = '';
+            
+            if (data.uploads.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #64748b;">No uploads yet</td></tr>';
+                return;
+            }
+            
+            data.uploads.forEach(upload => {
+                addUploadHistory({
+                    type: 'File',
+                    name: upload.filename,
+                    cms: upload.cms_name || '-',
+                    status: upload.uploaded_count > 0 ? 'success' : 'failed',
+                    paths: upload.uploaded_count,
+                    failed: upload.failed_count,
+                    time: upload.created_at_display || new Date(upload.created_at).toLocaleString()
+                }, false); // false = don't prepend, append in order
+            });
+        }
+    } catch (error) {
+        console.error('Error loading upload history:', error);
+    }
+}
+
+async function checkDuplicates(wordlistName, paths, cmsName) {
+    try {
+        // Limit path checking to first 1000 paths to avoid timeout on large files
+        const pathsToCheck = paths.length > 1000 ? paths.slice(0, 1000) : paths;
+        
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await fetch('/reconnaissance/api/suzu/check-duplicates/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                wordlist_name: wordlistName,
+                paths: pathsToCheck, // Only check first 1000 paths
+                cms_name: cmsName
+            }),
+            credentials: 'same-origin',
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            return null;
+        }
+        
+        const data = await response.json();
+        if (data.success && data.results) {
+            // If we only checked a sample, adjust the counts proportionally
+            if (paths.length > 1000) {
+                const sampleRatio = pathsToCheck.length / paths.length;
+                data.results.duplicate_count = Math.round(data.results.duplicate_count / sampleRatio);
+                data.results.new_count = paths.length - data.results.duplicate_count;
+            }
+            return data.results;
+        }
+        return null;
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.warn('Duplicate check timed out, proceeding with upload');
+        } else {
+            console.error('Error checking duplicates:', error);
+        }
+        return null; // Return null on error - upload will proceed anyway
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function addUploadHistory(entry, prepend = true) {
+    const tbody = document.getElementById('upload-history-body');
+    
+    // Remove "No uploads yet" message if present
+    if (tbody.children.length === 1 && tbody.children[0].children.length === 1) {
+        tbody.innerHTML = '';
+    }
+    
+    const row = document.createElement('tr');
+    row.style.borderBottom = '1px solid #334155';
+    
+    const statusBadge = entry.status === 'success' 
+        ? `<span style="color: #10b981; font-weight: bold;">✅ Success</span>`
+        : `<span style="color: #ef4444; font-weight: bold;">❌ Failed</span>`;
+    
+    const pathsText = entry.failed > 0 
+        ? `${entry.paths} (+${entry.failed} failed)`
+        : entry.paths.toString();
+    
+    row.innerHTML = `
+        <td style="padding: 10px; color: #e2e8f0;">${entry.type}</td>
+        <td style="padding: 10px; color: #e2e8f0; font-family: monospace; font-size: 0.9rem; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${entry.name}">${entry.name}</td>
+        <td style="padding: 10px; color: #94a3b8;">${entry.cms}</td>
+        <td style="padding: 10px; text-align: center;">${statusBadge}</td>
+        <td style="padding: 10px; text-align: right; color: #e2e8f0;">${pathsText}</td>
+        <td style="padding: 10px; text-align: right; color: #64748b; font-size: 0.85rem;">${entry.time}</td>
+    `;
+    
+    if (prepend) {
+        tbody.insertBefore(row, tbody.firstChild);
+    } else {
+        tbody.appendChild(row);
+    }
+    
+    // Keep only last 50 entries
+    while (tbody.children.length > 50) {
+        tbody.removeChild(tbody.lastChild);
+    }
+}
+
+// Weight is now automatically calculated - no event listeners needed
 </script>
 {% endblock %}
 

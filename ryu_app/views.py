@@ -2383,6 +2383,53 @@ def ryu_dashboard(request):
     return render(request, 'reconnaissance/ryu_dashboard.html', context)
 
 
+def koga_dashboard(request):
+    """Koga - Stealth Operations & Poison Testing dashboard"""
+    context = {
+        'personality': 'koga',
+        'title': 'Koga Stealth Operations',
+        'icon': '🥷',
+        'color': '#7c3aed',
+        'specialization': 'Stealth Operations & Poison Testing'
+    }
+    
+    # Add placeholder stats (can be enhanced later with actual data)
+    context['scan_count'] = 0
+    context['scan_count_24h'] = 0
+    context['stealth_operations'] = 0
+    context['poison_tests'] = 0
+    
+    return render(request, 'reconnaissance/koga_dashboard.html', context)
+
+
+def bugsy_dashboard(request):
+    """Bugsy - Bug Bounty & Vulnerability Curation dashboard"""
+    context = {
+        'personality': 'bugsy',
+        'title': 'Bugsy Bug Bounty',
+        'icon': '🐛',
+        'color': '#f59e0b',
+        'specialization': 'Bug Bounty & Vulnerability Curation'
+    }
+    
+    # Add placeholder stats (can be enhanced later with actual data)
+    context['vulnerability_count'] = 0
+    context['curation_count'] = 0
+    context['bounty_count'] = 0
+    
+    return render(request, 'reconnaissance/bugsy_dashboard.html', context)
+
+
+def koga_dashboard_redirect(request):
+    """Redirect /koga/dashboard/about/ to /reconnaissance/koga/"""
+    return redirect('/reconnaissance/koga/')
+
+
+def bugsy_about_redirect(request):
+    """Redirect /bugsy/about/ to /reconnaissance/bugsy/"""
+    return redirect('/reconnaissance/bugsy/')
+
+
 def surge_dashboard(request):
     """Surge Nuclei Scanner - Redirect to Surge app dashboard"""
     return redirect('surge:dashboard_about')

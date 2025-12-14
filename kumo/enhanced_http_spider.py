@@ -751,7 +751,7 @@ def get_enhanced_http_spider(parallel_enabled: bool = True):
     return _enhanced_http_spider_instance
 
 
-def spider_egg_record_enhanced(egg_record_id: str, depth: int = None) -> Dict[str, Any]]:
+def spider_egg_record_enhanced(egg_record_id: str, depth: int = None) -> Dict[str, Any]:
     """
     Spider an EggRecord with enhanced metadata capture.
     

@@ -13,7 +13,7 @@ Version: 1.0.0
 from .target_curation_service import OakTargetCurationService
 # Optional import - autonomous service requires Bugsy which may not be available
 try:
-from .autonomous_curation_service import OakAutonomousCurationService, get_instance
+    from .autonomous_curation_service import OakAutonomousCurationService, get_instance
 except (ImportError, ModuleNotFoundError):
     # Bugsy services not available - autonomous curation disabled
     OakAutonomousCurationService = None

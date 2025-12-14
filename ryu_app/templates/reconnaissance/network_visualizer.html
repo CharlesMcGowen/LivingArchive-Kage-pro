@@ -255,7 +255,7 @@
                 </div>
                 <div class="control-item">
                     <label>Node Size:</label>
-                    <input type="range" id="node-size" min="20" max="100" value="30" style="width: 120px;">
+                    <input type="range" id="node-size" min="10" max="100" value="30" style="width: 120px;">
                     <span id="node-size-value" style="color: #94a3b8; margin-left: 10px;">30px</span>
                 </div>
             </div>
@@ -279,6 +279,60 @@
                 <div class="control-item">
                     <label>Project Edge Color:</label>
                     <input type="color" id="edge-color-project" value="#ec4899" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+            </div>
+            
+            <!-- Layout Controls -->
+            <div class="visual-control-section">
+                <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 0.95rem;">Layout Settings</h5>
+                <div class="control-item">
+                    <label>Layout Type:</label>
+                    <select id="layout-type" style="width: 150px;">
+                        <option value="dagre">Dagre (Hierarchical)</option>
+                        <option value="cose">CoSE (Force-Directed)</option>
+                        <option value="breadthfirst">Breadthfirst</option>
+                        <option value="grid">Grid</option>
+                        <option value="circle">Circle</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label>
+                        <input type="checkbox" id="clustered-drag" checked style="margin-right: 8px;">
+                        Clustered Drag (Move Neighbors)
+                    </label>
+                </div>
+                <div class="control-item">
+                    <button onclick="applyLayout()" style="padding: 8px 16px; background: #8b5cf6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; width: 100%;">
+                        Apply Layout
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Physics Controls (for force-directed layouts) -->
+            <div class="visual-control-section" id="physics-controls" style="display: none;">
+                <h5 style="color: #e2e8f0; margin-bottom: 10px; font-size: 0.95rem;">Physics Controls</h5>
+                <div class="control-item">
+                    <label>Link Force (Attraction):</label>
+                    <input type="range" id="link-force" min="0.1" max="5" step="0.1" value="1.5" style="width: 120px;">
+                    <span id="link-force-value" style="color: #94a3b8; margin-left: 10px;">1.5</span>
+                </div>
+                <div class="control-item">
+                    <label>Link Distance:</label>
+                    <input type="range" id="link-distance" min="20" max="200" step="10" value="30" style="width: 120px;">
+                    <span id="link-distance-value" style="color: #94a3b8; margin-left: 10px;">30px</span>
+                </div>
+                <div class="control-item">
+                    <label>Repel Force:</label>
+                    <input type="range" id="repel-force" min="0.1" max="10" step="0.1" value="10" style="width: 120px;">
+                    <span id="repel-force-value" style="color: #94a3b8; margin-left: 10px;">10.0</span>
+                </div>
+                <div class="control-item">
+                    <label>Center Force:</label>
+                    <input type="range" id="center-force" min="0" max="2" step="0.1" value="0.5" style="width: 120px;">
+                    <span id="center-force-value" style="color: #94a3b8; margin-left: 10px;">0.5</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-top: 10px; padding-top: 10px; border-top: 1px solid #334155;">
+                    Changes apply automatically as you adjust the sliders
                 </div>
             </div>
             
@@ -765,6 +819,61 @@ function initCytoscape() {
             zoomValue.textContent = Math.round(currentZoom * 100) + '%';
         }
     });
+    
+    // Clustered drag functionality
+    setupClusteredDrag();
+}
+
+// Setup clustered drag functionality
+function setupClusteredDrag() {
+    if (!cy) return;
+    
+    cy.on('grab', 'node', function(evt) {
+        if (!layoutSettings.clusteredDrag) return;
+        
+        const node = evt.target;
+        dragState.isDragging = true;
+        dragState.draggedNode = node;
+        dragState.neighborPositions.clear();
+        
+        // Store initial positions of all neighbors
+        const neighbors = node.neighborhood().nodes();
+        neighbors.forEach(function(neighbor) {
+            const pos = neighbor.position();
+            dragState.neighborPositions.set(neighbor.id(), {
+                x: pos.x,
+                y: pos.y,
+                relativeX: pos.x - node.position().x,
+                relativeY: pos.y - node.position().y
+            });
+        });
+    });
+    
+    cy.on('drag', 'node', function(evt) {
+        if (!layoutSettings.clusteredDrag || !dragState.isDragging) return;
+        
+        const draggedNode = evt.target;
+        if (draggedNode.id() !== dragState.draggedNode.id()) return;
+        
+        const draggedPos = draggedNode.position();
+        const neighbors = draggedNode.neighborhood().nodes();
+        
+        // Update neighbor positions to maintain relative positions
+        neighbors.forEach(function(neighbor) {
+            const stored = dragState.neighborPositions.get(neighbor.id());
+            if (stored) {
+                const newX = draggedPos.x + stored.relativeX;
+                const newY = draggedPos.y + stored.relativeY;
+                neighbor.position({ x: newX, y: newY });
+            }
+        });
+    });
+    
+    cy.on('free', 'node', function(evt) {
+        dragState.isDragging = false;
+        dragState.draggedNode = null;
+        dragState.neighborPositions.clear();
+    });
 }
 
 // Load graph data from API
@@ -888,22 +997,252 @@ function updateGraph() {
         }).run();
     }
     
-    // Fit and center the graph
-    cy.fit();
-    cy.center();
-    console.log('Graph layout applied and centered');
+    // Calculate degrees for all nodes (for degree-based sizing)
+    calculateNodeDegrees();
     
-    // Initialize zoom slider
-    const zoomSlider = document.getElementById('zoom-slider');
-    const zoomValue = document.getElementById('zoom-value');
-    if (zoomSlider && zoomValue) {
-        const currentZoom = cy.zoom();
-        zoomSlider.value = currentZoom;
-        zoomValue.textContent = Math.round(currentZoom * 100) + '%';
+    // Apply current visual settings first (colors)
+    applyVisualSettingsToGraph();
+    
+    // Apply current layout (this will position nodes)
+    applyLayout().then(() => {
+        // Fit and center the graph
+        cy.fit();
+        cy.center();
+        console.log('Graph layout applied and centered');
+        
+        // Initialize zoom slider
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomSlider && zoomValue) {
+            const currentZoom = cy.zoom();
+            zoomSlider.value = currentZoom;
+            zoomValue.textContent = Math.round(currentZoom * 100) + '%';
+        }
+    });
+}
+
+// Calculate node degrees (number of connections)
+function calculateNodeDegrees() {
+    if (!cy) return;
+    
+    cy.nodes().forEach(function(node) {
+        const degree = node.degree();
+        node.data('degree', degree);
+    });
+}
+
+// Apply degree-based node sizing
+function applyDegreeBasedSizing() {
+    if (!cy) return;
+    
+    const nodes = cy.nodes();
+    if (nodes.length === 0) return;
+    
+    // Find min and max degrees
+    let minDegree = Infinity;
+    let maxDegree = -Infinity;
+    nodes.forEach(function(node) {
+        const degree = node.data('degree') || 0;
+        minDegree = Math.min(minDegree, degree);
+        maxDegree = Math.max(maxDegree, degree);
+    });
+    
+    // Base sizes by type
+    const baseSizes = {
+        'ip': visualSettings.nodeSize,
+        'cidr': visualSettings.nodeSize + 20,
+        'asn': visualSettings.nodeSize + 40
+    };
+    
+    // Size multiplier range (1.0 to 2.5 based on degree)
+    const minSize = 1.0;
+    const maxSize = 2.5;
+    const degreeRange = maxDegree - minDegree;
+    
+    nodes.forEach(function(node) {
+        const degree = node.data('degree') || 0;
+        const nodeType = node.data('type');
+        const baseSize = baseSizes[nodeType] || visualSettings.nodeSize;
+        
+        let sizeMultiplier = 1.0;
+        if (degreeRange > 0) {
+            const normalizedDegree = (degree - minDegree) / degreeRange;
+            sizeMultiplier = minSize + (maxSize - minSize) * normalizedDegree;
+        }
+        
+        const newSize = Math.max(10, Math.min(150, baseSize * sizeMultiplier));
+        node.style({
+            'width': newSize,
+            'height': newSize
+        });
+    });
+}
+
+// Apply layout based on current settings
+function applyLayout() {
+    if (!cy) return Promise.resolve();
+    
+    // Stop any existing running layout before creating a new one
+    // Cytoscape automatically stops previous layouts when creating a new one,
+    // but we'll try to explicitly stop if possible
+    try {
+        // Get all nodes and edges to check for active layout
+        const elements = cy.elements();
+        if (elements.length > 0) {
+            // Try to stop any active layout by creating a dummy layout and stopping it
+            // This is a workaround since Cytoscape doesn't expose layout state directly
+            const dummyLayout = cy.layout({ name: 'preset', positions: function() { return undefined; }, fit: false, animate: false });
+            dummyLayout.stop();
+        }
+    } catch (e) {
+        // Ignore errors - layout might not be running
     }
     
-    // Apply current visual settings to the newly loaded graph
-    applyVisualSettingsToGraph();
+    const layoutType = layoutSettings.type;
+    let layoutConfig = {};
+    
+    switch(layoutType) {
+        case 'dagre':
+            layoutConfig = {
+                name: 'dagre',
+                rankDir: 'TB',
+                spacingFactor: 1.5,
+                nodeSep: 50,
+                edgeSep: 20,
+                rankSep: 100,
+                animate: false
+            };
+            break;
+        case 'cose':
+            // Built-in CoSE layout (force-directed) with dynamic physics settings
+            // Calculate graph metrics for dynamic repulsion
+            const totalNodes = cy.nodes().length;
+            const centerPull = Math.min(0.8, totalNodes / 500); // Scale center pull based on graph size
+            
+            // High base repulsion force to prevent stacking (much higher than previous values)
+            // The slider value (0.1-10) is multiplied by a large base to get effective repulsion
+            const baseRepelForce = 1500; // High base value to prevent stacking
+            const dynamicRepelForce = baseRepelForce + (layoutSettings.physics.repelForce * 1000);
+            
+            layoutConfig = {
+                name: 'cose',
+                idealEdgeLength: layoutSettings.physics.linkDistance,
+                nodeOverlap: 20,
+                refresh: 20,
+                fit: true,
+                padding: 30,
+                randomize: true,  // Better initial distribution
+                componentSpacing: 50,
+                // High repulsion to prevent stacking - scales with slider but starts high
+                nodeRepulsion: dynamicRepelForce,
+                // Edge elasticity controls spring stiffness (attraction)
+                edgeElasticity: layoutSettings.physics.linkForce * 100,
+                nestingFactor: 5,
+                // Dynamic gravity based on graph size
+                gravity: centerPull * layoutSettings.physics.centerForce,
+                numIter: 2500,
+                initialTemp: 200,
+                coolingFactor: 0.95,
+                minTemp: 1.0,
+                animate: true,
+                animationDuration: 1000
+            };
+            break;
+        case 'breadthfirst':
+            layoutConfig = {
+                name: 'breadthfirst',
+                directed: true,
+                roots: cy.nodes().filter(function(node) { return node.indegree() === 0; }),
+                padding: 30,
+                spacingFactor: 1.5,
+                animate: true,
+                animationDuration: 1000
+            };
+            break;
+        case 'circle':
+            layoutConfig = {
+                name: 'circle',
+                spacing: layoutSettings.physics.linkDistance,
+                animate: true,
+                animationDuration: 1000
+            };
+            break;
+        case 'grid':
+            const nodeCount = cy.nodes().length;
+            const cols = Math.ceil(Math.sqrt(nodeCount));
+            layoutConfig = {
+                name: 'grid',
+                rows: Math.ceil(nodeCount / cols),
+                cols: cols,
+                spacing: 100,
+                animate: false
+            };
+            break;
+    }
+    
+    // Show/hide physics controls based on layout type
+    const physicsControls = document.getElementById('physics-controls');
+    if (physicsControls) {
+        if (layoutType === 'cose') {
+            physicsControls.style.display = 'block';
+        } else {
+            physicsControls.style.display = 'none';
+        }
+    }
+    
+    // Create and run layout
+    try {
+        const layout = cy.layout(layoutConfig);
+        layout.run();  // Explicitly run the layout
+        
+        // Return promise that resolves when layout stops
+        return new Promise(function(resolve, reject) {
+            layout.one('layoutstop', function() {
+                cy.fit();
+                cy.center();
+                resolve();
+            });
+            
+            // Fallback timeout in case layoutstop doesn't fire
+            setTimeout(function() {
+                cy.fit();
+                cy.center();
+                resolve();
+            }, 2000);
+        });
+    } catch (error) {
+        console.error('Failed to create layout:', error);
+        showNotification('Layout not available: ' + layoutType, 'error');
+        // Fallback to grid
+        const nodeCount = cy.nodes().length;
+        const cols = Math.ceil(Math.sqrt(nodeCount));
+        const fallbackLayout = cy.layout({
+            name: 'grid',
+            rows: Math.ceil(nodeCount / cols),
+            cols: cols,
+            spacing: 100,
+            animate: false
+        });
+        fallbackLayout.run();
+        return Promise.resolve();
+    }
+}
+
+// Apply physics settings
+function applyPhysicsSettings() {
+    layoutSettings.physics.linkForce = parseFloat(document.getElementById('link-force').value);
+    layoutSettings.physics.linkDistance = parseInt(document.getElementById('link-distance').value);
+    layoutSettings.physics.repelForce = parseFloat(document.getElementById('repel-force').value);
+    layoutSettings.physics.centerForce = parseFloat(document.getElementById('center-force').value);
+    
+    // Update display values
+    document.getElementById('link-force-value').textContent = layoutSettings.physics.linkForce.toFixed(1);
+    document.getElementById('link-distance-value').textContent = layoutSettings.physics.linkDistance + 'px';
+    document.getElementById('repel-force-value').textContent = layoutSettings.physics.repelForce.toFixed(1);
+    document.getElementById('center-force-value').textContent = layoutSettings.physics.centerForce.toFixed(1);
+    
+    // Reapply layout with new physics settings
+    applyLayout();
 }
 
 // Update statistics panel
@@ -998,6 +1337,25 @@ let visualSettings = {
     edgeColorProject: '#ec4899'
 };
 
+// Layout and physics settings
+let layoutSettings = {
+    type: 'dagre',
+    clusteredDrag: true,
+    physics: {
+        linkForce: 1.5,      // Increased from 1.0 for stronger attraction
+        linkDistance: 30,    // Reduced from 50 for tighter connections
+        repelForce: 10,     // Increased to prevent stacking
+        centerForce: 0.5     // Increased from 0.3 for stronger center pull
+    }
+};
+
+// Clustered drag state
+let dragState = {
+    isDragging: false,
+    draggedNode: null,
+    neighborPositions: new Map()
+};
+
 // Load visual settings from API
 async function loadVisualSettings() {
     try {
@@ -1034,79 +1392,71 @@ function applyVisualSettingsToControls() {
 function applyVisualSettingsToGraph() {
     if (!cy) return;
     
-    // Update node styles using the style sheet API
-    const styleSheet = cy.style();
+    // Update colors for all node types
+    cy.nodes('[type="ip"][scanned="true"]').style({
+        'background-color': visualSettings.nodeColors.scanned
+    });
     
-    // Scanned IP nodes
-    styleSheet.selector('node[type="ip"][scanned="true"]')
-        .style('background-color', visualSettings.nodeColors.scanned)
-        .style('width', visualSettings.nodeSize)
-        .style('height', visualSettings.nodeSize);
+    cy.nodes('[type="ip"][scanned="false"]').style({
+        'background-color': visualSettings.nodeColors.unscanned
+    });
     
-    // Unscanned IP nodes
-    styleSheet.selector('node[type="ip"][scanned="false"]')
-        .style('background-color', visualSettings.nodeColors.unscanned)
-        .style('width', visualSettings.nodeSize)
-        .style('height', visualSettings.nodeSize);
+    cy.nodes('[type="cidr"]').style({
+        'background-color': visualSettings.nodeColors.cidr
+    });
     
-    // CIDR nodes
-    styleSheet.selector('node[type="cidr"]')
-        .style('background-color', visualSettings.nodeColors.cidr)
-        .style('width', visualSettings.nodeSize + 20)
-        .style('height', visualSettings.nodeSize + 20);
+    cy.nodes('[type="asn"]').style({
+        'background-color': visualSettings.nodeColors.asn
+    });
     
-    // ASN nodes
-    styleSheet.selector('node[type="asn"]')
-        .style('background-color', visualSettings.nodeColors.asn)
-        .style('width', visualSettings.nodeSize + 40)
-        .style('height', visualSettings.nodeSize + 40);
+    // Fixed sizing based on Node Size slider (always use slider value)
+    // Iterate through nodes individually to override stylesheet rules
+    cy.nodes().forEach(function(node) {
+        const nodeType = node.data('type');
+        let nodeSize = visualSettings.nodeSize;
+        
+        // Apply size offsets based on node type
+        if (nodeType === 'cidr') {
+            nodeSize = visualSettings.nodeSize + 20;
+        } else if (nodeType === 'asn') {
+            nodeSize = visualSettings.nodeSize + 40;
+        }
+        // IP nodes use base size (no offset)
+        
+        // Apply size directly to each node to override stylesheet
+        node.style('width', nodeSize);
+        node.style('height', nodeSize);
+    });
     
-    // Default edges
-    styleSheet.selector('edge')
-        .style('line-color', visualSettings.edgeColor)
-        .style('target-arrow-color', visualSettings.edgeColor)
-        .style('width', visualSettings.edgeWidth);
+    // Update edges
+    cy.edges().style({
+        'line-color': visualSettings.edgeColor,
+        'target-arrow-color': visualSettings.edgeColor,
+        'width': visualSettings.edgeWidth
+    });
     
     // Network edges
-    styleSheet.selector('edge[type="network"]')
-        .style('line-color', visualSettings.edgeColorNetwork)
-        .style('target-arrow-color', visualSettings.edgeColorNetwork);
+    cy.edges('[type="network"]').style({
+        'line-color': visualSettings.edgeColorNetwork,
+        'target-arrow-color': visualSettings.edgeColorNetwork
+    });
     
     // Project edges
-    styleSheet.selector('edge[type="project"]')
-        .style('line-color', visualSettings.edgeColorProject)
-        .style('target-arrow-color', visualSettings.edgeColorProject);
+    cy.edges('[type="project"]').style({
+        'line-color': visualSettings.edgeColorProject,
+        'target-arrow-color': visualSettings.edgeColorProject
+    });
     
     // Belongs to edges (IP -> CIDR)
-    styleSheet.selector('edge[type="belongs_to"]')
-        .style('line-color', visualSettings.nodeColors.scanned)
-        .style('target-arrow-color', visualSettings.nodeColors.scanned);
+    cy.edges('[type="belongs_to"]').style({
+        'line-color': visualSettings.nodeColors.scanned,
+        'target-arrow-color': visualSettings.nodeColors.scanned
+    });
     
     // Owned by edges (CIDR -> ASN)
-    styleSheet.selector('edge[type="owned_by"]')
-        .style('line-color', visualSettings.nodeColors.cidr)
-        .style('target-arrow-color', visualSettings.nodeColors.cidr);
-    
-    // Apply all style updates - this is critical for changes to take effect
-    styleSheet.update();
-    
-    // Also directly update nodes to ensure size changes are applied immediately
-    // This is a workaround for Cytoscape style sheet update timing issues
-    cy.nodes('[type="ip"][scanned="true"]').style({
-        'width': visualSettings.nodeSize,
-        'height': visualSettings.nodeSize
-    });
-    cy.nodes('[type="ip"][scanned="false"]').style({
-        'width': visualSettings.nodeSize,
-        'height': visualSettings.nodeSize
-    });
-    cy.nodes('[type="cidr"]').style({
-        'width': visualSettings.nodeSize + 20,
-        'height': visualSettings.nodeSize + 20
-    });
-    cy.nodes('[type="asn"]').style({
-        'width': visualSettings.nodeSize + 40,
-        'height': visualSettings.nodeSize + 40
+    cy.edges('[type="owned_by"]').style({
+        'line-color': visualSettings.nodeColors.cidr,
+        'target-arrow-color': visualSettings.nodeColors.cidr
     });
 }
 
@@ -1247,10 +1597,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup control event listeners
     const nodeSizeSlider = document.getElementById('node-size');
     if (nodeSizeSlider) {
+        // Real-time node size updates - no need to click Apply & Save
         nodeSizeSlider.addEventListener('input', function(e) {
             const sizeValue = parseInt(e.target.value) || 30;
             document.getElementById('node-size-value').textContent = sizeValue + 'px';
             visualSettings.nodeSize = sizeValue;
+            
+            // Apply node size changes immediately using the proven function
+            // This ensures consistency with the rest of the codebase
             applyVisualSettingsToGraph();
         });
     }
@@ -1296,6 +1650,76 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     });
+    
+    // Layout controls
+    const layoutTypeSelect = document.getElementById('layout-type');
+    if (layoutTypeSelect) {
+        layoutTypeSelect.addEventListener('change', function(e) {
+            layoutSettings.type = e.target.value;
+            applyLayout();
+        });
+    }
+    
+    const clusteredDragCheckbox = document.getElementById('clustered-drag');
+    if (clusteredDragCheckbox) {
+        clusteredDragCheckbox.addEventListener('change', function(e) {
+            layoutSettings.clusteredDrag = e.target.checked;
+        });
+    }
+    
+    // Debounce helper for physics updates
+    let physicsUpdateTimeout = null;
+    function debouncedApplyLayout() {
+        clearTimeout(physicsUpdateTimeout);
+        physicsUpdateTimeout = setTimeout(function() {
+            layoutSettings.physics.linkForce = parseFloat(document.getElementById('link-force').value);
+            layoutSettings.physics.linkDistance = parseInt(document.getElementById('link-distance').value);
+            layoutSettings.physics.repelForce = parseFloat(document.getElementById('repel-force').value);
+            layoutSettings.physics.centerForce = parseFloat(document.getElementById('center-force').value);
+            applyLayout();
+        }, 300);  // 300ms debounce delay
+    }
+    
+    // Physics controls - initialize with default values and real-time updates
+    const linkForceSlider = document.getElementById('link-force');
+    if (linkForceSlider) {
+        linkForceSlider.value = layoutSettings.physics.linkForce;
+        document.getElementById('link-force-value').textContent = layoutSettings.physics.linkForce.toFixed(1);
+        linkForceSlider.addEventListener('input', function(e) {
+            document.getElementById('link-force-value').textContent = parseFloat(e.target.value).toFixed(1);
+            debouncedApplyLayout();
+        });
+    }
+    
+    const linkDistanceSlider = document.getElementById('link-distance');
+    if (linkDistanceSlider) {
+        linkDistanceSlider.value = layoutSettings.physics.linkDistance;
+        document.getElementById('link-distance-value').textContent = layoutSettings.physics.linkDistance + 'px';
+        linkDistanceSlider.addEventListener('input', function(e) {
+            document.getElementById('link-distance-value').textContent = e.target.value + 'px';
+            debouncedApplyLayout();
+        });
+    }
+    
+    const repelForceSlider = document.getElementById('repel-force');
+    if (repelForceSlider) {
+        repelForceSlider.value = layoutSettings.physics.repelForce;
+        document.getElementById('repel-force-value').textContent = layoutSettings.physics.repelForce.toFixed(1);
+        repelForceSlider.addEventListener('input', function(e) {
+            document.getElementById('repel-force-value').textContent = parseFloat(e.target.value).toFixed(1);
+            debouncedApplyLayout();
+        });
+    }
+    
+    const centerForceSlider = document.getElementById('center-force');
+    if (centerForceSlider) {
+        centerForceSlider.value = layoutSettings.physics.centerForce;
+        document.getElementById('center-force-value').textContent = layoutSettings.physics.centerForce.toFixed(1);
+        centerForceSlider.addEventListener('input', function(e) {
+            document.getElementById('center-force-value').textContent = parseFloat(e.target.value).toFixed(1);
+            debouncedApplyLayout();
+        });
+    }
     
     loadDropdownOptions().then(() => {
         // Add change handlers to reload graph when dropdowns change

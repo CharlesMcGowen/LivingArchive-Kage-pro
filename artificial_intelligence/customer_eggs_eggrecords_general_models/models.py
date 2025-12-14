@@ -474,3 +474,82 @@ class PayloadMutation(models.Model):
     
     def __str__(self):
         return f"PayloadMutation: {self.mutation_type} (template: {self.template_id}, success: {self.is_successful})"
+
+
+class DirectoryEnumerationResult(models.Model):
+    """
+    DirectoryEnumerationResult model - stores Suzu's directory enumeration results.
+    
+    Links discovered paths to Nmap scan data, technology fingerprints, and CMS detection.
+    Enables priority-based enumeration and correlation with other reconnaissance data.
+    Converted from SQLAlchemy to Django ORM.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    egg_record_id = models.UUIDField(null=False, db_index=True)
+    
+    # Directory enumeration data
+    discovered_path = models.CharField(max_length=2048, null=False, blank=False, db_index=True)
+    path_status_code = models.IntegerField(null=True, blank=True, db_index=True)
+    path_content_length = models.IntegerField(null=True, blank=True)
+    path_content_type = models.CharField(max_length=255, null=True, blank=True)
+    path_response_time_ms = models.FloatField(null=True, blank=True)
+    
+    # Correlation with Nmap scan data
+    nmap_scan_id = models.UUIDField(null=True, blank=True, db_index=True)
+    correlated_port = models.IntegerField(null=True, blank=True, db_index=True)
+    correlated_service_name = models.CharField(max_length=100, null=True, blank=True)
+    correlated_service_version = models.CharField(max_length=255, null=True, blank=True)
+    correlated_product = models.CharField(max_length=255, null=True, blank=True)
+    correlated_os_details = models.JSONField(null=True, blank=True)  # OS detection from Nmap
+    correlated_cpe = models.JSONField(null=True, blank=True)  # Array of CPE strings
+    
+    # Technology fingerprinting correlation
+    technology_fingerprint_id = models.UUIDField(null=True, blank=True, db_index=True)
+    detected_cms = models.CharField(max_length=100, null=True, blank=True, db_index=True)  # WordPress, Drupal, etc.
+    detected_cms_version = models.CharField(max_length=50, null=True, blank=True)
+    detected_framework = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    detected_framework_version = models.CharField(max_length=50, null=True, blank=True)
+    
+    # CMS detection from Kumo's spidering
+    cms_detection_method = models.CharField(max_length=50, null=True, blank=True)  # 'header', 'html', 'path', 'combined'
+    cms_detection_confidence = models.FloatField(null=True, blank=True, default=0.0, db_index=True)
+    cms_detection_signatures = models.JSONField(null=True, blank=True)  # Matched patterns
+    
+    # Priority scoring
+    priority_score = models.FloatField(null=False, default=0.0, db_index=True)  # 0.0-1.0
+    priority_factors = models.JSONField(null=True, blank=True)  # Breakdown of scoring factors
+    
+    # Request metadata correlation (from Kumo)
+    request_metadata_id = models.UUIDField(null=True, blank=True, db_index=True)
+    correlated_headers = models.JSONField(null=True, blank=True)  # HTTP headers from Kumo
+    correlated_html_entities = models.JSONField(null=True, blank=True)  # HTML meta tags, etc.
+    
+    # Enumeration metadata
+    enumeration_tool = models.CharField(max_length=50, null=True, blank=True)  # 'dirsearch', 'gobuster', 'ffuf'
+    wordlist_used = models.CharField(max_length=255, null=True, blank=True)
+    enumeration_depth = models.IntegerField(null=True, blank=True, default=1)
+    
+    # Timestamps
+    discovered_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
+    created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
+    updated_at = models.DateTimeField(null=True, blank=True, auto_now=True)
+    
+    class Meta:
+        app_label = 'customer_eggs_eggrecords_general_models'
+        db_table = 'customer_eggs_eggrecords_general_models_directoryenumerationresult'
+        managed = True  # Will create table via migration
+        indexes = [
+            models.Index(fields=['egg_record_id']),
+            models.Index(fields=['discovered_path']),
+            models.Index(fields=['path_status_code']),
+            models.Index(fields=['priority_score']),
+            models.Index(fields=['detected_cms']),
+            models.Index(fields=['correlated_port']),
+            models.Index(fields=['egg_record_id', 'priority_score']),  # For priority queries
+            models.Index(fields=['egg_record_id', 'detected_cms']),  # For CMS-based queries
+        ]
+        verbose_name = 'Directory Enumeration Result'
+        verbose_name_plural = 'Directory Enumeration Results'
+    
+    def __str__(self):
+        return f"DirectoryEnumerationResult: {self.discovered_path} (priority: {self.priority_score:.2f})"

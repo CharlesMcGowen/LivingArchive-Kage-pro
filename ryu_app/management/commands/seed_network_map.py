@@ -42,7 +42,7 @@ class Command(BaseCommand):
         
         conn = connections['customer_eggs']
         
-        # Sample hosts with technologies
+        # Sample hosts with technologies - mix of scanned and unscanned for demo
         sample_hosts = [
             {
                 'ip': '192.168.1.1',
@@ -50,7 +50,8 @@ class Command(BaseCommand):
                 'domain': 'gateway.local',
                 'technologies': ['RouterOS', 'MikroTik'],
                 'ports': [80, 443, 22, 8080],
-                'services': ['http', 'https', 'ssh', 'http-proxy']
+                'services': ['http', 'https', 'ssh', 'http-proxy'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.10',
@@ -58,7 +59,8 @@ class Command(BaseCommand):
                 'domain': 'web.local',
                 'technologies': ['Apache', 'PHP', 'MySQL', 'WordPress'],
                 'ports': [80, 443, 3306, 22],
-                'services': ['http', 'https', 'mysql', 'ssh']
+                'services': ['http', 'https', 'mysql', 'ssh'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.20',
@@ -66,7 +68,8 @@ class Command(BaseCommand):
                 'domain': 'files.local',
                 'technologies': ['Samba', 'NFS', 'FTP'],
                 'ports': [21, 22, 139, 445, 2049],
-                'services': ['ftp', 'ssh', 'netbios-ssn', 'microsoft-ds', 'nfs']
+                'services': ['ftp', 'ssh', 'netbios-ssn', 'microsoft-ds', 'nfs'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.30',
@@ -74,7 +77,8 @@ class Command(BaseCommand):
                 'domain': 'db.local',
                 'technologies': ['PostgreSQL', 'Redis', 'MongoDB'],
                 'ports': [5432, 6379, 27017, 22],
-                'services': ['postgresql', 'redis', 'mongodb', 'ssh']
+                'services': ['postgresql', 'redis', 'mongodb', 'ssh'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.40',
@@ -82,7 +86,8 @@ class Command(BaseCommand):
                 'domain': 'app.local',
                 'technologies': ['Node.js', 'Docker', 'Nginx'],
                 'ports': [80, 443, 3000, 8080, 22],
-                'services': ['http', 'https', 'http-alt', 'http-proxy', 'ssh']
+                'services': ['http', 'https', 'http-alt', 'http-proxy', 'ssh'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.50',
@@ -90,7 +95,44 @@ class Command(BaseCommand):
                 'domain': 'monitor.local',
                 'technologies': ['Grafana', 'Prometheus', 'InfluxDB'],
                 'ports': [3000, 9090, 8086, 22],
-                'services': ['http-alt', 'prometheus', 'influxdb', 'ssh']
+                'services': ['http-alt', 'prometheus', 'influxdb', 'ssh'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.60',
+                'hostname': 'backup-server',
+                'domain': 'backup.local',
+                'technologies': ['Bacula', 'rsync'],
+                'ports': [9101, 9102],
+                'services': ['bacula-fd', 'bacula-sd'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.70',
+                'hostname': 'dev-workstation',
+                'domain': 'dev.local',
+                'technologies': ['Linux', 'Docker'],
+                'ports': [22, 2376],
+                'services': ['ssh', 'docker'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.80',
+                'hostname': 'test-server',
+                'domain': 'test.local',
+                'technologies': ['Jenkins', 'GitLab'],
+                'ports': [8080, 443],
+                'services': ['http-proxy', 'https'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.90',
+                'hostname': 'mail-server',
+                'domain': 'mail.local',
+                'technologies': ['Postfix', 'Dovecot'],
+                'ports': [25, 143, 993, 587],
+                'services': ['smtp', 'imap', 'imaps', 'submission'],
+                'scanned': False  # Unscanned for demo
             },
             {
                 'ip': '192.168.1.100',
@@ -98,7 +140,35 @@ class Command(BaseCommand):
                 'domain': 'printer.local',
                 'technologies': ['HP Printer', 'CUPS'],
                 'ports': [80, 443, 631, 9100],
-                'services': ['http', 'https', 'ipp', 'jetdirect']
+                'services': ['http', 'https', 'ipp', 'jetdirect'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.110',
+                'hostname': 'iot-device',
+                'domain': 'iot.local',
+                'technologies': ['IoT Hub'],
+                'ports': [1883],
+                'services': ['mqtt'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.120',
+                'hostname': 'vpn-server',
+                'domain': 'vpn.local',
+                'technologies': ['OpenVPN', 'WireGuard'],
+                'ports': [1194, 51820],
+                'services': ['openvpn', 'wireguard'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.130',
+                'hostname': 'dns-server',
+                'domain': 'dns.local',
+                'technologies': ['BIND', 'DNS'],
+                'ports': [53],
+                'services': ['domain'],
+                'scanned': False  # Unscanned for demo
             },
             {
                 'ip': '192.168.1.150',
@@ -106,7 +176,35 @@ class Command(BaseCommand):
                 'domain': 'nas.local',
                 'technologies': ['Synology', 'SMB', 'AFP'],
                 'ports': [80, 443, 5000, 5001, 139, 445],
-                'services': ['http', 'https', 'http-alt', 'https-alt', 'netbios-ssn', 'microsoft-ds']
+                'services': ['http', 'https', 'http-alt', 'https-alt', 'netbios-ssn', 'microsoft-ds'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.160',
+                'hostname': 'media-server',
+                'domain': 'media.local',
+                'technologies': ['Plex', 'Jellyfin'],
+                'ports': [32400, 8096],
+                'services': ['plex', 'jellyfin'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.170',
+                'hostname': 'security-camera',
+                'domain': 'camera1.local',
+                'technologies': ['IP Camera', 'RTSP'],
+                'ports': [80, 554],
+                'services': ['http', 'rtsp'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.180',
+                'hostname': 'smart-switch',
+                'domain': 'switch2.local',
+                'technologies': ['Managed Switch', 'SNMP'],
+                'ports': [23, 161],
+                'services': ['telnet', 'snmp'],
+                'scanned': False  # Unscanned for demo
             },
             {
                 'ip': '192.168.1.200',
@@ -114,7 +212,44 @@ class Command(BaseCommand):
                 'domain': 'camera.local',
                 'technologies': ['IP Camera', 'RTSP', 'ONVIF'],
                 'ports': [80, 554, 8554],
-                'services': ['http', 'rtsp', 'rtsp-alt']
+                'services': ['http', 'rtsp', 'rtsp-alt'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.210',
+                'hostname': 'load-balancer',
+                'domain': 'lb.local',
+                'technologies': ['HAProxy', 'Nginx'],
+                'ports': [80, 443, 8404],
+                'services': ['http', 'https', 'haproxy'],
+                'scanned': True
+            },
+            {
+                'ip': '192.168.1.220',
+                'hostname': 'cache-server',
+                'domain': 'cache.local',
+                'technologies': ['Redis', 'Memcached'],
+                'ports': [6379, 11211],
+                'services': ['redis', 'memcache'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.230',
+                'hostname': 'backup-storage',
+                'domain': 'backup2.local',
+                'technologies': ['Backup Storage'],
+                'ports': [873],
+                'services': ['rsync'],
+                'scanned': False  # Unscanned for demo
+            },
+            {
+                'ip': '192.168.1.240',
+                'hostname': 'api-gateway',
+                'domain': 'api.local',
+                'technologies': ['Kong', 'API Gateway'],
+                'ports': [8000, 8443],
+                'services': ['http-alt', 'https-alt'],
+                'scanned': True
             },
             {
                 'ip': '192.168.1.254',
@@ -122,7 +257,8 @@ class Command(BaseCommand):
                 'domain': 'switch.local',
                 'technologies': ['Cisco Switch', 'SNMP'],
                 'ports': [23, 80, 161],
-                'services': ['telnet', 'http', 'snmp']
+                'services': ['telnet', 'http', 'snmp'],
+                'scanned': True
             }
         ]
         
@@ -146,19 +282,20 @@ class Command(BaseCommand):
             # Clear existing sample data if requested
             if clear_existing:
                 self.stdout.write("🗑️  Clearing existing sample data...")
-                # Delete sample eggrecords (those with IPs in the CIDR range)
+                # Delete nmap scans first (foreign key constraint)
                 cursor.execute("""
                     DELETE FROM customer_eggs_eggrecords_general_models_nmap
                     WHERE record_id_id IN (
                         SELECT id FROM customer_eggs_eggrecords_general_models_eggrecord
-                        WHERE ip_address::text LIKE %s
+                        WHERE ip_address::text LIKE %s OR ip_address::inet <<= %s
                     )
-                """, [f"{network.network_address}/%"])
+                """, [f"{network.network_address}/%", str(network)])
                 
+                # Delete eggrecords in the CIDR range
                 cursor.execute("""
                     DELETE FROM customer_eggs_eggrecords_general_models_eggrecord
-                    WHERE ip_address::text LIKE %s
-                """, [f"{network.network_address}/%"])
+                    WHERE ip_address::text LIKE %s OR ip_address::inet <<= %s
+                """, [f"{network.network_address}/%", str(network)])
                 
                 conn.commit()
                 self.stdout.write(self.style.SUCCESS("✅ Cleared existing sample data"))
@@ -249,43 +386,46 @@ class Command(BaseCommand):
                         projectegg  # projectegg
                     ])
                     
-                    # Create nmap scan for each open port
-                    for port, service in zip(host['ports'], host['services']):
-                        nmap_id = str(uuid.uuid4())
-                        open_ports_json = json.dumps([{
-                            'port': port,
-                            'protocol': 'tcp',
-                            'service': service,
-                            'state': 'open'
-                        }])
-                        
-                        cursor.execute("""
-                            INSERT INTO customer_eggs_eggrecords_general_models_nmap
-                            (id, record_id_id, target, scan_type, scan_stage, scan_status,
-                             port, service_name, open_ports, scan_command, name, hostname,
-                             date, created_at, updated_at, md5)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, [
-                            nmap_id,
-                            eggrecord_id,
-                            host['ip'],
-                            'kage_port_scan',
-                            'completed',
-                            'completed',
-                            port,
-                            service,
-                            open_ports_json,
-                            f"nmap -p {port} {host['ip']}",
-                            host['hostname'],
-                            host['ip'],
-                            timezone.now(),
-                            timezone.now(),
-                            timezone.now(),
-                            str(uuid.uuid4())[:32]  # MD5 hash
-                        ])
+                    # Create nmap scan for each open port (only if scanned is True)
+                    if host.get('scanned', True):  # Default to True for backward compatibility
+                        for port, service in zip(host['ports'], host['services']):
+                            nmap_id = str(uuid.uuid4())
+                            open_ports_json = json.dumps([{
+                                'port': port,
+                                'protocol': 'tcp',
+                                'service': service,
+                                'state': 'open'
+                            }])
+                            
+                            cursor.execute("""
+                                INSERT INTO customer_eggs_eggrecords_general_models_nmap
+                                (id, record_id_id, target, scan_type, scan_stage, scan_status,
+                                 port, service_name, open_ports, scan_command, name, hostname,
+                                 date, created_at, updated_at, md5)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, [
+                                nmap_id,
+                                eggrecord_id,
+                                host['ip'],
+                                'kage_port_scan',
+                                'completed',
+                                'completed',
+                                port,
+                                service,
+                                open_ports_json,
+                                f"nmap -p {port} {host['ip']}",
+                                host['hostname'],
+                                host['ip'],
+                                timezone.now(),
+                                timezone.now(),
+                                timezone.now(),
+                                str(uuid.uuid4())[:32]  # MD5 hash
+                            ])
+                        self.stdout.write(f"  ✅ Created {host['hostname']} ({host['ip']}) with {len(host['ports'])} services (scanned)")
+                    else:
+                        self.stdout.write(f"  ✅ Created {host['hostname']} ({host['ip']}) with {len(host['ports'])} services (unscanned)")
                     
                     created_count += 1
-                    self.stdout.write(f"  ✅ Created {host['hostname']} ({host['ip']}) with {len(host['ports'])} services")
                     
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f"  ❌ Error creating {host['hostname']}: {e}"))

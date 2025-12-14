@@ -44,6 +44,10 @@ RUN pip install --no-cache-dir django>=4.2.0
 COPY manage.py ./
 COPY ryu_project/ ./ryu_project/
 COPY ryu_app/ ./ryu_app/
+# Copy suzu directory for directory enumeration functionality
+COPY suzu/ ./suzu/
+# Copy artificial_intelligence (code handles missing module gracefully if not present)
+COPY artificial_intelligence/ ./artificial_intelligence/
 # Note: config/ and staticfiles/ are mounted as volumes in docker-compose.yml
 
 # Collect static files (will be done at runtime if needed)

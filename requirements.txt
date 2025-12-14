@@ -15,6 +15,16 @@ python-dotenv>=1.0.0
 django>=4.2.0  # Django framework for web server
 sqlalchemy>=2.0.0  # Needed for learning service and models
 redis>=5.0.0  # Needed for scan learning service
+pyyaml>=6.0  # Needed for Surge Nuclei template parsing
+
+# Vector database for Suzu path storage
+qdrant-client>=1.7.0  # Qdrant vector database client
+sentence-transformers>=2.2.0  # For semantic embeddings (all-MiniLM-L6-v2)
+# Note: Using Onumpy (GPU-accelerated NumPy) from /home/ego/github_public/Onumpy
+# Onumpy provides numpy_bridge which is a drop-in replacement
+# Standard numpy is still required as a dependency for Onumpy and sentence-transformers
+numpy>=2.0.0  # Required by Onumpy and sentence-transformers
+pyopencl>=2023.1  # Required by Onumpy for GPU acceleration
 
 # Development dependencies
 # pytest>=7.4.0
