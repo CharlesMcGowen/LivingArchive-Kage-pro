@@ -345,7 +345,12 @@ class KageNmapScanner:
         logger.debug(f"📋 Scanning eggrecord: {egg_record_data_dict}")
         # Ensure ports_to_scan is always a list
         if ports is None:
-            ports_to_scan = self.default_ports
+            # Ryu performs comprehensive scans: use full port range 1-65535
+            if scan_type == 'ryu_port_scan':
+                ports_to_scan = list(range(1, 65536))  # Full port range for Ryu
+                logger.info(f"🎯 Ryu comprehensive scan: scanning all ports 1-65535 ({len(ports_to_scan)} ports)")
+            else:
+                ports_to_scan = self.default_ports  # Common ports for Kage/Kaze
         elif isinstance(ports, list):
             ports_to_scan = ports
         elif isinstance(ports, (int, str)):
@@ -355,7 +360,10 @@ class KageNmapScanner:
         else:
             # Fallback to default ports
             logger.warning(f"⚠️  Invalid ports type {type(ports)}, using default ports")
-            ports_to_scan = self.default_ports
+            if scan_type == 'ryu_port_scan':
+                ports_to_scan = list(range(1, 65536))  # Full port range for Ryu
+            else:
+                ports_to_scan = self.default_ports
         
         # Advanced host discovery for WAF detection (before strategy selection)
         waf_detection = self._advanced_host_discovery_waf_detection(target)
