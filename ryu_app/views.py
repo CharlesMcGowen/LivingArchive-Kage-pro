@@ -788,13 +788,14 @@ def learning_dashboard(request):
                 calculated_rules = []
                 logger.debug("Heuristics calculator not available, using database only")
             
-            # Get stored rules from database using Django ORM
+            # Get stored rules from database - try calculated_heuristics_rules first, fallback to port_heuristics
+            stored_rules = []
             try:
-                rules = CalculatedHeuristicsRule.objects.using('eggrecords').order_by(
+                # Try CalculatedHeuristicsRule model (calculated_heuristics_rules table)
+                rules = CalculatedHeuristicsRule.objects.using(learning_db).order_by(
                     '-confidence_score', '-sample_count'
                 )[:50]
                 
-                stored_rules = []
                 for rule in rules:
                     rule_dict = {
                         'rule_pattern': rule.rule_pattern,
@@ -806,29 +807,54 @@ def learning_dashboard(request):
                         'last_updated': rule.last_updated
                     }
                     stored_rules.append(rule_dict)
-                
-                context['heuristics_rules'] = stored_rules
-                context['arguments_count'] = len(set(
-                    arg for rule in stored_rules 
-                    for arg in (rule.get('nmap_arguments') or [])
-                ))
-                # Extract unique arguments from rules
-                all_args = []
-                for rule in stored_rules:
-                    all_args.extend(rule.get('nmap_arguments', []))
-                context['arguments'] = list(set(all_args))[:20]  # Top 20 unique arguments
+                logger.debug(f"Loaded {len(stored_rules)} rules from calculated_heuristics_rules")
             except Exception as e:
-                logger.debug(f"Could not query calculated_heuristics_rules: {e}")
-                # Fallback to calculated rules if table doesn't exist
-                context['heuristics_rules'] = calculated_rules if 'calculated_rules' in locals() else []
-                context['arguments_count'] = len(set(
-                    arg for rule in (calculated_rules if 'calculated_rules' in locals() else [])
-                    for arg in (rule.get('nmap_arguments', []))
-                ))
-                all_args = []
-                for rule in (calculated_rules if 'calculated_rules' in locals() else []):
-                    all_args.extend(rule.get('nmap_arguments', []))
-                context['arguments'] = list(set(all_args))[:20]
+                logger.debug(f"Could not query calculated_heuristics_rules, trying port_heuristics: {e}")
+                # Fallback to port_heuristics table using raw SQL
+                try:
+                    db = connections[learning_db]
+                    with db.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT rule_pattern, nmap_arguments, recommended_technique, 
+                                   confidence_score, success_rate, sample_count, last_updated
+                            FROM port_heuristics
+                            ORDER BY confidence_score DESC, sample_count DESC
+                            LIMIT 50
+                        """)
+                        for row in cursor.fetchall():
+                            rule_dict = {
+                                'rule_pattern': row[0] or '',
+                                'nmap_arguments': row[1] if isinstance(row[1], list) else (json.loads(row[1]) if row[1] and isinstance(row[1], str) else []) if row[1] else [],
+                                'recommended_technique': row[2] or '',
+                                'confidence_score': float(row[3]) if row[3] else None,
+                                'success_rate': float(row[4]) if row[4] else None,
+                                'sample_count': row[5] or 0,
+                                'last_updated': row[6]
+                            }
+                            stored_rules.append(rule_dict)
+                        logger.debug(f"Loaded {len(stored_rules)} rules from port_heuristics")
+                except Exception as e2:
+                    logger.debug(f"Could not query port_heuristics either: {e2}")
+            
+            # If we still have no rules, use calculated rules if available
+            if not stored_rules and 'calculated_rules' in locals() and calculated_rules:
+                stored_rules = calculated_rules
+            
+            context['heuristics_rules'] = stored_rules
+            # Extract unique arguments
+            all_args = []
+            for rule in stored_rules:
+                nmap_args = rule.get('nmap_arguments') or []
+                if isinstance(nmap_args, list):
+                    all_args.extend(nmap_args)
+                elif isinstance(nmap_args, str):
+                    try:
+                        import json
+                        all_args.extend(json.loads(nmap_args))
+                    except:
+                        pass
+            context['arguments_count'] = len(set(all_args))
+            context['arguments'] = list(set(all_args))[:20]  # Top 20 unique arguments
         except Exception as e:
             logger.warning(f"Could not calculate heuristics rules: {e}", exc_info=True)
             context['heuristics_rules'] = []
@@ -866,14 +892,14 @@ def learning_dashboard(request):
             # Get WAF detection patterns using Django ORM
             try:
                 # Check if waf_detection_details table exists by trying to query it
-                waf_details_count = WAFDetectionDetail.objects.using('eggrecords').count()
+                waf_details_count = WAFDetectionDetail.objects.using(learning_db).count()
                 has_enhanced_waf = waf_details_count > 0
             except Exception:
                 has_enhanced_waf = False
             
             if has_enhanced_waf:
                 # Use WAFDetectionDetail with aggregations
-                waf_patterns_qs = WAFDetectionDetail.objects.using('eggrecords').filter(
+                waf_patterns_qs = WAFDetectionDetail.objects.using(learning_db).filter(
                     waf_type__isnull=False
                 ).values('waf_type', 'waf_version', 'waf_product').annotate(
                     detection_count=Count('id'),
@@ -920,7 +946,7 @@ def learning_dashboard(request):
             
             # Get IP-based technique effectiveness using Django ORM
             try:
-                ip_techniques_qs = IPTechniqueEffectiveness.objects.using('eggrecords').annotate(
+                ip_techniques_qs = IPTechniqueEffectiveness.objects.using(learning_db).annotate(
                     total_attempts=F('success_count') + F('failure_count')
                 ).order_by('-total_attempts', '-success_count')[:50]
                 
@@ -972,7 +998,7 @@ def learning_dashboard(request):
             
             # Get recent decision examples using Django ORM
             try:
-                decisions_qs = KageScanResult.objects.using('eggrecords').filter(
+                decisions_qs = KageScanResult.objects.using(learning_db).filter(
                     technique_used__isnull=False
                 ).order_by('-scanned_at')[:20]
                 
