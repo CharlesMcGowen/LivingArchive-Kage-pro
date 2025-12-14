@@ -1,0 +1,155 @@
+{% extends "reconnaissance/base.html" %}
+
+{% block title %}Oak Coordinator Dashboard{% endblock %}
+
+{% block extra_styles %}
+    :root { --accent-color: #10b981; }
+{% endblock %}
+
+{% block content %}
+<a href="/reconnaissance/" class="back-link">← Back to Reconnaissance</a>
+
+<div class="page-header">
+    <div class="icon">🌳</div>
+    <div>
+        <h2>Oak Coordinator Dashboard</h2>
+        <p class="subtitle">Task coordination and curation overview</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-message">
+    <strong>Database Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Total Fingerprints</div>
+        <div class="value">{{ stats.total_fingerprints|default:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Technology fingerprints</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">CVE Matches</div>
+        <div class="value">{{ stats.total_cve_matches|default:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">CVE fingerprint matches</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Curated</div>
+        <div class="value">{{ stats.total_curated|default:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Targets curated</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Pending Curation</div>
+        <div class="value">{{ stats.pending_curation|default:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Awaiting curation</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Recent Curations</div>
+        <div class="value">{{ stats.recent_curations|default:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Autonomous Service</div>
+        <div class="value">
+            {% if stats.autonomous_service_running %}
+                <span style="color: #10b981;">✅ Running</span>
+            {% else %}
+                <span style="color: #ef4444;">❌ Stopped</span>
+            {% endif %}
+        </div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">
+            Batches: {{ stats.curation_batches|default:0 }}, Processed: {{ stats.targets_processed|default:0 }}
+        </div>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #10b981;">📋 Recent Curations</h3>
+
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Curated At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for curation in recent_curations %}
+            <tr>
+                <td>{{ curation.subdomain|truncatechars:60 }}</td>
+                <td>
+                    {% if curation.curated_at %}
+                        {{ curation.curated_at|date:"Y-m-d H:i:s" }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="2" style="text-align: center; color: #94a3b8;">No recent curations found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-bottom: 15px; margin-top: 30px; color: #10b981;">🛠️ Oak Coordinator Functions</h3>
+
+<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+        <div>
+            <h4 style="color: #10b981; margin-bottom: 10px;">Nuclei Template Curation</h4>
+            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+                Oak coordinates Nuclei template recommendations for Surge based on technology fingerprints and CVE matches.
+            </p>
+            <a href="/reconnaissance/api/oak/refresh-templates/" 
+               style="display: inline-block; padding: 8px 16px; background: #10b981; color: white; border-radius: 4px; text-decoration: none; font-size: 0.9rem;">
+                🔄 Refresh Templates
+            </a>
+        </div>
+        
+        <div>
+            <h4 style="color: #10b981; margin-bottom: 10px;">Target Curation</h4>
+            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+                Autonomous curation service processes targets and updates curation status automatically.
+            </p>
+            <div style="font-size: 0.85rem; color: #64748b;">
+                Status: 
+                {% if stats.autonomous_service_running %}
+                    <span style="color: #10b981;">Active</span>
+                {% else %}
+                    <span style="color: #ef4444;">Inactive</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; margin-top: 30px; color: #10b981;">📊 API Endpoints</h3>
+
+<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px;">
+    <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="padding: 8px 0; border-bottom: 1px solid #334155;">
+            <span style="color: #10b981;">📡</span>
+            <a href="/reconnaissance/api/oak/nuclei-templates/" style="color: #60a5fa; text-decoration: none; margin-left: 10px;">
+                /api/oak/nuclei-templates/&lt;egg_record_id&gt;/</a>
+            <span style="color: #94a3b8; margin-left: 10px;">- Get recommended Nuclei templates</span>
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid #334155;">
+            <span style="color: #10b981;">🔄</span>
+            <a href="/reconnaissance/api/oak/refresh-templates/" style="color: #60a5fa; text-decoration: none; margin-left: 10px;">
+                /api/oak/refresh-templates/</a>
+            <span style="color: #94a3b8; margin-left: 10px;">- Refresh template registry</span>
+        </li>
+        <li style="padding: 8px 0;">
+            <span style="color: #10b981;">🎯</span>
+            <a href="/reconnaissance/api/oak/curate-sample/" style="color: #60a5fa; text-decoration: none; margin-left: 10px;">
+                /api/oak/curate-sample/</a>
+            <span style="color: #94a3b8; margin-left: 10px;">- Curate sample target</span>
+        </li>
+    </ul>
+</div>
+
+{% endblock %}

@@ -1907,6 +1907,118 @@ def general_dashboard(request):
     return render(request, 'reconnaissance/general_dashboard.html', context)
 
 
+def oak_dashboard(request):
+    """Oak Coordinator Dashboard - Task coordination and curation overview"""
+    from django.db import connections
+    from django.utils import timezone
+    from datetime import datetime, timedelta
+    
+    context = {
+        'personality': 'oak',
+        'title': 'Oak Coordinator',
+        'icon': '🌳',
+        'color': '#10b981'
+    }
+    
+    # Initialize stats
+    stats = {
+        'total_fingerprints': 0,
+        'total_cve_matches': 0,
+        'total_curated': 0,
+        'pending_curation': 0,
+        'recent_curations': 0,
+        'autonomous_service_running': False,
+        'curation_batches': 0,
+        'targets_processed': 0
+    }
+    
+    try:
+        # Get database connection - try customer_eggs first (where eggrecords are)
+        try:
+            db = connections['customer_eggs']
+        except KeyError:
+            try:
+                db = connections['eggrecords']
+            except KeyError:
+                db = connections['default']
+        
+        with db.cursor() as cursor:
+            # Count technology fingerprints
+            cursor.execute("""
+                SELECT COUNT(*) FROM enrichment_system_technologyfingerprint
+            """)
+            stats['total_fingerprints'] = cursor.fetchone()[0] or 0
+            
+            # Count CVE matches
+            cursor.execute("""
+                SELECT COUNT(*) FROM enrichment_system_cvefingerprintmatch
+            """)
+            stats['total_cve_matches'] = cursor.fetchone()[0] or 0
+            
+            # Count curated records (have bugsy_last_curated_at)
+            cursor.execute("""
+                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                WHERE bugsy_last_curated_at IS NOT NULL
+            """)
+            stats['total_curated'] = cursor.fetchone()[0] or 0
+            
+            # Count pending curation (alive, not skipped, not curated in 30 days)
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            cursor.execute("""
+                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                WHERE "subDomain" IS NOT NULL
+                AND alive = true
+                AND "skipScan" = false
+                AND (bugsy_last_curated_at IS NULL OR bugsy_last_curated_at < %s)
+            """, [thirty_days_ago])
+            stats['pending_curation'] = cursor.fetchone()[0] or 0
+            
+            # Count recent curations (last 24 hours)
+            one_day_ago = timezone.now() - timedelta(days=1)
+            cursor.execute("""
+                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                WHERE bugsy_last_curated_at >= %s
+            """, [one_day_ago])
+            stats['recent_curations'] = cursor.fetchone()[0] or 0
+            
+            # Get recent curation activity
+            cursor.execute("""
+                SELECT id, "subDomain", domainname, bugsy_last_curated_at
+                FROM customer_eggs_eggrecords_general_models_eggrecord
+                WHERE bugsy_last_curated_at IS NOT NULL
+                ORDER BY bugsy_last_curated_at DESC
+                LIMIT 20
+            """)
+            recent_curations = []
+            for row in cursor.fetchall():
+                recent_curations.append({
+                    'id': str(row[0]),
+                    'subdomain': row[1] or row[2] or 'unknown',
+                    'curated_at': row[3]
+                })
+            
+            context['recent_curations'] = recent_curations
+            
+    except Exception as e:
+        logger.error(f"Error loading Oak dashboard data: {e}", exc_info=True)
+        context['error'] = str(e)
+    
+    # Check autonomous curation service status
+    try:
+        from artificial_intelligence.personalities.reconnaissance.oak.target_curation.autonomous_curation_service import get_instance
+        autonomous_service = get_instance()
+        if autonomous_service:
+            stats['autonomous_service_running'] = getattr(autonomous_service, 'is_running', False)
+            stats['curation_batches'] = getattr(autonomous_service, 'stats', {}).get('curation_batches', 0)
+            stats['targets_processed'] = getattr(autonomous_service, 'stats', {}).get('targets_processed', 0)
+    except Exception as e:
+        logger.debug(f"Could not get autonomous service status: {e}")
+    
+    context['stats'] = stats
+    
+    return render(request, 'reconnaissance/oak_dashboard.html', context)
+
+
 def kage_dashboard(request):
     """Kage Scout - Nmap/Port scanning database"""
     context = {
