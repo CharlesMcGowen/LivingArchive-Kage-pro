@@ -74,25 +74,17 @@ def daemon_get_eggrecords(request, personality):
                 
             elif personality == 'kaze':
                 # Get eggrecords that need high-speed Nmap scanning
-                # Prevent scanning if:
-                # 1. Scanned by Kaze within last 24 hours
-                # 2. Total scans (Kage + Kaze) >= 2 within last year
+                # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
-                    AND NOT EXISTS (
-                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type = 'kaze_port_scan'
-                        AND n.created_at > NOW() - INTERVAL '24 hours'
-                    )
                     AND (
                         SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
                         WHERE n.record_id_id = e.id
                         AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
                         AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) < 2
+                    ) = 0
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
