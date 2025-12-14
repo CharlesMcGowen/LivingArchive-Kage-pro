@@ -658,8 +658,17 @@
         } catch (error) {
             connectionErrorCount++;
             
-            // Disable status checks after 10 consecutive failures (all 5 personalities failed twice)
-            if (connectionErrorCount >= 10) {
+            // Handle specific network errors gracefully
+            if (error.name === 'NetworkError' || error.message.includes('SOCKET_NOT_CONNECTED') || error.message.includes('NetworkError')) {
+                // Temporary network issue - don't disable checks, just log silently
+                logger.debug(`Network error checking ${personality} status: ${error.message}`);
+                // Don't increment error count for network issues - they're transient
+                connectionErrorCount = Math.max(0, connectionErrorCount - 1);
+                return; // Skip this check, will retry next interval
+            }
+            
+            // Disable status checks after 15 consecutive failures (all 5 personalities failed 3 times)
+            if (connectionErrorCount >= 15) {
                 if (!statusChecksDisabled) {
                     statusChecksDisabled = true;
                     console.warn('Status checks temporarily disabled due to repeated connection failures. Will retry in 30 seconds.');

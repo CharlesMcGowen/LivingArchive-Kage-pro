@@ -3244,52 +3244,25 @@ def personality_status_api(request, personality):
             })
         
         # Check if daemon is running
-        # Use health API endpoint - daemons call this to register their health
+        # Primary method: check PID file (for non-Docker setups)
         status = 'stopped'
-        try:
-            import requests
-            # Check daemon health via Django's own API endpoint
-            # Daemons that are running will have registered their health
-            health_url = f'http://localhost:9000/reconnaissance/api/daemon/{personality}/health/'
+        pid_file = Path(f'/tmp/{personality}_daemon.pid')
+        if pid_file.exists():
             try:
-                response = requests.get(health_url, timeout=2)
-                if response.status_code == 200:
-                    data = response.json()
-                    # Only mark as running if health check succeeds AND we have a functional daemon
-                    # For personalities without daemons (like suzu), the health endpoint will still work
-                    # but we need to check if there's actually a daemon container
-                    if data.get('status') == 'healthy' or data.get('success'):
-                        # Additional check: verify daemon container exists for personalities that should have daemons
-                        if personality in ['kage', 'kumo', 'ryu']:
-                            # These should have daemon containers - verify via health check response
-                            # If health check returns healthy, daemon is running
-                            status = 'running'
-                        elif personality == 'suzu':
-                            # Suzu doesn't have a daemon yet, so always show as stopped
-                            status = 'stopped'
-                        else:
-                            # For other personalities, trust the health check
-                            status = 'running'
-            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
-                logger.debug(f"Could not reach daemon health endpoint: {e}")
-        except Exception as e:
-            logger.debug(f"Could not check daemon status via API: {e}")
-        
-        # Fallback: check PID file (for non-Docker setups)
-        if status == 'stopped':
-            pid_file = Path(f'/tmp/{personality}_daemon.pid')
-            if pid_file.exists():
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)  # Check if process exists (signal 0 just checks)
+                status = 'running'
+            except (ProcessLookupError, ValueError, OSError):
+                # Process doesn't exist, remove stale PID file
                 try:
-                    pid = int(pid_file.read_text().strip())
-                    os.kill(pid, 0)  # Check if process exists
-                    status = 'running'
-                except (ProcessLookupError, ValueError, OSError):
-                    # Process doesn't exist, remove stale PID file
-                    try:
-                        pid_file.unlink()
-                    except:
-                        pass
-                    status = 'stopped'
+                    pid_file.unlink()
+                except:
+                    pass
+                status = 'stopped'
+        
+        # Optional: Try health check API as secondary verification (non-blocking)
+        # This is only used to confirm status, not to determine it
+        # We skip this to avoid circular dependencies and connection issues
         
         response_data = {
             'success': True,
