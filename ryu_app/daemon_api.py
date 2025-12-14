@@ -57,7 +57,9 @@ def daemon_get_eggrecords(request, personality):
                 
             elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
-                # Only return eggrecords that have NOT been scanned within the last 24 hours
+                # Prevent scanning if:
+                # 1. Scanned by Kage within last 24 hours
+                # 2. Total scans (Kage + Kaze) >= 2 within last year
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
@@ -68,13 +70,21 @@ def daemon_get_eggrecords(request, personality):
                         AND n.scan_type = 'kage_port_scan'
                         AND n.created_at > NOW() - INTERVAL '24 hours'
                     )
+                    AND (
+                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
+                        WHERE n.record_id_id = e.id
+                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
+                        AND n.created_at > NOW() - INTERVAL '1 year'
+                    ) < 2
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
                 
             elif personality == 'kaze':
                 # Get eggrecords that need high-speed Nmap scanning
-                # Only return eggrecords that have NOT been scanned within the last 24 hours
+                # Prevent scanning if:
+                # 1. Scanned by Kaze within last 24 hours
+                # 2. Total scans (Kage + Kaze) >= 2 within last year
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
@@ -85,6 +95,12 @@ def daemon_get_eggrecords(request, personality):
                         AND n.scan_type = 'kaze_port_scan'
                         AND n.created_at > NOW() - INTERVAL '24 hours'
                     )
+                    AND (
+                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
+                        WHERE n.record_id_id = e.id
+                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
+                        AND n.created_at > NOW() - INTERVAL '1 year'
+                    ) < 2
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
@@ -247,6 +263,24 @@ def daemon_submit_scan(request, personality):
                     'success': False,
                     'error': f'Domain has been scanned very recently (within last hour). Found {recent_count} recent scan(s). Skipping duplicate.',
                     'skip_reason': 'very_recent_scan_exists'
+                }, status=409)  # 409 Conflict
+            
+            # Check total scan count (Kage + Kaze) within last year - prevent more than 2 scans
+            cursor.execute("""
+                SELECT COUNT(*) as yearly_scan_count
+                FROM customer_eggs_eggrecords_general_models_nmap n
+                WHERE n.record_id_id = %s
+                AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
+                AND n.created_at > NOW() - INTERVAL '1 year'
+            """, [eggrecord_id])
+            yearly_count = cursor.fetchone()[0]
+            
+            if yearly_count >= 2:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Domain has already been scanned {yearly_count} time(s) within the last year (max 2 allowed). Skipping duplicate.',
+                    'skip_reason': 'yearly_scan_limit_exceeded',
+                    'current_scan_count': yearly_count
                 }, status=409)  # 409 Conflict
             
             # Generate MD5 hash
