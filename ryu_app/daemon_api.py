@@ -240,9 +240,10 @@ def daemon_submit_scan(request, personality):
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
             # Check for very recent duplicate scans (within last 5 minutes) to prevent race conditions
-            # This is a minimal safety check to prevent simultaneous submissions
+            # This is a minimal safety check to prevent simultaneous submissions from multiple daemons
+            # Determine which scan types to check based on the submitting scanner
             scan_types_to_check = []
-            if scan_type == 'kage_port_scan' or scan_type == 'kaze_port_scan':
+            if scan_type in ['kage_port_scan', 'kaze_port_scan']:
                 scan_types_to_check = ['kage_port_scan', 'kaze_port_scan']
             elif scan_type == 'ryu_port_scan':
                 scan_types_to_check = ['kage_port_scan', 'kaze_port_scan', 'ryu_port_scan']
