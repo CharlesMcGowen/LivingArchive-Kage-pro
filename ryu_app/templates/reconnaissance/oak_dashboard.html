@@ -26,27 +26,27 @@
 <div class="stats-grid">
     <div class="stat-card">
         <div class="label">Total Fingerprints</div>
-        <div class="value">{{ stats.total_fingerprints|default:0|intcomma }}</div>
+        <div class="value">{{ stats.total_fingerprints|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Technology fingerprints</div>
     </div>
     <div class="stat-card">
         <div class="label">CVE Matches</div>
-        <div class="value">{{ stats.total_cve_matches|default:0|intcomma }}</div>
+        <div class="value">{{ stats.total_cve_matches|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">CVE fingerprint matches</div>
     </div>
     <div class="stat-card">
         <div class="label">Total Curated</div>
-        <div class="value">{{ stats.total_curated|default:0|intcomma }}</div>
+        <div class="value">{{ stats.total_curated|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Targets curated</div>
     </div>
     <div class="stat-card">
         <div class="label">Pending Curation</div>
-        <div class="value">{{ stats.pending_curation|default:0|intcomma }}</div>
+        <div class="value">{{ stats.pending_curation|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Awaiting curation</div>
     </div>
     <div class="stat-card">
         <div class="label">Recent Curations</div>
-        <div class="value">{{ stats.recent_curations|default:0|intcomma }}</div>
+        <div class="value">{{ stats.recent_curations|default:0 }}</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Last 24 hours</div>
     </div>
     <div class="stat-card">
