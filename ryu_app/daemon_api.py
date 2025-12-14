@@ -40,50 +40,34 @@ def daemon_get_eggrecords(request, personality):
             # Handle Ryu scan requests (distinguish between scans and assessments)
             if personality == 'ryu' and scan_type == 'ryu_port_scan':
                 # Get eggrecords that need Ryu Nmap scanning
-                # Prevent scanning if:
-                # 1. Scanned by Ryu within last 24 hours
-                # 2. Total scans (Kage + Kaze + Ryu) >= 2 within last year
+                # Rule: Only scan once per year (max 1 scan from any scanner: Kage, Kaze, or Ryu)
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
-                    AND NOT EXISTS (
-                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type = 'ryu_port_scan'
-                        AND n.created_at > NOW() - INTERVAL '24 hours'
-                    )
                     AND (
                         SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
                         WHERE n.record_id_id = e.id
                         AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
                         AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) < 2
+                    ) = 0
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
                 
             elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
-                # Prevent scanning if:
-                # 1. Scanned by EITHER Kage OR Kaze within last 24 hours (prevent duplicate work)
-                # 2. Total scans (Kage + Kaze) >= 2 within last year
+                # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
                 cursor.execute("""
                     SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
-                    AND NOT EXISTS (
-                        SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
-                        AND n.created_at > NOW() - INTERVAL '24 hours'
-                    )
                     AND (
                         SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
                         WHERE n.record_id_id = e.id
                         AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
                         AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) < 2
+                    ) = 0
                     ORDER BY e.updated_at ASC
                     LIMIT %s
                 """, [limit])
@@ -255,26 +239,33 @@ def daemon_submit_scan(request, personality):
         
         conn = connections['customer_eggs']
         with conn.cursor() as cursor:
-            # Check for very recent duplicate scans (within last hour) to prevent race conditions
-            # This is a safety check in addition to the 24-hour check in daemon_get_eggrecords
-            # Check for ANY scan from Kage, Kaze, or Ryu (not just same scan_type)
+            # Check for very recent duplicate scans (within last 5 minutes) to prevent race conditions
+            # This is a minimal safety check to prevent simultaneous submissions
+            scan_types_to_check = []
+            if scan_type == 'kage_port_scan' or scan_type == 'kaze_port_scan':
+                scan_types_to_check = ['kage_port_scan', 'kaze_port_scan']
+            elif scan_type == 'ryu_port_scan':
+                scan_types_to_check = ['kage_port_scan', 'kaze_port_scan', 'ryu_port_scan']
+            else:
+                scan_types_to_check = [scan_type]
+            
             cursor.execute("""
                 SELECT COUNT(*) as recent_scan_count
                 FROM customer_eggs_eggrecords_general_models_nmap n
                 WHERE n.record_id_id = %s
-                AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
-                AND n.created_at > NOW() - INTERVAL '1 hour'
-            """, [eggrecord_id])
+                AND n.scan_type = ANY(%s)
+                AND n.created_at > NOW() - INTERVAL '5 minutes'
+            """, [eggrecord_id, scan_types_to_check])
             recent_count = cursor.fetchone()[0]
             
             if recent_count > 0:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Domain has been scanned very recently (within last hour) by another scanner. Found {recent_count} recent scan(s). Skipping duplicate.',
+                    'error': f'Domain has been scanned very recently (within last 5 minutes). Found {recent_count} recent scan(s). Skipping duplicate.',
                     'skip_reason': 'very_recent_scan_exists'
                 }, status=409)  # 409 Conflict
             
-            # Check total scan count (Kage + Kaze + Ryu) within last year - prevent more than 2 scans
+            # Check total scan count within last year - only allow 1 scan per year
             cursor.execute("""
                 SELECT COUNT(*) as yearly_scan_count
                 FROM customer_eggs_eggrecords_general_models_nmap n
@@ -284,10 +275,10 @@ def daemon_submit_scan(request, personality):
             """, [eggrecord_id])
             yearly_count = cursor.fetchone()[0]
             
-            if yearly_count >= 2:
+            if yearly_count >= 1:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Domain has already been scanned {yearly_count} time(s) within the last year (max 2 allowed). Skipping duplicate.',
+                    'error': f'Domain has already been scanned {yearly_count} time(s) within the last year (max 1 allowed per year). Skipping duplicate.',
                     'skip_reason': 'yearly_scan_limit_exceeded',
                     'current_scan_count': yearly_count
                 }, status=409)  # 409 Conflict
