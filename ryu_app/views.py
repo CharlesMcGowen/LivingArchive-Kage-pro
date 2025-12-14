@@ -330,13 +330,16 @@ def _serialize_row(row):
     result = {}
     for key, value in row.items():
         if isinstance(value, datetime):
-            # Convert UTC to local timezone for display
+            # Ensure value is timezone-aware (assume UTC if naive)
             if timezone.is_naive(value):
-                # If naive, assume it's UTC and make it aware
                 value = timezone.make_aware(value, dt_timezone.utc)
-            # Convert to local timezone
-            local_time = timezone.localtime(value)
-            result[key] = local_time.strftime('%Y-%m-%d %H:%M:%S')
+            # Always display in UTC to avoid date inconsistencies across timezones
+            # Extract UTC time directly to ensure consistent date display
+            if value.tzinfo:
+                utc_time = value.astimezone(dt_timezone.utc)
+            else:
+                utc_time = value
+            result[key] = utc_time.strftime('%Y-%m-%d %H:%M:%S')
         elif hasattr(value, '__str__'):
             result[key] = str(value)
         else:
