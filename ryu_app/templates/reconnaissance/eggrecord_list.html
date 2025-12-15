@@ -383,97 +383,88 @@
 <div class="eggrecord-layout">
     <!-- Left Sidebar: Create and Filter Panels -->
     <div class="eggrecord-sidebar">
-        <div class="eggrecord-create-panel">
-            <h3>➕ Create New EggRecord</h3>
-            <form id="create-eggrecord-form">
-                <div class="form-group">
-                    <label for="eggname">Egg Name (optional)</label>
-                    <input type="text" id="eggname" name="eggname" placeholder="Customer name or identifier" />
-                    <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
-                        Customer name - will be obfuscated with project egg
-                    </small>
-                </div>
-                
-                <div class="form-group" id="projectegg-display" style="display: none;">
-                    <label>Project Egg (auto-generated)</label>
-                    <input type="text" id="projectegg" name="projectegg" readonly style="background: rgba(100, 116, 139, 0.3); cursor: not-allowed;" />
-                    <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
-                        Code name selected from phase list
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="domain">Domain Name</label>
-                    <input type="text" id="domain" name="domain" placeholder="example.com" />
-                </div>
-                
-                <div class="form-group">
-                    <label for="subdomain">Subdomain (optional)</label>
-                    <input type="text" id="subdomain" name="subdomain" placeholder="subdomain.example.com" />
-                </div>
-                
-                <div class="form-group">
-                    <label for="ip_address">IP Address (optional)</label>
-                    <input type="text" id="ip_address" name="ip_address" placeholder="192.168.1.1" />
-                </div>
-                
-                <div class="form-group">
-                    <label for="cidr">CIDR Range (optional)</label>
-                    <input type="text" id="cidr" name="cidr" placeholder="192.168.1.0/24" />
-                    <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
-                        Limited to first 100 IPs
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="alive" name="alive" checked style="width: auto; cursor: pointer;" />
-                        <span>Mark as alive</span>
-                    </label>
-                </div>
-                
-                <div class="form-message" id="form-message"></div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-create" id="create-btn">Create EggRecord</button>
-                    <button type="button" class="btn-clear" onclick="clearForm()">Clear</button>
-                </div>
-            </form>
+    <div class="eggrecord-create-panel">
+        <h3>➕ Create New EggRecord</h3>
+        <form id="create-eggrecord-form">
+            <div class="form-group">
+                <label for="eggname">Egg Name (optional)</label>
+                <input type="text" id="eggname" name="eggname" placeholder="Customer name or identifier" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Customer name - will be obfuscated with project egg
+                </small>
+            </div>
+            
+            <div class="form-group" id="projectegg-display" style="display: none;">
+                <label>Project Egg (auto-generated)</label>
+                <input type="text" id="projectegg" name="projectegg" readonly style="background: rgba(100, 116, 139, 0.3); cursor: not-allowed;" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Code name selected from phase list
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label for="domain">Domain Name</label>
+                <input type="text" id="domain" name="domain" placeholder="example.com" />
+            </div>
+            
+            <div class="form-group">
+                <label for="subdomain">Subdomain (optional)</label>
+                <input type="text" id="subdomain" name="subdomain" placeholder="subdomain.example.com" />
+            </div>
+            
+            <div class="form-group">
+                <label for="ip_address">IP Address (optional)</label>
+                <input type="text" id="ip_address" name="ip_address" placeholder="192.168.1.1" />
+            </div>
+            
+            <div class="form-group">
+                <label for="cidr">CIDR Range (optional)</label>
+                <input type="text" id="cidr" name="cidr" placeholder="192.168.1.0/24" />
+                <small style="color: #64748b; font-size: 0.85rem; margin-top: 5px; display: block;">
+                    Limited to first 100 IPs
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="alive" name="alive" checked style="width: auto; cursor: pointer;" />
+                    <span>Mark as alive</span>
+                </label>
+            </div>
+            
+            <div class="form-message" id="form-message"></div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn-create" id="create-btn">Create EggRecord</button>
+                <button type="button" class="btn-clear" onclick="clearForm()">Clear</button>
+            </div>
+        </form>
+    </div>
+    
+    <div class="eggrecord-filter-panel">
+        <h3>🔍 Filter EggRecords</h3>
+        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+            Filter eggrecords by egg
+        </p>
+        
+        <div class="form-group">
+            <label for="filter-egg">Egg</label>
+            <select id="filter-egg" name="filter-egg" onchange="applyFilter()">
+                <option value="">All Eggs</option>
+                {% for egg in unique_eggs|default:"" %}
+                <option value="{{ egg.id }}">{{ egg.eggName }} ({{ egg.eisystem_in_thorm }})</option>
+                {% endfor %}
+            </select>
         </div>
         
-        <div class="eggrecord-filter-panel">
-            <h3>🔍 Filter EggRecords</h3>
-            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
-                Filter eggrecords by egg name or project egg
-            </p>
-            
-            <div class="form-group">
-                <label for="filter-eggname">Egg Name</label>
-                <select id="filter-eggname" name="filter-eggname" onchange="applyFilter()">
-                    <option value="">All Egg Names</option>
-                    {% for eggname in unique_eggnames|default:"" %}
-                    <option value="{{ eggname }}">{{ eggname }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="filter-projectegg">Project Egg</label>
-                <select id="filter-projectegg" name="filter-projectegg" onchange="applyFilter()">
-                    <option value="">All Project Eggs</option>
-                    {% for projectegg in unique_projecteggs|default:"" %}
-                    <option value="{{ projectegg }}">{{ projectegg }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="filter-count" id="filter-count">
-                Showing all eggrecords
-            </div>
-            
-            <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
-                Clear Filter
-            </button>
+        
+        <div class="filter-count" id="filter-count">
+            Showing all eggrecords
+        </div>
+        
+        <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
+            Clear Filter
+        </button>
         </div>
     </div>
     
@@ -485,8 +476,11 @@
 <div class="eggrecord-card" 
      data-egg-id="{{ eggrecord.id }}" 
      id="egg-card-{{ eggrecord.id }}"
+     data-egg-id-relation="{{ eggrecord.egg_id|default:'' }}"
      data-eggname="{{ eggrecord.eggname|default:'' }}"
-     data-projectegg="{{ eggrecord.projectegg|default:'' }}">
+     data-projectegg="{{ eggrecord.projectegg|default:'' }}"
+     data-egg-name="{{ eggrecord.egg_name|default:'' }}"
+     data-eisystem-name="{{ eggrecord.eisystem_name|default:'' }}">
     <input type="checkbox" class="eggrecord-checkbox" data-egg-id="{{ eggrecord.id }}" onchange="updateSelection()" onclick="event.stopPropagation();" />
     <a href="/reconnaissance/eggrecords/{{ eggrecord.id }}/" class="eggrecord-link" style="text-decoration: none; color: inherit; display: block;">
         <div class="eggrecord-card-header">
@@ -804,20 +798,17 @@ async function generateProjectEggForGenerate() {
 
 // Filter functionality
 function applyFilter() {
-    const eggnameFilter = document.getElementById('filter-eggname').value.toLowerCase();
-    const projecteggFilter = document.getElementById('filter-projectegg').value.toLowerCase();
+    const eggFilter = document.getElementById('filter-egg') ? document.getElementById('filter-egg').value : '';
     
     const cards = document.querySelectorAll('.eggrecord-card');
     let visibleCount = 0;
     
     cards.forEach(card => {
-        const eggname = (card.dataset.eggname || '').toLowerCase();
-        const projectegg = (card.dataset.projectegg || '').toLowerCase();
+        // Match by egg ID (primary filter) - use data-egg-id-relation for the actual egg_id foreign key
+        const eggIdRelation = card.dataset.eggIdRelation || '';
+        const matchesEgg = !eggFilter || eggIdRelation === eggFilter;
         
-        const matchesEggname = !eggnameFilter || eggname === eggnameFilter;
-        const matchesProjectegg = !projecteggFilter || projectegg === projecteggFilter;
-        
-        if (matchesEggname && matchesProjectegg) {
+        if (matchesEgg) {
             card.style.display = 'block';
             visibleCount++;
         } else {
@@ -827,7 +818,7 @@ function applyFilter() {
     
     // Update filter count
     const filterCountDiv = document.getElementById('filter-count');
-    if (eggnameFilter || projecteggFilter) {
+    if (eggFilter) {
         filterCountDiv.textContent = `Showing ${visibleCount} of ${cards.length} eggrecords`;
     } else {
         filterCountDiv.textContent = 'Showing all eggrecords';
@@ -835,8 +826,9 @@ function applyFilter() {
 }
 
 function clearFilter() {
-    document.getElementById('filter-eggname').value = '';
-    document.getElementById('filter-projectegg').value = '';
+    if (document.getElementById('filter-egg')) {
+        document.getElementById('filter-egg').value = '';
+    }
     applyFilter();
 }
 </script>

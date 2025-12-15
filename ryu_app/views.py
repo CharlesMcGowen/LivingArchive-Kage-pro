@@ -1389,18 +1389,87 @@ def suzu_upload_file_api(request):
         # Weight is now automatically calculated - ignore user input
         source = request.POST.get('source', 'uploaded')
         
-        # Read file content efficiently (streaming, no memory limits)
-        # Django's uploaded_file is already a file-like object that streams
+        # Read file content efficiently using Go parser (if available) or Python fallback
+        # Go parser is much faster for large files
         paths = []
+        file_content_bytes = None  # Store original file content for hash calculation
         try:
-            # Iterate line by line - Django handles streaming automatically
-            for line in uploaded_file:
-                line = line.decode('utf-8', errors='ignore').strip()
-                if not line or line.startswith('#'):
-                    continue
-                if not line.startswith('/'):
-                    line = '/' + line
-                paths.append(line)
+            # Read file content first (Django UploadedFile can only be read once)
+            # This ensures we have the content available for both Go and Python parsers
+            try:
+                uploaded_file.seek(0)  # Ensure we're at the start
+            except (AttributeError, OSError):
+                pass  # Some file objects don't support seek
+            
+            # Read file content - handle both bytes and text
+            file_content = uploaded_file.read()
+            file_content_bytes = file_content  # Keep original for hash
+            if isinstance(file_content, str):
+                file_content = file_content.encode('utf-8')
+            elif not isinstance(file_content, bytes):
+                file_content = bytes(file_content)
+            
+            # Try Go-based parser first for better performance
+            go_parser_used = False
+            try:
+                from suzu.wordlist_parser_bridge import parse_wordlist_stream
+                from io import BytesIO
+                
+                # Create BytesIO stream from file content
+                file_stream = BytesIO(file_content)
+                
+                # Parse using Go parser
+                parse_result = parse_wordlist_stream(
+                    file_stream=file_stream,
+                    batch_size=1000,
+                    max_paths=0,  # Unlimited
+                    skip_comments=True,
+                    normalize_paths=True,
+                    filename=getattr(uploaded_file, 'name', 'uploaded_file')
+                )
+                
+                if parse_result.get('error'):
+                    logger.warning(f"Go parser error: {parse_result['error']}, falling back to Python")
+                    raise Exception(parse_result['error'])
+                
+                paths = parse_result.get('paths', [])
+                if paths:
+                    go_parser_used = True
+                    logger.info(f"✅ Parsed {len(paths)} paths using Go parser (stats: {parse_result.get('stats', {})})")
+                else:
+                    raise Exception("Go parser returned no paths")
+                
+            except ImportError as import_error:
+                # Import error - Go parser not available, use Python
+                logger.debug(f"Go parser not available (ImportError: {import_error}), using Python parser")
+                go_parser_used = False
+            except Exception as go_error:
+                # Other Go parser errors - fall back to Python
+                logger.warning(f"Go parser failed ({type(go_error).__name__}: {go_error}), falling back to Python parser")
+                go_parser_used = False
+            
+            # Fallback to Python parser if Go parser wasn't used or failed
+            if not go_parser_used:
+                # Use file_content we read earlier (always available)
+                from io import BytesIO
+                python_file_stream = BytesIO(file_content)
+                
+                # Iterate line by line
+                for line in python_file_stream:
+                    # Handle both bytes and text
+                    if isinstance(line, bytes):
+                        line = line.decode('utf-8', errors='ignore').strip()
+                    else:
+                        line = str(line).strip()
+                    
+                    if not line or line.startswith('#'):
+                        continue
+                    if not line.startswith('/'):
+                        line = '/' + line
+                    paths.append(line)
+                
+                logger.info(f"✅ Parsed {len(paths)} paths using Python parser")
+                
         except Exception as e:
             logger.error(f"Error reading file: {e}", exc_info=True)
             return JsonResponse({
@@ -1478,20 +1547,30 @@ def suzu_upload_file_api(request):
         
         # Upload only new paths with per-path CMS detection and weight calculation
         result = None
-        if new_paths:
-            result = vector_store.upload_paths(
-                paths=new_paths,
-                wordlist_name=wordlist_name,
-                cms_name=cms_name,  # Used as fallback only
-                default_weight=0.4,  # Used as fallback only
-                source=source,
-                category=None,
-                per_path_detection=True,  # Enable per-path detection
-                filename_cms_hint=filename_cms_hint  # Pass filename hint
-            )
-        else:
-            # All paths are duplicates
-            result = {'uploaded': 0, 'failed': 0, 'collection': vector_store.collection_name}
+        try:
+            if new_paths:
+                result = vector_store.upload_paths(
+                    paths=new_paths,
+                    wordlist_name=wordlist_name,
+                    cms_name=cms_name,  # Used as fallback only
+                    default_weight=0.4,  # Used as fallback only
+                    source=source,
+                    category=None,
+                    per_path_detection=True,  # Enable per-path detection
+                    filename_cms_hint=filename_cms_hint  # Pass filename hint
+                )
+            else:
+                # All paths are duplicates
+                result = {'uploaded': 0, 'failed': 0, 'collection': vector_store.collection_name if vector_store else 'unknown'}
+            
+            # Ensure result is valid
+            if not result or not isinstance(result, dict):
+                logger.warning(f"upload_paths returned invalid result: {result}, using defaults")
+                result = {'uploaded': 0, 'failed': len(new_paths) if new_paths else 0}
+        except Exception as upload_error:
+            logger.error(f"Error uploading paths to vector store: {upload_error}", exc_info=True)
+            result = {'uploaded': 0, 'failed': len(new_paths) if new_paths else 0}
+            # Don't fail the entire request - still save upload history
         
         # #region agent log
         import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1382","message":"Upload completed","data":{"uploaded":result.get('uploaded',0),"failed":result.get('failed',0),"duplicate_count":duplicate_count,"result":result},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
@@ -1503,9 +1582,14 @@ def suzu_upload_file_api(request):
             from ryu_app.models import WordlistUpload
             import hashlib
             
-            # Calculate file hash for deduplication
-            file_content = '\n'.join(paths).encode('utf-8')
-            file_hash = hashlib.sha256(file_content).hexdigest()
+            # Calculate file hash for deduplication (use original file content if available, otherwise use paths)
+            # Use the file_content_bytes we read earlier, or fallback to paths
+            if file_content_bytes and isinstance(file_content_bytes, bytes):
+                file_hash = hashlib.sha256(file_content_bytes).hexdigest()
+            else:
+                # Fallback: hash the paths
+                paths_content = '\n'.join(paths).encode('utf-8')
+                file_hash = hashlib.sha256(paths_content).hexdigest()
             
             upload_record = WordlistUpload.objects.create(
                 wordlist_name=wordlist_name,
@@ -1520,15 +1604,19 @@ def suzu_upload_file_api(request):
         except Exception as e:
             logger.error(f"Failed to save upload history: {e}", exc_info=True)
         
+        # Ensure result has required keys
+        uploaded_count = result.get('uploaded', 0) if result else 0
+        failed_count = result.get('failed', 0) if result else len(new_paths) if new_paths else 0
+        
         response = JsonResponse({
             'success': True,
-            'uploaded': result.get('uploaded', 0),
-            'failed': result.get('failed', 0),
+            'uploaded': uploaded_count,
+            'failed': failed_count,
             'duplicate_count': duplicate_count,
             'wordlist_name': wordlist_name,
             'cms_name': cms_name,
             'paths_count': len(paths),
-            'new_paths_count': len(new_paths),
+            'new_paths_count': len(new_paths) if new_paths else 0,
             'upload_id': str(upload_record.id) if upload_record else None
         })
         
@@ -1795,7 +1883,7 @@ def suzu_upload_history_api(request):
         wordlist_name_filter = request.GET.get('wordlist_name', '').strip()
         cms_name_filter = request.GET.get('cms_name', '').strip()
         
-        uploads = WordlistUpload.objects.all()
+        uploads = WordlistUpload.objects.all().order_by('-created_at')
         
         if wordlist_name_filter:
             uploads = uploads.filter(wordlist_name__icontains=wordlist_name_filter)
@@ -3341,9 +3429,7 @@ def network_graph_api(request):
                                         'target': ip2_node_id,
                                         'type': 'network',
                                         'label': 'same network',
-                                        'data': {
-                                            'weight': weight
-                                        }
+                                        'weight': weight
                                     })
         
         # 3. Add ASN nodes
@@ -3461,30 +3547,81 @@ def eggrecord_list(request):
     
     if 'customer_eggs' in connections.databases:
         try:
-            # Use Django ORM with annotations for counts
-            eggrecords = PostgresEggRecord.objects.using('customer_eggs').annotate(
-                nmap_count=Count('nmap_scans', distinct=True),
-                request_count=Count('http_requests', distinct=True),
-                dns_count=Count('dns_queries', distinct=True)
-            ).order_by('-updated_at')[:200]
+            # Try with annotations first, fallback to simple query if annotations fail
+            try:
+                eggrecords_qs = PostgresEggRecord.objects.using('customer_eggs').select_related('egg_id').annotate(
+                    nmap_count=Count('nmap_scans', distinct=True),
+                    request_count=Count('http_requests', distinct=True),
+                    dns_count=Count('dns_queries', distinct=True)
+                ).order_by('-updated_at')[:200]
+                use_annotations = True
+            except Exception as annot_error:
+                logger.warning(f"Annotations failed, using simple query: {annot_error}")
+                eggrecords_qs = PostgresEggRecord.objects.using('customer_eggs').select_related('egg_id').order_by('-updated_at')[:200]
+                use_annotations = False
             
-            context['eggrecords'] = [{
-                'id': str(e.id),
-                'subDomain': e.subDomain,
-                'domainname': e.domainname,
-                'alive': e.alive,
-                'created_at': e.created_at,
-                'updated_at': e.updated_at,
-                'eggname': getattr(e, 'eggname', None),
-                'projectegg': getattr(e, 'projectegg', None),
-                'nmap_count': e.nmap_count,
-                'request_count': e.request_count,
-                'dns_count': e.dns_count,
-            } for e in eggrecords]
+            # Convert queryset to list of dicts
+            context['eggrecords'] = []
+            for e in eggrecords_qs:
+                eggrecord_dict = {
+                    'id': str(e.id),
+                    'subDomain': e.subDomain,
+                    'domainname': e.domainname,
+                    'alive': e.alive,
+                    'created_at': e.created_at,
+                    'updated_at': e.updated_at,
+                    'eggname': getattr(e, 'eggname', None),
+                    'projectegg': getattr(e, 'projectegg', None),
+                    'egg_id': str(e.egg_id.id) if e.egg_id else None,
+                    'egg_name': e.egg_id.eggName if e.egg_id else None,
+                    'eisystem_name': e.egg_id.eisystem_in_thorm if e.egg_id else None,
+                }
+                if use_annotations:
+                    eggrecord_dict['nmap_count'] = getattr(e, 'nmap_count', 0)
+                    eggrecord_dict['request_count'] = getattr(e, 'request_count', 0)
+                    eggrecord_dict['dns_count'] = getattr(e, 'dns_count', 0)
+                else:
+                    eggrecord_dict['nmap_count'] = 0
+                    eggrecord_dict['request_count'] = 0
+                    eggrecord_dict['dns_count'] = 0
+                context['eggrecords'].append(eggrecord_dict)
             
             context['total_count'] = len(context['eggrecords'])
             context['total_eggrecords'] = PostgresEggRecord.objects.using('customer_eggs').count()
             context['alive_count'] = PostgresEggRecord.objects.using('customer_eggs').filter(alive=True).count()
+            
+            # Get unique eggs from the Eggs relationship for filter dropdowns
+            try:
+                from .postgres_models import PostgresEggs
+                # Get eggs that have associated EggRecords
+                eggs_with_records = PostgresEggs.objects.using('customer_eggs').filter(
+                    egg_records__isnull=False
+                ).distinct().values('id', 'eggName', 'eisystem_in_thorm').order_by('eggName')
+                context['unique_eggs'] = list(eggs_with_records)
+            except Exception as e:
+                logger.warning(f"Error fetching unique eggs: {e}")
+                context['unique_eggs'] = []
+            context['unique_eggnames'] = []
+            context['unique_projecteggs'] = []
+            
+            # Also keep legacy eggname/projectegg filters for backwards compatibility
+            try:
+                unique_eggnames = PostgresEggRecord.objects.using('customer_eggs').filter(
+                    eggname__isnull=False
+                ).exclude(eggname='').values_list('eggname', flat=True).distinct().order_by('eggname')
+                context['unique_eggnames'] = list(unique_eggnames)
+            except Exception as e:
+                logger.warning(f"Error fetching unique eggnames: {e}")
+                context['unique_eggnames'] = []
+            
+            try:
+                unique_projecteggs = PostgresEggRecord.objects.using('customer_eggs').filter(
+                    projectegg__isnull=False
+                ).exclude(projectegg='').values_list('projectegg', flat=True).distinct().order_by('projectegg')
+                context['unique_projecteggs'] = list(unique_projecteggs)
+            except Exception as e:
+                logger.warning(f"Error fetching unique projecteggs: {e}")
+                context['unique_projecteggs'] = []
         except Exception as e:
             logger.error(f"Error fetching EggRecords: {e}", exc_info=True)
             context['error'] = str(e)
@@ -3492,6 +3629,9 @@ def eggrecord_list(request):
             context['total_count'] = 0
             context['total_eggrecords'] = 0
             context['alive_count'] = 0
+            context['unique_eggs'] = []
+            context['unique_eggnames'] = []
+            context['unique_projecteggs'] = []
     else:
         # Fallback to local SQLite
         try:
@@ -3503,6 +3643,8 @@ def eggrecord_list(request):
                 'alive': e.alive,
                 'created_at': e.created_at,
                 'updated_at': e.updated_at,
+                'eggname': getattr(e, 'eggname', None),
+                'projectegg': getattr(e, 'projectegg', None),
                 'nmap_count': 0,
                 'request_count': 0,
                 'dns_count': 0
@@ -3510,6 +3652,25 @@ def eggrecord_list(request):
             context['total_count'] = len(context['eggrecords'])
             context['total_eggrecords'] = EggRecord.objects.count()
             context['alive_count'] = EggRecord.objects.filter(alive=True).count()
+            
+            # Get unique eggnames and projecteggs for filter dropdowns (SQLite fallback)
+            try:
+                unique_eggnames = EggRecord.objects.filter(
+                    eggname__isnull=False
+                ).exclude(eggname='').values_list('eggname', flat=True).distinct().order_by('eggname')
+                context['unique_eggnames'] = list(unique_eggnames)
+            except Exception as e:
+                logger.warning(f"Error fetching unique eggnames from SQLite: {e}")
+                context['unique_eggnames'] = []
+            
+            try:
+                unique_projecteggs = EggRecord.objects.filter(
+                    projectegg__isnull=False
+                ).exclude(projectegg='').values_list('projectegg', flat=True).distinct().order_by('projectegg')
+                context['unique_projecteggs'] = list(unique_projecteggs)
+            except Exception as e:
+                logger.warning(f"Error fetching unique projecteggs from SQLite: {e}")
+                context['unique_projecteggs'] = []
         except Exception as e:
             logger.error(f"Error fetching EggRecords from SQLite: {e}")
             context['error'] = str(e)
@@ -3517,6 +3678,9 @@ def eggrecord_list(request):
             context['total_count'] = 0
             context['total_eggrecords'] = 0
             context['alive_count'] = 0
+            context['unique_eggs'] = []
+            context['unique_eggnames'] = []
+            context['unique_projecteggs'] = []
     
     return render(request, 'reconnaissance/eggrecord_list.html', context)
 
