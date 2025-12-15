@@ -15,18 +15,48 @@ import json
 from pathlib import Path
 from enum import Enum
 from dataclasses import asdict, is_dataclass
+from datetime import datetime
+from datetime import datetime
 
 # Add project root to path (for isolated repo)
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [KAZE] %(levelname)s: %(message)s',
+# Configure logging to both file and console
+project_root = Path(__file__).parent.parent
+logs_dir = project_root / 'logs' / 'kaze'
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / f'kaze_daemon_{datetime.now().strftime("%Y%m%d")}.log'
+
+# Create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove existing handlers to avoid duplicates
+logger.handlers.clear()
+
+# File handler with rotation (keep last 7 days)
+file_handler = logging.FileHandler(log_file, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_formatter = logging.Formatter(
+    '%(asctime)s [KAZE] %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger(__name__)
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter(
+    '%(asctime)s [KAZE] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# Prevent propagation to root logger
+logger.propagate = False
 
 # Load agent configuration
 from daemons.config_loader import AgentConfig

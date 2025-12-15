@@ -69,11 +69,11 @@ try:
         DJANGO_AVAILABLE = True
         logger.debug("Django already initialized (apps ready)")
     else:
-    # Try kage-pro Django settings first
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+        # Try kage-pro Django settings first
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
         try:
-    django.setup()
-    DJANGO_AVAILABLE = True
+            django.setup()
+            DJANGO_AVAILABLE = True
         except RuntimeError as e:
             # Handle "populate() isn't reentrant" error gracefully
             if "populate() isn't reentrant" in str(e) or "reentrant" in str(e).lower():
@@ -102,8 +102,8 @@ except (ImportError, ModuleNotFoundError):
             DJANGO_AVAILABLE = True
         else:
             try:
-        django.setup()
-        DJANGO_AVAILABLE = True
+                django.setup()
+                DJANGO_AVAILABLE = True
             except RuntimeError as e:
                 if "populate() isn't reentrant" in str(e) or "reentrant" in str(e).lower():
                     logger.debug("Django setup in progress (EgoQT), skipping reentrant call")
@@ -133,9 +133,9 @@ except RuntimeError as e:
 
 # Import Django components only if available
 try:
-from django.apps import apps
-from django.db import connections
-from django.utils import timezone
+    from django.apps import apps
+    from django.db import connections
+    from django.utils import timezone
 except ImportError:
     # Django not available - create dummy objects
     apps = None
@@ -426,7 +426,7 @@ class KageNmapScanner:
             if scan_type == 'ryu_port_scan':
                 ports_to_scan = list(range(1, 65536))  # Full port range for Ryu
             else:
-            ports_to_scan = self.default_ports
+                ports_to_scan = self.default_ports
         
         # Advanced host discovery for WAF detection (before strategy selection)
         waf_detection = self._advanced_host_discovery_waf_detection(target)
@@ -923,44 +923,44 @@ class KageNmapScanner:
                 # Fallback: Store in open_ports JSON field on egg_record
                 # Only if write_to_db=True
                 if write_to_db:
-                import json
-                try:
-                    db = connections['customer_eggs']
-                    with db.cursor() as cursor:
-                        cursor.execute("""
-                            SELECT open_ports FROM customer_eggs_eggrecords_general_models_eggrecord
-                            WHERE id = %s
-                        """, [str(egg_record_id)])
-                        row = cursor.fetchone()
-                        current_ports = json.loads(row[0]) if row and row[0] else []
+                    import json
+                    try:
+                        db = connections['customer_eggs']
+                        with db.cursor() as cursor:
+                            cursor.execute("""
+                                SELECT open_ports FROM customer_eggs_eggrecords_general_models_eggrecord
+                                WHERE id = %s
+                            """, [str(egg_record_id)])
+                            row = cursor.fetchone()
+                            current_ports = json.loads(row[0]) if row and row[0] else []
+                            
+                            new_ports = [{
+                                'port': result['port'],
+                                'protocol': result.get('protocol', 'tcp'),
+                                'service': result.get('service_name', ''),
+                                'version': result.get('service_version', ''),
+                                'state': 'open',
+                                'scanned_at': datetime.now().isoformat()
+                            } for result in open_ports]
+                            
+                            # Merge with existing ports
+                            existing_ports = {port.get('port', port.get('port')): port for port in current_ports if isinstance(port, dict)}
+                            for new_port in new_ports:
+                                existing_ports[new_port['port']] = new_port
+                            
+                            updated_ports = list(existing_ports.values())
+                            
+                            # Update
+                            cursor.execute("""
+                                UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                                SET open_ports = %s
+                                WHERE id = %s
+                            """, [json.dumps(updated_ports), str(egg_record_id)])
+                            db.commit()  # Commit the fallback update
                         
-                        new_ports = [{
-                            'port': result['port'],
-                            'protocol': result.get('protocol', 'tcp'),
-                            'service': result.get('service_name', ''),
-                            'version': result.get('service_version', ''),
-                            'state': 'open',
-                            'scanned_at': datetime.now().isoformat()
-                        } for result in open_ports]
-                        
-                        # Merge with existing ports
-                        existing_ports = {port.get('port', port.get('port')): port for port in current_ports if isinstance(port, dict)}
-                        for new_port in new_ports:
-                            existing_ports[new_port['port']] = new_port
-                        
-                        updated_ports = list(existing_ports.values())
-                        
-                        # Update
-                        cursor.execute("""
-                            UPDATE customer_eggs_eggrecords_general_models_eggrecord
-                            SET open_ports = %s
-                            WHERE id = %s
-                        """, [json.dumps(updated_ports), str(egg_record_id)])
-                        db.commit()  # Commit the fallback update
-                    
-                    logger.info(f"  ✅ Updated egg record with {len(open_ports)} open ports (JSON fallback)")
-                except Exception as e2:
-                    logger.error(f"Fallback also failed: {e2}")
+                        logger.info(f"  ✅ Updated egg record with {len(open_ports)} open ports (JSON fallback)")
+                    except Exception as e2:
+                        logger.error(f"Fallback also failed: {e2}")
         
         duration = time.time() - start_time
         

@@ -1077,32 +1077,63 @@ async function uploadFiles() {
     progressBar.style.width = '0%';
     
     let hasDuplicates = false;
+    // Store file metadata before any reads to prevent invalidation
+    const fileMetadata = new Map();
     for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
+        const checkFile = selectedFiles[i]; // Renamed to avoid conflict with upload loop
+        // Store file size and name BEFORE any reads
+        const fileSize = checkFile.size;
+        const fileName = checkFile.name;
+        fileMetadata.set(fileName, { size: fileSize, file: checkFile });
+        
+        // Validate file early
+        if (!checkFile || fileSize === 0) {
+            console.error(`⚠️ File ${fileName} is empty or invalid (${fileSize} bytes)`);
+            continue;
+        }
+        
         // Use per-file detected CMS, fallback to global cmsName, then re-detect from filename
-        const fileCMS = fileCMSMap.get(file.name) || cmsName || inferCMSFromFilename(file.name);
+        const fileCMS = fileCMSMap.get(fileName) || cmsName || inferCMSFromFilename(fileName);
         
         // For large files, skip duplicate check in browser (saves memory)
         // Server will handle deduplication during upload
         let duplicateCheck = null;
-        const fileSizeMB = file.size / 1024 / 1024;
+        const fileSizeMB = fileSize / 1024 / 1024;
         const MAX_BROWSER_CHECK_SIZE = 5 * 1024 * 1024; // 5MB
         
         // Warn about very large files that might cause browser issues
-        if (file.size > 100 * 1024 * 1024) { // > 100MB
-            console.warn(`⚠️ Large file detected: ${file.name} (${fileSizeMB.toFixed(1)}MB). Browser upload may fail for files >100MB. Consider splitting the file.`);
+        if (fileSize > 100 * 1024 * 1024) { // > 100MB
+            console.warn(`⚠️ Large file detected: ${fileName} (${fileSizeMB.toFixed(1)}MB). Browser upload may fail for files >100MB. Consider splitting the file.`);
         }
         
-        if (file.size < MAX_BROWSER_CHECK_SIZE) { // Only check files < 5MB in browser
+        // Skip duplicate check for large files - server will handle it
+        if (fileSize >= MAX_BROWSER_CHECK_SIZE) {
+            console.log(`⏭️ Skipping browser-side duplicate check for ${fileName} (${fileSizeMB.toFixed(1)}MB - server will deduplicate during upload)`);
+        } else if (fileSize > 0) {
+            // Only check files < 5MB in browser and > 0 bytes
             try {
                 // Read file content to check paths (only for small files)
-                // Use FileReader instead of file.text() for better error handling
-                const fileText = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.onerror = (e) => reject(new Error(`Failed to read file: ${e.target.error?.message || 'Unknown error'}`));
-                    reader.readAsText(file);
-                });
+                // Use FileReader with a slice to avoid consuming the entire file
+                const fileSlice = checkFile.slice(0, Math.min(fileSize, MAX_BROWSER_CHECK_SIZE));
+                const fileText = await Promise.race([
+                    new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onerror = (e) => {
+                            const errorMsg = e.target.error?.message || 'Unknown error';
+                            reject(new Error(`Failed to read file: ${errorMsg}`));
+                        };
+                        reader.onabort = () => reject(new Error('File read was aborted'));
+                        try {
+                            reader.readAsText(fileSlice); // Read slice, not full file
+                        } catch (readError) {
+                            reject(new Error(`FileReader error: ${readError.message}`));
+                        }
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('File read timeout')), 5000)
+                    )
+                ]);
                 
                 const paths = fileText.split('\n')
                     .map(line => line.trim())
@@ -1110,17 +1141,18 @@ async function uploadFiles() {
                     .map(line => line.startsWith('/') ? line : '/' + line);
                 
                 // Check for duplicates (non-blocking - if it fails, we proceed anyway)
-                duplicateCheck = await checkDuplicates(file.name, paths, fileCMS);
+                duplicateCheck = await checkDuplicates(fileName, paths, fileCMS);
             } catch (e) {
-                console.log(`Skipping duplicate check for ${file.name} (file too large or error: ${e.message})`);
+                console.warn(`Skipping duplicate check for ${fileName} (file too large or error: ${e.message})`);
+                // Don't fail the upload - server will handle deduplication
             }
         } else {
-            console.log(`⏭️ Skipping browser-side duplicate check for ${file.name} (${fileSizeMB.toFixed(1)}MB - server will deduplicate during upload)`);
+            console.warn(`⚠️ File ${fileName} appears to be empty (0 bytes)`);
         }
         
         if (duplicateCheck) {
             if (duplicateCheck.wordlist_exists) {
-                const confirmMsg = `⚠️ Wordlist "${file.name}" already exists (uploaded ${duplicateCheck.existing_upload.uploaded_count} paths on ${new Date(duplicateCheck.existing_upload.created_at).toLocaleDateString()}).\n\nContinue anyway?`;
+                const confirmMsg = `⚠️ Wordlist "${fileName}" already exists (uploaded ${duplicateCheck.existing_upload.uploaded_count} paths on ${new Date(duplicateCheck.existing_upload.created_at).toLocaleDateString()}).\n\nContinue anyway?`;
                 if (!confirm(confirmMsg)) {
                     return;
                 }
@@ -1128,7 +1160,7 @@ async function uploadFiles() {
             }
             
             if (duplicateCheck.duplicate_count > 0) {
-                let msg = `⚠️ ${duplicateCheck.duplicate_count} out of ${paths.length} paths already exist in the database.\n\nOnly ${duplicateCheck.new_count} new paths will be uploaded.`;
+                let msg = `⚠️ ${duplicateCheck.duplicate_count} out of ${duplicateCheck.sample_size || duplicateCheck.new_count + duplicateCheck.duplicate_count} paths already exist in the database.\n\nOnly ${duplicateCheck.new_count} new paths will be uploaded.`;
                 if (duplicateCheck.sample_checked) {
                     msg += `\n\n(Note: Only checked sample of ${duplicateCheck.sample_size} paths due to file size)`;
                 }
@@ -1160,18 +1192,99 @@ async function uploadFiles() {
     
     // Upload files sequentially with delay between uploads to prevent resource exhaustion
     for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
+        const originalFile = selectedFiles[i];
+        const fileName = originalFile.name;
+        
+        // Get file metadata (size stored before any reads)
+        const metadata = fileMetadata.get(fileName);
+        if (!metadata) {
+            console.error(`⚠️ File metadata not found for ${fileName}, skipping`);
+            totalFailed++;
+            failCount++;
+            continue;
+        }
+        
+        // Use stored file size, fallback to current file.size
+        const fileSize = metadata.size || originalFile.size || 0;
+        const fileSizeMB = fileSize / 1024 / 1024;
+        
+        // Debug: Log file metadata to help diagnose ERR_ACCESS_DENIED
+        console.log(`📋 File metadata for ${fileName}:`, {
+            storedSize: metadata.size,
+            originalFileSize: originalFile.size,
+            finalSize: fileSize,
+            fileSizeMB: fileSizeMB.toFixed(2),
+            fileType: metadata.file?.type || originalFile.type,
+            fileLastModified: metadata.file?.lastModified || originalFile.lastModified
+        });
+        
+        // Validate file before upload
+        if (!originalFile || fileSize === 0) {
+            console.error(`⚠️ File ${fileName} is empty or invalid (${fileSize} bytes). Original file.size: ${originalFile?.size || 'N/A'}`);
+            totalFailed++;
+            failCount++;
+            addUploadHistory({
+                type: 'File',
+                name: fileName,
+                cms: fileCMSMap.get(fileName) || '-',
+                status: 'failed',
+                paths: 0,
+                failed: 0,
+                error: `File is empty or invalid (${fileSize} bytes)`,
+                time: new Date().toLocaleTimeString()
+            });
+            detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${fileName}: File is empty or invalid (${fileSize} bytes)</div>`;
+            continue;
+        }
+        
+        // Use the original file object from metadata (ensures it's fresh, not invalidated by reads)
+        const file = metadata.file;
+        
+        // Validate file object before upload
+        if (!file || !(file instanceof File) && !(file instanceof Blob)) {
+            console.error(`⚠️ Invalid file object for ${fileName}:`, {
+                file: file,
+                isFile: file instanceof File,
+                isBlob: file instanceof Blob,
+                type: typeof file
+            });
+            totalFailed++;
+            failCount++;
+            addUploadHistory({
+                type: 'File',
+                name: fileName,
+                cms: fileCMSMap.get(fileName) || '-',
+                status: 'failed',
+                paths: 0,
+                failed: 0,
+                error: 'Invalid file object - file may have been invalidated',
+                time: new Date().toLocaleTimeString()
+            });
+            detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${fileName}: Invalid file object</div>`;
+            continue;
+        }
+        
+        // Verify file size matches metadata
+        if (file.size !== fileSize && file.size > 0) {
+            console.warn(`⚠️ File size mismatch for ${fileName}: metadata=${fileSize}, actual=${file.size}. Using actual size.`);
+            // Update metadata with actual size
+            fileMetadata.set(fileName, { size: file.size, file: file });
+        }
+        
         // Use per-file detected CMS, fallback to global cmsName, then re-detect from filename
-        const fileCMS = fileCMSMap.get(file.name) || cmsName || inferCMSFromFilename(file.name);
+        const fileCMS = fileCMSMap.get(fileName) || cmsName || inferCMSFromFilename(fileName);
         
         // Add a small delay between uploads (except for the first one) to allow resources to be released
         if (i > 0) {
-            statusText.textContent = `Waiting before uploading ${i + 1}/${selectedFiles.length}: ${file.name}...`;
+            statusText.textContent = `Waiting before uploading ${i + 1}/${selectedFiles.length}: ${fileName}...`;
             await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
         }
         
         const formData = new FormData();
-        formData.append('file', file);
+        // Use the original file object from metadata (fresh reference, not invalidated by reads)
+        // This ensures the file is still valid even if it was read earlier for CMS detection
+        // Explicitly include filename to ensure browser can identify the file
+        formData.append('file', file, fileName);
         if (fileCMS) {
             formData.append('cms_name', fileCMS);
         }
@@ -1180,12 +1293,11 @@ async function uploadFiles() {
         
         const fileProgress = ((i + 1) / selectedFiles.length) * 100;
         progressBar.style.width = fileProgress + '%';
-        statusText.textContent = `Uploading ${i + 1}/${selectedFiles.length}: ${file.name}`;
+        statusText.textContent = `Uploading ${i + 1}/${selectedFiles.length}: ${fileName}`;
         
         try {
             // Use AbortController for timeout protection (10 minutes for large files)
             const controller = new AbortController();
-            const fileSizeMB = file.size / 1024 / 1024;
             // Longer timeout for larger files: 10 minutes base + 1 minute per 10MB over 50MB
             const timeoutDuration = Math.max(
                 10 * 60 * 1000, // 10 minutes minimum
@@ -1194,7 +1306,7 @@ async function uploadFiles() {
             const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
             
             // Log upload attempt with file size
-            console.log(`Uploading ${file.name} (${fileSizeMB.toFixed(1)}MB) with ${(timeoutDuration / 1000 / 60).toFixed(1)} minute timeout...`);
+            console.log(`Uploading ${fileName} (${fileSizeMB.toFixed(1)}MB) with ${(timeoutDuration / 1000 / 60).toFixed(1)} minute timeout...`);
             
             const response = await fetch('/reconnaissance/api/suzu/paths/upload-file/', {
                 method: 'POST',
@@ -1203,6 +1315,10 @@ async function uploadFiles() {
                 signal: controller.signal,
                 // Don't set Content-Length header - browser will handle it
                 // Large files need to be streamed by the browser
+                // Don't set Content-Type - browser will set it with boundary for multipart/form-data
+                // Use same-origin mode (default for same-origin requests)
+                mode: 'same-origin',
+                cache: 'no-cache'
             });
             
             clearTimeout(timeoutId);
@@ -1227,7 +1343,7 @@ async function uploadFiles() {
                 totalDuplicates += data.duplicate_count || 0;
                 successCount++;
                 
-                let statusMsg = `✅ ${file.name}: ${data.uploaded} paths uploaded`;
+                let statusMsg = `✅ ${fileName}: ${data.uploaded} paths uploaded`;
                 if (data.duplicate_count > 0) {
                     statusMsg += ` (${data.duplicate_count} duplicates skipped)`;
                 }
@@ -1237,7 +1353,7 @@ async function uploadFiles() {
                 
                 addUploadHistory({
                     type: 'File',
-                    name: data.wordlist_name || file.name,
+                    name: data.wordlist_name || fileName,
                     cms: data.cms_name || fileCMS || '-',
                     status: 'success',
                     paths: data.uploaded || 0,
@@ -1250,7 +1366,7 @@ async function uploadFiles() {
                 failCount++;
                 addUploadHistory({
                     type: 'File',
-                    name: file.name,
+                    name: fileName,
                     cms: fileCMS || '-',
                     status: 'failed',
                     paths: 0,
@@ -1258,29 +1374,33 @@ async function uploadFiles() {
                     error: data.error || 'Unknown error',
                     time: new Date().toLocaleTimeString()
                 });
-                detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${file.name}: ${data.error || 'Failed'}</div>`;
+                detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${fileName}: ${data.error || 'Failed'}</div>`;
             }
         } catch (error) {
             failCount++;
             let errorMsg = error.message || 'Unknown error';
             
-            // Handle specific browser errors
+            // Handle specific browser errors - use metadata for file info
+            const fileSizeMB = metadata ? (metadata.size / 1024 / 1024).toFixed(1) : 'unknown';
+            
             if (error.name === 'AbortError') {
-                errorMsg = `Upload timeout for ${file.name} (file may be too large - server is still processing)`;
-            } else if (error.message && (error.message.includes('ERR_ACCESS_DENIED') || error.message.includes('Access Denied'))) {
-                const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
-                errorMsg = `Browser blocked upload of ${file.name} (${fileSizeMB}MB). This usually happens with very large files (>100MB). Try: 1) Split the file into smaller chunks, 2) Use direct server upload, or 3) Check browser settings for large file uploads.`;
-                console.error(`ERR_ACCESS_DENIED for ${file.name}: File size ${fileSizeMB}MB. Browser may have limits on file upload size.`);
+                errorMsg = `Upload timeout for ${fileName} (file may be too large - server is still processing)`;
+            } else if (error.message && (error.message.includes('ERR_ACCESS_DENIED') || error.message.includes('Access Denied') || error.message.includes('permission'))) {
+                errorMsg = `Browser blocked file access for ${fileName} (${fileSizeMB}MB). This can happen if: 1) File is locked by another process, 2) Browser security restrictions, 3) File path is invalid. Try: 1) Close other programs using the file, 2) Refresh the page and try again, 3) Use a different file.`;
+                console.error(`ERR_ACCESS_DENIED for ${fileName}: File size ${fileSizeMB}MB. Error: ${error.message}`);
             } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_SOCKET_NOT_CONNECTED') || error.message.includes('ERR_CONNECTION'))) {
-                errorMsg = `Connection error for ${file.name} - server may be processing large file. Check server logs or try again.`;
-            } else if (error.message && error.message.includes('NetworkError') || error.message.includes('Network request failed')) {
-                const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
-                errorMsg = `Network error uploading ${file.name} (${fileSizeMB}MB). File may be too large for browser upload. Try splitting into smaller files or uploading directly to server.`;
+                errorMsg = `Connection error for ${fileName} - server may be processing large file. Check server logs or try again.`;
+            } else if (error.message && (error.message.includes('NetworkError') || error.message.includes('Network request failed'))) {
+                errorMsg = `Network error uploading ${fileName} (${fileSizeMB}MB). File may be too large for browser upload. Try splitting into smaller files or uploading directly to server.`;
+            } else if (error.message && (error.message.includes('empty') || error.message.includes('invalid'))) {
+                errorMsg = `File ${fileName} is empty or invalid. Please select a valid file.`;
+            } else {
+                errorMsg = `Upload failed for ${fileName}: ${error.message || 'Unknown error'}`;
             }
             
             addUploadHistory({
                 type: 'File',
-                name: file.name,
+                name: fileName,
                 cms: fileCMS || '-',
                 status: 'failed',
                 paths: 0,
@@ -1288,7 +1408,7 @@ async function uploadFiles() {
                 error: errorMsg,
                 time: new Date().toLocaleTimeString()
             });
-            detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${file.name}: ${errorMsg}</div>`;
+            detailsDiv.innerHTML += `<div style="color: #ef4444; margin: 2px 0;">❌ ${fileName}: ${errorMsg}</div>`;
         }
     }
     

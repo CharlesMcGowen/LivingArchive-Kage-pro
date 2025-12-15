@@ -6,7 +6,7 @@ API endpoints for standalone daemon processes to interact with Django.
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.db import connections
+from django.db import connections, close_old_connections
 from django.utils import timezone
 from urllib.parse import urljoin
 import json
@@ -28,6 +28,9 @@ def daemon_get_eggrecords(request, personality):
         limit: Optional query param for max records (default: 10)
         scan_type: For kage/kaze/ryu - 'kage_port_scan', 'kaze_port_scan', or 'ryu_port_scan'
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         if personality not in ['kage', 'kaze', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality'}, status=400)
@@ -36,169 +39,173 @@ def daemon_get_eggrecords(request, personality):
         scan_type = request.GET.get('scan_type', f'{personality}_port_scan' if personality in ['kage', 'kaze', 'ryu'] else None)
         
         conn = connections['customer_eggs']
-        with conn.cursor() as cursor:
-            # Handle Ryu scan requests (distinguish between scans and assessments)
-            if personality == 'ryu' and scan_type == 'ryu_port_scan':
-                # Get eggrecords that need Ryu Nmap scanning
-                # Rule: Only scan once per year (max 1 scan from any scanner: Kage, Kaze, or Ryu)
-                # Note: egg_id_id is included but nullable, so it won't affect query results
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    WHERE e.alive = true
-                    AND (
-                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
-                        AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) = 0
-                    ORDER BY e.updated_at ASC
-                    LIMIT %s
-                """, [limit])
+        try:
+            with conn.cursor() as cursor:
+                # Handle Ryu scan requests (distinguish between scans and assessments)
+                if personality == 'ryu' and scan_type == 'ryu_port_scan':
+                    # Get eggrecords that need Ryu Nmap scanning
+                    # Rule: Only scan once per year (max 1 scan from any scanner: Kage, Kaze, or Ryu)
+                    # Note: egg_id_id is included but nullable, so it won't affect query results
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        WHERE e.alive = true
+                        AND (
+                            SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
+                            WHERE n.record_id_id = e.id
+                            AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
+                            AND n.created_at > NOW() - INTERVAL '1 year'
+                        ) = 0
+                        ORDER BY e.updated_at ASC
+                        LIMIT %s
+                    """, [limit])
                 
-            elif personality == 'kage':
-                # Get eggrecords that need Nmap scanning
-                # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
-                # Note: egg_id_id is included but nullable, so it won't affect query results
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    WHERE e.alive = true
-                    AND (
-                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
-                        AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) = 0
-                    ORDER BY e.updated_at ASC
-                    LIMIT %s
-                """, [limit])
+                elif personality == 'kage':
+                    # Get eggrecords that need Nmap scanning
+                    # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
+                    # Note: egg_id_id is included but nullable, so it won't affect query results
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        WHERE e.alive = true
+                        AND (
+                            SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
+                            WHERE n.record_id_id = e.id
+                            AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
+                            AND n.created_at > NOW() - INTERVAL '1 year'
+                        ) = 0
+                        ORDER BY e.updated_at ASC
+                        LIMIT %s
+                    """, [limit])
                 
-            elif personality == 'kaze':
-                # Get eggrecords that need high-speed Nmap scanning
-                # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
-                # Note: egg_id_id is included but nullable, so it won't affect query results
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    WHERE e.alive = true
-                    AND (
-                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
-                        WHERE n.record_id_id = e.id
-                        AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
-                        AND n.created_at > NOW() - INTERVAL '1 year'
-                    ) = 0
-                    ORDER BY e.updated_at ASC
-                    LIMIT %s
-                """, [limit])
+                elif personality == 'kaze':
+                    # Get eggrecords that need high-speed Nmap scanning
+                    # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
+                    # Note: egg_id_id is included but nullable, so it won't affect query results
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        WHERE e.alive = true
+                        AND (
+                            SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_nmap n
+                            WHERE n.record_id_id = e.id
+                            AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan')
+                            AND n.created_at > NOW() - INTERVAL '1 year'
+                        ) = 0
+                        ORDER BY e.updated_at ASC
+                        LIMIT %s
+                    """, [limit])
                 
-            elif personality == 'kumo':
-                # Get eggrecords that need HTTP spidering
-                # Note: egg_id_id is included but nullable, so it won't affect query results
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    LEFT JOIN customer_eggs_eggrecords_general_models_requestmetadata r ON r.record_id_id = e.id
-                    WHERE e.alive = true
-                    AND (
-                        r.id IS NULL 
-                        OR r.timestamp < NOW() - INTERVAL '6 months'
-                    )
-                    ORDER BY e.updated_at ASC
-                    LIMIT %s
-                """, [limit])
+                elif personality == 'kumo':
+                    # Get eggrecords that need HTTP spidering
+                    # Note: egg_id_id is included but nullable, so it won't affect query results
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        LEFT JOIN customer_eggs_eggrecords_general_models_requestmetadata r ON r.record_id_id = e.id
+                        WHERE e.alive = true
+                        AND (
+                            r.id IS NULL 
+                            OR r.timestamp < NOW() - INTERVAL '6 months'
+                        )
+                        ORDER BY e.updated_at ASC
+                        LIMIT %s
+                    """, [limit])
                 
-            elif personality == 'ryu':
-                # Get eggrecords that need assessment (have scan or HTTP data)
-                # Note: This is used when scan_type is NOT 'ryu_port_scan' (defaults to assessment query)
-                # Note: egg_id_id is included but nullable, so it won't affect query results
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id,
-                        CASE 
-                            WHEN EXISTS (
+                elif personality == 'ryu':
+                    # Get eggrecords that need assessment (have scan or HTTP data)
+                    # Note: This is used when scan_type is NOT 'ryu_port_scan' (defaults to assessment query)
+                    # Note: egg_id_id is included but nullable, so it won't affect query results
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id,
+                            CASE 
+                                WHEN EXISTS (
+                                    SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n 
+                                    WHERE n.record_id_id = e.id
+                                ) AND EXISTS (
+                                    SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r 
+                                    WHERE r.record_id_id = e.id
+                                ) THEN 1
+                                ELSE 0
+                            END as priority
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        WHERE e.alive = true
+                        AND (
+                            EXISTS (
                                 SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n 
                                 WHERE n.record_id_id = e.id
-                            ) AND EXISTS (
+                            )
+                            OR
+                            EXISTS (
                                 SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r 
                                 WHERE r.record_id_id = e.id
-                            ) THEN 1
-                            ELSE 0
-                        END as priority
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    WHERE e.alive = true
-                    AND (
-                        EXISTS (
-                            SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n 
-                            WHERE n.record_id_id = e.id
+                            )
                         )
-                        OR
-                        EXISTS (
-                            SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r 
-                            WHERE r.record_id_id = e.id
+                        AND NOT EXISTS (
+                            -- LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
+                            SELECT 1 FROM customer_eggs_eggrecords_general_models_jadeassessment j
+                            WHERE j.record_id_id = e.id
+                            AND j.created_at > NOW() - INTERVAL '7 days'
                         )
-                    )
-                    AND NOT EXISTS (
-                        -- LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
-                        SELECT 1 FROM customer_eggs_eggrecords_general_models_jadeassessment j
-                        WHERE j.record_id_id = e.id
-                        AND j.created_at > NOW() - INTERVAL '7 days'
-                    )
-                    ORDER BY priority DESC, e.updated_at DESC
-                    LIMIT %s
-                """, [limit])
+                        ORDER BY priority DESC, e.updated_at DESC
+                        LIMIT %s
+                    """, [limit])
                 
-            elif personality == 'suzu':
-                # Get eggrecords that need directory enumeration (have HTTP ports but no enumeration yet)
-                cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
-                    FROM customer_eggs_eggrecords_general_models_eggrecord e
-                    INNER JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id
-                    WHERE e.alive = true
-                    AND n.port IS NOT NULL
-                    AND n.port != ''
-                    AND CAST(n.port AS INTEGER) IN (80, 443, 8080, 8443)
-                    AND NOT EXISTS (
-                        SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r
-                        WHERE r.record_id_id = e.id
-                        AND (r.user_agent LIKE '%%Suzu%%' OR r.session_id LIKE 'suzu-%%')
-                        AND r.timestamp > NOW() - INTERVAL '30 days'
-                    )
-                    ORDER BY e.updated_at ASC
-                    LIMIT %s
-                """, [limit])
-            
-            # Check if cursor.description exists (query might return no columns if error)
-            if cursor.description is None:
+                elif personality == 'suzu':
+                    # Get eggrecords that need directory enumeration (have HTTP ports but no enumeration yet)
+                    cursor.execute("""
+                        SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                        FROM customer_eggs_eggrecords_general_models_eggrecord e
+                        INNER JOIN customer_eggs_eggrecords_general_models_nmap n ON n.record_id_id = e.id
+                        WHERE e.alive = true
+                        AND n.port IS NOT NULL
+                        AND n.port != ''
+                        AND CAST(n.port AS INTEGER) IN (80, 443, 8080, 8443)
+                        AND NOT EXISTS (
+                            SELECT 1 FROM customer_eggs_eggrecords_general_models_requestmetadata r
+                            WHERE r.record_id_id = e.id
+                            AND (r.user_agent LIKE '%%Suzu%%' OR r.session_id LIKE 'suzu-%%')
+                            AND r.timestamp > NOW() - INTERVAL '30 days'
+                        )
+                        ORDER BY e.updated_at ASC
+                        LIMIT %s
+                    """, [limit])
+                
+                # Check if cursor.description exists (query might return no columns if error)
+                if cursor.description is None:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Query execution failed - no description available'
+                    }, status=500)
+                
+                columns = [col[0] for col in cursor.description]
+                results = []
+                for row in cursor.fetchall():
+                    row_dict = dict(zip(columns, row))
+                    # Convert UUID to string
+                    if 'id' in row_dict and row_dict['id']:
+                        row_dict['id'] = str(row_dict['id'])
+                    # Convert egg_id_id UUID to string if present
+                    if 'egg_id_id' in row_dict and row_dict['egg_id_id']:
+                        row_dict['egg_id_id'] = str(row_dict['egg_id_id'])
+                    # Convert datetime to ISO format
+                    if 'updated_at' in row_dict and row_dict['updated_at']:
+                        row_dict['updated_at'] = row_dict['updated_at'].isoformat()
+                    results.append(row_dict)
+                
+                # Log query results for debugging
+                logger.debug(f"Query for {personality} returned {len(results)} eggrecords (limit was {limit})")
+                if len(results) == 0:
+                    logger.info(f"No eggrecords found for {personality} - all may have been scanned recently or none are alive")
+                
                 return JsonResponse({
-                    'success': False,
-                    'error': 'Query execution failed - no description available'
-                }, status=500)
-            
-            columns = [col[0] for col in cursor.description]
-            results = []
-            for row in cursor.fetchall():
-                row_dict = dict(zip(columns, row))
-                # Convert UUID to string
-                if 'id' in row_dict and row_dict['id']:
-                    row_dict['id'] = str(row_dict['id'])
-                # Convert egg_id_id UUID to string if present
-                if 'egg_id_id' in row_dict and row_dict['egg_id_id']:
-                    row_dict['egg_id_id'] = str(row_dict['egg_id_id'])
-                # Convert datetime to ISO format
-                if 'updated_at' in row_dict and row_dict['updated_at']:
-                    row_dict['updated_at'] = row_dict['updated_at'].isoformat()
-                results.append(row_dict)
-            
-            # Log query results for debugging
-            logger.debug(f"Query for {personality} returned {len(results)} eggrecords (limit was {limit})")
-            if len(results) == 0:
-                logger.info(f"No eggrecords found for {personality} - all may have been scanned recently or none are alive")
-            
-            return JsonResponse({
-                'success': True,
-                'count': len(results),
-                'eggrecords': results
-            })
+                    'success': True,
+                    'count': len(results),
+                    'eggrecords': results
+                })
+        finally:
+            # Ensure connection is closed after use
+            conn.close()
             
     except Exception as e:
         logger.error(f"Error getting eggrecords for {personality}: {e}", exc_info=True)
@@ -225,6 +232,9 @@ def daemon_submit_scan(request, personality):
         }
     }
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         if personality not in ['kage', 'kaze', 'ryu']:
             return JsonResponse({'success': False, 'error': 'Invalid personality for scan submission'}, status=400)
@@ -243,72 +253,73 @@ def daemon_submit_scan(request, personality):
             return JsonResponse({'success': False, 'error': 'No open ports in result'}, status=400)
         
         conn = connections['customer_eggs']
-        with conn.cursor() as cursor:
-            # Check for very recent duplicate scans (within last 5 minutes) to prevent race conditions
-            # This is a minimal safety check to prevent simultaneous submissions from multiple daemons
-            # Determine which scan types to check based on the submitting scanner
-            scan_types_to_check = []
-            if scan_type in ['kage_port_scan', 'kaze_port_scan']:
-                scan_types_to_check = ['kage_port_scan', 'kaze_port_scan']
-            elif scan_type == 'ryu_port_scan':
-                scan_types_to_check = ['kage_port_scan', 'kaze_port_scan', 'ryu_port_scan']
-            else:
-                scan_types_to_check = [scan_type]
-            
-            cursor.execute("""
+        try:
+            with conn.cursor() as cursor:
+                # Check for very recent duplicate scans (within last 5 minutes) to prevent race conditions
+                # This is a minimal safety check to prevent simultaneous submissions from multiple daemons
+                # Determine which scan types to check based on the submitting scanner
+                scan_types_to_check = []
+                if scan_type in ['kage_port_scan', 'kaze_port_scan']:
+                    scan_types_to_check = ['kage_port_scan', 'kaze_port_scan']
+                elif scan_type == 'ryu_port_scan':
+                    scan_types_to_check = ['kage_port_scan', 'kaze_port_scan', 'ryu_port_scan']
+                else:
+                    scan_types_to_check = [scan_type]
+                
+                cursor.execute("""
                 SELECT COUNT(*) as recent_scan_count
                 FROM customer_eggs_eggrecords_general_models_nmap n
                 WHERE n.record_id_id = %s
                 AND n.scan_type = ANY(%s)
                 AND n.created_at > NOW() - INTERVAL '5 minutes'
-            """, [eggrecord_id, scan_types_to_check])
-            recent_count = cursor.fetchone()[0]
-            
-            if recent_count > 0:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Domain has been scanned very recently (within last 5 minutes). Found {recent_count} recent scan(s). Skipping duplicate.',
-                    'skip_reason': 'very_recent_scan_exists'
-                }, status=409)  # 409 Conflict
-            
-            # Check total scan count within last year - only allow 1 scan per year
-            cursor.execute("""
+                """, [eggrecord_id, scan_types_to_check])
+                recent_count = cursor.fetchone()[0]
+                
+                if recent_count > 0:
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Domain has been scanned very recently (within last 5 minutes). Found {recent_count} recent scan(s). Skipping duplicate.',
+                        'skip_reason': 'very_recent_scan_exists'
+                    }, status=409)  # 409 Conflict
+                
+                # Check total scan count within last year - only allow 1 scan per year
+                cursor.execute("""
                 SELECT COUNT(*) as yearly_scan_count
                 FROM customer_eggs_eggrecords_general_models_nmap n
                 WHERE n.record_id_id = %s
                 AND n.scan_type IN ('kage_port_scan', 'kaze_port_scan', 'ryu_port_scan')
                 AND n.created_at > NOW() - INTERVAL '1 year'
-            """, [eggrecord_id])
-            yearly_count = cursor.fetchone()[0]
-            
-            if yearly_count >= 1:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Domain has already been scanned {yearly_count} time(s) within the last year (max 1 allowed per year). Skipping duplicate.',
-                    'skip_reason': 'yearly_scan_limit_exceeded',
-                    'current_scan_count': yearly_count
-                }, status=409)  # 409 Conflict
-            
-            # Generate MD5 hash
-            import hashlib
-            scan_data_str = f"{target}:{eggrecord_id}:{timezone.now().isoformat()}"
-            md5_hash = hashlib.md5(scan_data_str.encode()).hexdigest()
-            
-            # Prepare open_ports JSONB data
-            ports_json = []
-            for port_info in open_ports:
-                if isinstance(port_info, dict):
-                    ports_json.append({
-                        'port': port_info.get('port'),
-                        'protocol': port_info.get('protocol', 'tcp'),
-                        'service': port_info.get('service_name', ''),
-                        'version': port_info.get('service_version', ''),
-                        'state': 'open',
-                        'banner': port_info.get('service_info', '')
-                    })
-            
-            # Insert into database
-            cursor.execute("""
+                """, [eggrecord_id])
+                yearly_count = cursor.fetchone()[0]
+                
+                if yearly_count >= 1:
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Domain has already been scanned {yearly_count} time(s) within the last year (max 1 allowed per year). Skipping duplicate.',
+                        'skip_reason': 'yearly_scan_limit_exceeded',
+                        'current_scan_count': yearly_count
+                    }, status=409)  # 409 Conflict
+                
+                # Generate MD5 hash
+                import hashlib
+                scan_data_str = f"{target}:{eggrecord_id}:{timezone.now().isoformat()}"
+                md5_hash = hashlib.md5(scan_data_str.encode()).hexdigest()
+                
+                # Prepare open_ports JSONB data
+                ports_json = []
+                for port_info in open_ports:
+                    if isinstance(port_info, dict):
+                        ports_json.append({
+                            'port': port_info.get('port'),
+                            'protocol': port_info.get('protocol', 'tcp'),
+                            'service': port_info.get('service_name', ''),
+                            'version': port_info.get('service_version', ''),
+                            'state': 'open',
+                            'banner': port_info.get('service_info', '')
+                        })
+                
+                # Insert into database
+                cursor.execute("""
                 INSERT INTO customer_eggs_eggrecords_general_models_nmap (
                     id, md5, target, scan_type, scan_stage, scan_status, 
                     port, service_name, service_version, open_ports, 
@@ -341,6 +352,9 @@ def daemon_submit_scan(request, personality):
                 'success': True,
                 'message': f'Scan result submitted for {target}'
             })
+        finally:
+            # Ensure connection is closed after use
+            conn.close()
             
     except Exception as e:
         logger.error(f"Error submitting scan for {personality}: {e}", exc_info=True)
@@ -365,6 +379,9 @@ def daemon_submit_spider(request):
         }
     }
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         data = json.loads(request.body)
         eggrecord_id = data.get('eggrecord_id')
@@ -379,28 +396,29 @@ def daemon_submit_spider(request):
             return JsonResponse({'success': False, 'error': 'No request_metadata in result'}, status=400)
         
         conn = connections['customer_eggs']
-        with conn.cursor() as cursor:
-            # Insert request metadata
-            for metadata in request_metadata:
-                cursor.execute("""
-                    INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
-                        id, record_id_id, target_url, request_method, response_status,
-                        response_time_ms, user_agent, timestamp, created_at, updated_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                    )
-                """, [
-                    str(uuid.uuid4()),
-                    eggrecord_id,
-                    metadata.get('target_url', target_url),
-                    metadata.get('request_method', 'GET'),
-                    metadata.get('response_status', 200),
-                    metadata.get('response_time_ms', 0),
-                    metadata.get('user_agent', 'Kumo/1.0'),
-                    timezone.now(),
-                    timezone.now(),
-                    timezone.now()
-                ])
+        try:
+            with conn.cursor() as cursor:
+                # Insert request metadata
+                for metadata in request_metadata:
+                    cursor.execute("""
+                        INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
+                            id, record_id_id, target_url, request_method, response_status,
+                            response_time_ms, user_agent, timestamp, created_at, updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        )
+                    """, [
+                        str(uuid.uuid4()),
+                        eggrecord_id,
+                        metadata.get('target_url', target_url),
+                        metadata.get('request_method', 'GET'),
+                        metadata.get('response_status', 200),
+                        metadata.get('response_time_ms', 0),
+                        metadata.get('user_agent', 'Kumo/1.0'),
+                        timezone.now(),
+                        timezone.now(),
+                        timezone.now()
+                    ])
             conn.commit()
             
             return JsonResponse({
@@ -408,6 +426,9 @@ def daemon_submit_spider(request):
                 'message': f'Spider result submitted for {target_url}',
                 'requests_inserted': len(request_metadata)
             })
+        finally:
+            # Ensure connection is closed after use
+            conn.close()
             
     except Exception as e:
         logger.error(f"Error submitting spider result: {e}", exc_info=True)
@@ -465,6 +486,9 @@ def daemon_submit_enumeration(request):
         }
     }
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         data = json.loads(request.body)
         eggrecord_id = data.get('eggrecord_id')
@@ -475,55 +499,56 @@ def daemon_submit_enumeration(request):
             return JsonResponse({'success': False, 'error': 'eggrecord_id required'}, status=400)
         
         conn = connections['customer_eggs']
-        paths_inserted = 0
-        
-        # Check if this is the new format with heuristics
-        paths_discovered = result.get('paths_discovered', [])  # This is the list of paths with priority scores
-        enumeration_results = result.get('enumeration_results', [])  # Raw tool output (for reference)
-        cms_detection = result.get('cms_detection')
-        enumeration_metadata = result.get('enumeration_metadata', {})
-        
-        if paths_discovered:
-            # New format: Store in DirectoryEnumerationResult with priority scores
-            with conn.cursor() as cursor:
-                tool = enumeration_metadata.get('tool_used') or (enumeration_results[0].get('tool') if enumeration_results else 'unknown')
-                wordlist_used = enumeration_metadata.get('wordlist_used') or 'default'
-                
-                for path_data in paths_discovered[:200]:  # Limit to 200 paths per enumeration
-                    try:
-                        # Extract path data (paths_discovered already has priority scores)
-                        if isinstance(path_data, dict):
-                            discovered_path = path_data.get('path', '')
-                            status_code = path_data.get('status', 0)
-                            content_length = path_data.get('size', 0)
-                            content_type = path_data.get('content_type', '')
-                            priority_score = path_data.get('priority_score', 0.0)
-                            priority_factors = path_data.get('priority_factors', {})
-                            response_time = path_data.get('response_time', 0.0)
-                        else:
-                            # Fallback: path_data is a string
-                            discovered_path = str(path_data)
-                            status_code = 200
-                            content_length = 0
-                            content_type = ''
-                            priority_score = 0.0
-                            priority_factors = {}
-                            response_time = 0.0
-                        
-                        if not discovered_path:
-                            continue
-                        
-                        # Extract CMS info from detection
-                        detected_cms = None
-                        detected_cms_version = None
-                        cms_detection_confidence = 0.0
-                        if cms_detection:
-                            detected_cms = cms_detection.get('cms') or cms_detection.get('cms_name')
-                            detected_cms_version = cms_detection.get('version') or cms_detection.get('cms_version')
-                            cms_detection_confidence = cms_detection.get('confidence', 0.0)
-                        
-                        # Insert into DirectoryEnumerationResult
-                        cursor.execute("""
+        try:
+            paths_inserted = 0
+            
+            # Check if this is the new format with heuristics
+            paths_discovered = result.get('paths_discovered', [])  # This is the list of paths with priority scores
+            enumeration_results = result.get('enumeration_results', [])  # Raw tool output (for reference)
+            cms_detection = result.get('cms_detection')
+            enumeration_metadata = result.get('enumeration_metadata', {})
+            
+            if paths_discovered:
+                # New format: Store in DirectoryEnumerationResult with priority scores
+                with conn.cursor() as cursor:
+                    tool = enumeration_metadata.get('tool_used') or (enumeration_results[0].get('tool') if enumeration_results else 'unknown')
+                    wordlist_used = enumeration_metadata.get('wordlist_used') or 'default'
+                    
+                    for path_data in paths_discovered[:200]:  # Limit to 200 paths per enumeration
+                        try:
+                            # Extract path data (paths_discovered already has priority scores)
+                            if isinstance(path_data, dict):
+                                discovered_path = path_data.get('path', '')
+                                status_code = path_data.get('status', 0)
+                                content_length = path_data.get('size', 0)
+                                content_type = path_data.get('content_type', '')
+                                priority_score = path_data.get('priority_score', 0.0)
+                                priority_factors = path_data.get('priority_factors', {})
+                                response_time = path_data.get('response_time', 0.0)
+                            else:
+                                # Fallback: path_data is a string
+                                discovered_path = str(path_data)
+                                status_code = 200
+                                content_length = 0
+                                content_type = ''
+                                priority_score = 0.0
+                                priority_factors = {}
+                                response_time = 0.0
+                            
+                            if not discovered_path:
+                                continue
+                            
+                            # Extract CMS info from detection
+                            detected_cms = None
+                            detected_cms_version = None
+                            cms_detection_confidence = 0.0
+                            if cms_detection:
+                                detected_cms = cms_detection.get('cms') or cms_detection.get('cms_name')
+                                detected_cms_version = cms_detection.get('version') or cms_detection.get('cms_version')
+                                cms_detection_confidence = cms_detection.get('confidence', 0.0)
+                            
+                            # Insert into DirectoryEnumerationResult
+                            cursor.execute("""
                             INSERT INTO customer_eggs_eggrecords_general_models_directoryenumerationresult (
                                 id, egg_record_id, discovered_path, path_status_code,
                                 path_content_length, path_content_type, path_response_time_ms,
@@ -554,52 +579,55 @@ def daemon_submit_enumeration(request):
                             timezone.now(),
                             timezone.now()
                         ])
-                        paths_inserted += 1
-                    except Exception as e:
-                        logger.warning(f"Error inserting path {path_data}: {e}")
-                        continue
+                            paths_inserted += 1
+                        except Exception as e:
+                            logger.warning(f"Error inserting path {path_data}: {e}")
+                            continue
+                    
+                    conn.commit()
+            else:
+                # Legacy format: backward compatibility
+                paths = result.get('paths', [])
+                if not paths:
+                    return JsonResponse({'success': False, 'error': 'No paths in result'}, status=400)
                 
-                conn.commit()
-        else:
-            # Legacy format: backward compatibility
-            paths = result.get('paths', [])
-            if not paths:
-                return JsonResponse({'success': False, 'error': 'No paths in result'}, status=400)
-            
-            with conn.cursor() as cursor:
-                # Store as RequestMetadata for backward compatibility
-                for path in paths[:100]:
-                    full_url = urljoin(target, path) if isinstance(path, str) else target
-                    cursor.execute("""
-                        INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
-                            id, record_id_id, target_url, request_method, response_status,
-                            response_time_ms, user_agent, session_id, timestamp, created_at, updated_at
-                        ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                        )
-                        ON CONFLICT DO NOTHING
-                    """, [
-                        str(uuid.uuid4()),
-                        eggrecord_id,
-                        full_url,
-                        'GET',
-                        200,
-                        0,
-                        'Suzu/1.0',
-                        f'suzu-{eggrecord_id}',
-                        timezone.now(),
-                        timezone.now(),
-                        timezone.now()
-                    ])
+                with conn.cursor() as cursor:
+                    # Store as RequestMetadata for backward compatibility
+                    for path in paths[:100]:
+                        full_url = urljoin(target, path) if isinstance(path, str) else target
+                        cursor.execute("""
+                            INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
+                                id, record_id_id, target_url, request_method, response_status,
+                                response_time_ms, user_agent, session_id, timestamp, created_at, updated_at
+                            ) VALUES (
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            )
+                            ON CONFLICT DO NOTHING
+                        """, [
+                            str(uuid.uuid4()),
+                            eggrecord_id,
+                            full_url,
+                            'GET',
+                            200,
+                            0,
+                            'Suzu/1.0',
+                            f'suzu-{eggrecord_id}',
+                            timezone.now(),
+                            timezone.now(),
+                            timezone.now()
+                        ])
                 conn.commit()
                 paths_inserted = len(paths)
-        
-        return JsonResponse({
-            'success': True,
-            'message': f'Enumeration result submitted for {target}',
-            'paths_inserted': paths_inserted,
-            'format': 'heuristics' if enumeration_results else 'legacy'
-        })
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Enumeration result submitted for {target}',
+                'paths_inserted': paths_inserted,
+                'format': 'heuristics' if enumeration_results else 'legacy'
+            })
+        finally:
+            # Ensure connection is closed after use
+            conn.close()
             
     except Exception as e:
         logger.error(f"Error submitting enumeration result: {e}", exc_info=True)
@@ -700,6 +728,9 @@ def daemon_submit_assessment(request):
         "narrative": "..."
     }
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         data = json.loads(request.body)
         eggrecord_id = data.get('eggrecord_id')
@@ -708,10 +739,11 @@ def daemon_submit_assessment(request):
             return JsonResponse({'success': False, 'error': 'eggrecord_id required'}, status=400)
         
         conn = connections['customer_eggs']
-        with conn.cursor() as cursor:
-            # Insert assessment
-            # LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
-            cursor.execute("""
+        try:
+            with conn.cursor() as cursor:
+                # Insert assessment
+                # LEGACY TABLE NAME: Requires database migration from jadeassessment to ryuassessment for legal compliance
+                cursor.execute("""
                 INSERT INTO customer_eggs_eggrecords_general_models_jadeassessment (
                     id, record_id_id, risk_level, threat_summary,
                     vulnerabilities, attack_vectors, remediation_priorities,
@@ -737,6 +769,9 @@ def daemon_submit_assessment(request):
                 'success': True,
                 'message': f'Assessment submitted for eggrecord {eggrecord_id}'
             })
+        finally:
+            # Ensure connection is closed after use
+            conn.close()
             
     except Exception as e:
         logger.error(f"Error submitting assessment: {e}", exc_info=True)
@@ -753,6 +788,9 @@ def daemon_health_check(request, personality):
     
     Returns health status for monitoring and container health checks.
     """
+    # Close old connections to prevent connection exhaustion
+    close_old_connections()
+    
     try:
         if personality not in ['kage', 'kaze', 'kumo', 'ryu', 'suzu']:
             return JsonResponse({
@@ -764,9 +802,12 @@ def daemon_health_check(request, personality):
         db_healthy = False
         try:
             conn = connections['customer_eggs']
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                db_healthy = True
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    db_healthy = True
+            finally:
+                conn.close()
         except Exception as e:
             logger.warning(f"Database health check failed: {e}")
         
@@ -774,9 +815,12 @@ def daemon_health_check(request, personality):
         functional = False
         try:
             conn = connections['customer_eggs']
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord LIMIT 1")
-                functional = True
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord LIMIT 1")
+                    functional = True
+            finally:
+                conn.close()
         except Exception as e:
             logger.warning(f"Functional check failed: {e}")
         

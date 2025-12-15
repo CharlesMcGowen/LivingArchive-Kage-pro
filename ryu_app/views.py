@@ -1345,6 +1345,7 @@ def suzu_weighted_paths_api(request):
         }, status=500)
 
 
+@csrf_exempt
 def suzu_get_progress(request):
     """
     API: Get Suzu daemon progress (for dashboard)
@@ -1359,6 +1360,7 @@ def suzu_get_progress(request):
     })
 
 
+@csrf_exempt
 @csrf_exempt
 def suzu_upload_file_api(request):
     """
@@ -1863,6 +1865,7 @@ def suzu_delete_enumeration_api(request, enumeration_id):
         }, status=500)
 
 
+@csrf_exempt
 def suzu_upload_history_api(request):
     """
     API: Get upload history for Suzu wordlist uploads.

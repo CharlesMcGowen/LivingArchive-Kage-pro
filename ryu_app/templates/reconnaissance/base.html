@@ -498,7 +498,7 @@
         <img src="{% static 'images/Kage-banner.png' %}" 
              alt="Reconnaissance Team Banner" 
              style="max-width: 100%; width: 750px; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);"
-             onerror="this.style.display='none';">
+             onerror="console.error('Failed to load banner image:', this.src); this.style.display='none';">
     </div>
     
     <!-- Reconnaissance Team Control Panel -->
