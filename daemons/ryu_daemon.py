@@ -149,11 +149,34 @@ class RyuDaemon:
         try:
             timeout_config = self.config.get_timeout_config()
             url = f"{self.config.get_server_url()}/reconnaissance/api/daemon/ryu/scan/"
+            
+            # Sanitize result to ensure JSON serializability
+            # Remove any non-serializable objects (like ArgumentCategory, etc.)
+            sanitized_result = {}
+            if isinstance(result, dict):
+                for key, value in result.items():
+                    # Skip non-serializable objects, keep only basic types and lists/dicts of basic types
+                    try:
+                        import json
+                        json.dumps(value)  # Test if serializable
+                        sanitized_result[key] = value
+                    except (TypeError, ValueError):
+                        # Convert non-serializable objects to string or skip
+                        if hasattr(value, '__dict__'):
+                            sanitized_result[key] = str(value)
+                        elif hasattr(value, '__str__'):
+                            sanitized_result[key] = str(value)
+                        else:
+                            logger.debug(f"Skipping non-serializable key '{key}' in scan result")
+                            continue
+            else:
+                sanitized_result = result
+            
             data = {
                 'eggrecord_id': eggrecord_id,
                 'target': target,
                 'scan_type': 'ryu_port_scan',
-                'result': result
+                'result': sanitized_result
             }
             response = requests.post(url, json=data, timeout=timeout_config['submit_timeout'])
             
