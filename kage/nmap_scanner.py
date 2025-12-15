@@ -57,27 +57,89 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # Setup Django (optional - only if Django is available)
+# Check if Django is already configured to avoid reentrant populate() error
+DJANGO_AVAILABLE = False
 try:
-    # Try kage-pro Django settings first
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
     import django
-    django.setup()
-    DJANGO_AVAILABLE = True
+    from django.apps import apps
+    
+    # Check if Django apps are already ready (means setup() was already called)
+    if apps.ready:
+        DJANGO_AVAILABLE = True
+        logger.debug("Django already initialized (apps ready)")
+    else:
+        # Try kage-pro Django settings first
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+        try:
+            django.setup()
+            DJANGO_AVAILABLE = True
+        except RuntimeError as e:
+            # Handle "populate() isn't reentrant" error gracefully
+            if "populate() isn't reentrant" in str(e) or "reentrant" in str(e).lower():
+                # Django is already being initialized, wait for it to complete
+                logger.debug("Django setup in progress, skipping reentrant call")
+                # Try to check if apps become ready
+                import time
+                for _ in range(10):  # Wait up to 1 second
+                    time.sleep(0.1)
+                    if apps.ready:
+                        DJANGO_AVAILABLE = True
+                        break
+                if not DJANGO_AVAILABLE:
+                    logger.warning("Django setup pending, some features may be unavailable")
+            else:
+                raise
 except (ImportError, ModuleNotFoundError):
     # Fallback to EgoQT settings if available
     try:
         sys.path.insert(0, '/mnt/webapps-nvme')
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
         import django
-        django.setup()
-        DJANGO_AVAILABLE = True
+        from django.apps import apps
+        
+        if apps.ready:
+            DJANGO_AVAILABLE = True
+        else:
+            try:
+                django.setup()
+                DJANGO_AVAILABLE = True
+            except RuntimeError as e:
+                if "populate() isn't reentrant" in str(e) or "reentrant" in str(e).lower():
+                    logger.debug("Django setup in progress (EgoQT), skipping reentrant call")
+                    import time
+                    for _ in range(10):
+                        time.sleep(0.1)
+                        if apps.ready:
+                            DJANGO_AVAILABLE = True
+                            break
+                else:
+                    raise
     except (ImportError, ModuleNotFoundError):
         DJANGO_AVAILABLE = False
         logger.warning("Django not available - some features will be disabled")
+except RuntimeError as e:
+    # Catch any remaining Django setup errors
+    if "populate() isn't reentrant" in str(e) or "reentrant" in str(e).lower():
+        logger.debug("Django populate() already in progress, skipping")
+        try:
+            from django.apps import apps
+            DJANGO_AVAILABLE = apps.ready
+        except:
+            DJANGO_AVAILABLE = False
+    else:
+        logger.warning(f"Django setup error: {e}")
+        DJANGO_AVAILABLE = False
 
-from django.apps import apps
-from django.db import connections
-from django.utils import timezone
+# Import Django components only if available
+try:
+    from django.apps import apps
+    from django.db import connections
+    from django.utils import timezone
+except ImportError:
+    # Django not available - create dummy objects
+    apps = None
+    connections = None
+    timezone = None
 
 logger = logging.getLogger(__name__)
 
