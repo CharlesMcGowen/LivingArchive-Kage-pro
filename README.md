@@ -1,178 +1,251 @@
-# KageKumoRyu - Autonomous Reconnaissance Agents
+# LivingArchive-Kage-Pro - Autonomous Reconnaissance Platform
 
-Standalone daemon agents for network reconnaissance, port scanning, web spidering, and threat assessment.
+**Enterprise-grade autonomous reconnaissance system with multiple AI-driven agents for comprehensive network security assessment.**
 
-## Overview
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![Django](https://img.shields.io/badge/django-5.0+-green.svg)](https://www.djangoproject.com/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 
-**KageKumoRyu** consists of three autonomous daemon agents:
+## 🎯 Overview
 
-- **Kage (Shadow)** - Port Scanner: Fast Nmap-based port scanning and service detection
-- **Kumo (Spider)** - Web Spider: HTTP/HTTPS crawling and endpoint discovery  
-- **Ryu (Dragon)** - Threat Assessment: Security analysis and vulnerability assessment
+**LivingArchive-Kage-Pro** is a production-ready, multi-agent reconnaissance platform that autonomously performs network scanning, web crawling, directory enumeration, and threat assessment. The system consists of specialized daemon agents that work together to provide comprehensive security reconnaissance capabilities.
 
-Each agent runs as an independent daemon process that communicates with a Django API server via HTTP.
+### Key Highlights
 
-## Features
+- 🤖 **5 Autonomous Agents**: Kage, Kaze, Kumo, Ryu, and Suzu work independently and in coordination
+- 🐳 **Docker-Ready**: Full containerization with Docker Compose for easy deployment
+- 📊 **Comprehensive Dashboards**: Real-time monitoring and visualization of all agent activities
+- 🔄 **API-Based Architecture**: Clean separation between agents and Django backend
+- 🎯 **Intelligent Coordination**: Oak AI coordinator for target curation and task management
+- 📈 **Learning System**: Adaptive techniques that improve over time
+- 🛡️ **Production Features**: Health checks, graceful shutdown, retry logic, monitoring
 
-- 🚀 **Standalone Daemons**: Independent processes with their own PIDs
-- 🐳 **Docker Ready**: Full containerization support with health checks
-- ⏸️ **Pause/Resume**: Control daemons without full restart
-- 🔄 **Auto-Recovery**: Exponential backoff retry logic
-- 🛑 **Graceful Shutdown**: Proper signal handling for clean stops
-- 📊 **Health Checks**: Built-in health monitoring endpoints
-- 🔌 **API-Based**: Clean separation via HTTP API
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.13+
+- PostgreSQL (for Django backend)
 - Nmap installed (`apt-get install nmap` or `brew install nmap`)
-- Django server running (for API communication)
+- Docker & Docker Compose (recommended)
 
-### Installation
+### Docker Deployment (Recommended)
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd KageKumoRyu
+git clone git@github.com:CharlesMcGowen/LivingArchive-Kage-pro.git
+cd LivingArchive-Kage-pro
 
+# Start all services (Django + all daemons)
+cd docker
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Access web interface
+open http://localhost:9000/reconnaissance/
+```
+
+### Manual Setup
+
+```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
+# Set up database (PostgreSQL)
+# Configure settings in ryu_project/settings.py
+
+# Run migrations
+python manage.py migrate
+
+# Start Django server
+python manage.py runserver
+
+# In separate terminals, start daemons
+python daemons/manage_daemons.py start all
+```
+
+See [DEMO_GUIDE.md](DEMO_GUIDE.md) for detailed setup and demonstration instructions.
+
+## 🏗️ Architecture
+
+### Agent Ecosystem
+
+The platform consists of five specialized reconnaissance agents:
+
+| Agent | Purpose | Capabilities |
+|-------|---------|--------------|
+| **Kage** (Shadow) | Port Scanner | Fast Nmap-based port scanning, service detection, WAF fingerprinting |
+| **Kaze** (Wind) | High-Speed Scanner | Parallel scanning, optimized for high-volume targets |
+| **Kumo** (Spider) | Web Crawler | HTTP/HTTPS spidering, endpoint discovery, content analysis |
+| **Ryu** (Dragon) | Threat Assessment | Comprehensive port scanning (1-65535), security analysis, vulnerability assessment |
+| **Suzu** (Bell) | Directory Enumerator | CMS detection, intelligent path discovery, vector-based learning |
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Django Backend (Port 9000)                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   API Layer  │  │  Dashboards  │  │   Database   │      │
+│  │  (REST API)  │  │  (Django)    │  │ (PostgreSQL) │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+                            ↕ HTTP API
+┌─────────────────────────────────────────────────────────────┐
+│                    Autonomous Agents (Daemons)               │
+│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐         │
+│  │ Kage │  │ Kaze │  │ Kumo │  │ Ryu  │  │ Suzu │         │
+│  │ Port │  │ Fast │  │ Web  │  │ Full │  │ Dir  │         │
+│  │Scan  │  │Scan  │  │Crawl │  │Scan  │  │Enum  │         │
+│  └──────┘  └──────┘  └──────┘  └──────┘  └──────┘         │
+└─────────────────────────────────────────────────────────────┘
+                            ↕
+┌─────────────────────────────────────────────────────────────┐
+│                   Oak AI Coordinator                         │
+│          (Target Curation & Task Management)                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
+
+## ✨ Features
+
+### Core Capabilities
+
+- **Multi-Agent Reconnaissance**: Five specialized agents work independently and in coordination
+- **Intelligent Target Management**: Oak AI coordinator curates targets and manages agent workloads
+- **Comprehensive Scanning**: Port scanning (selective and full 1-65535), service detection, WAF fingerprinting
+- **Web Crawling**: Automated HTTP/HTTPS spidering with content analysis
+- **Directory Enumeration**: CMS-aware path discovery with vector-based learning
+- **Threat Assessment**: Security analysis and vulnerability identification
+- **Network Visualization**: Interactive graph visualization of discovered infrastructure
+- **Learning System**: Adaptive techniques that improve effectiveness over time
+
+### Production Features
+
+- **Docker Containerization**: All services containerized with health checks
+- **API-Based Architecture**: Clean separation via REST APIs
+- **Graceful Shutdown**: Proper signal handling for clean stops
+- **Auto-Recovery**: Exponential backoff retry logic for resilience
+- **Health Monitoring**: Built-in health checks for all services
+- **Pause/Resume**: Control daemons without full restart
+- **Comprehensive Logging**: Structured logging with agent identification
+
+See [FEATURES.md](FEATURES.md) for complete feature documentation.
+
+## 📊 Dashboards
+
+Access comprehensive dashboards at `http://localhost:9000/reconnaissance/`:
+
+- **General Dashboard**: Overview of all agent activities
+- **Kage Dashboard**: Port scan results and statistics
+- **Kaze Dashboard**: High-speed scan results
+- **Kumo Dashboard**: Web crawl results and discovered endpoints
+- **Ryu Dashboard**: Threat assessments and vulnerability data
+- **Suzu Dashboard**: Directory enumeration results
+- **Oak Dashboard**: Target curation and coordination metrics
+- **Learning Dashboard**: Technique effectiveness and adaptive learning metrics
+- **Network Visualizer**: Interactive graph of discovered infrastructure
+
+## 🛠️ Configuration
+
+### Environment Variables
+
+```bash
+# Django API Configuration
 export DJANGO_API_BASE="http://127.0.0.1:9000"
+
+# Agent Configuration
+export KAGE_SCAN_INTERVAL=30
+export KAGE_MAX_SCANS=5
+
+export KAZE_SCAN_INTERVAL=30
+export KAZE_MAX_SCANS=5
+
+export KUMO_SPIDER_INTERVAL=45
+export KUMO_MAX_SPIDERS=3
+
+export RYU_SCAN_INTERVAL=30
+export RYU_ASSESSMENT_INTERVAL=60
+export RYU_MAX_SCANS=5
+export RYU_MAX_ASSESSMENTS=2
+
+export SUZU_ENUM_INTERVAL=60
+export SUZU_MAX_ENUMS=3
 ```
 
-### Running Daemons
+### Agent Configuration Files
 
-```bash
-# Start all daemons
-python3 daemons/manage_daemons.py start all
+Agent-specific configurations can be set in `config/agents/` directory. See `config/agents/README.md` for details.
 
-# Start specific daemon
-python3 daemons/manage_daemons.py start kage
+## 📚 Documentation
 
-# Check status
-python3 daemons/manage_daemons.py status
+- **[DEMO_GUIDE.md](DEMO_GUIDE.md)** - Step-by-step demonstration guide
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
+- **[FEATURES.md](FEATURES.md)** - Complete feature documentation
+- **[docker/README.md](docker/README.md)** - Docker deployment guide
+- **[docs/DJANGO_ORM_POSTGRES_SETUP.md](docs/DJANGO_ORM_POSTGRES_SETUP.md)** - Database setup
 
-# Pause/Resume
-python3 daemons/manage_daemons.py pause kage
-python3 daemons/manage_daemons.py resume kage
+## 🔧 Development
 
-# Stop
-python3 daemons/manage_daemons.py stop all
-```
-
-### Docker Deployment
-
-```bash
-cd docker
-
-# Build and start all daemons
-docker-compose up -d
-
-# View logs
-docker-compose logs -f kage-daemon
-
-# Stop
-docker-compose down
-```
-
-## Architecture
+### Project Structure
 
 ```
-KageKumoRyu/
-├── daemons/           # Daemon scripts
+LivingArchive-Kage-pro/
+├── daemons/              # Agent daemon scripts
 │   ├── kage_daemon.py
+│   ├── kaze_daemon.py
 │   ├── kumo_daemon.py
 │   ├── ryu_daemon.py
-│   └── manage_daemons.py
-├── kage/              # Kage (Port Scanner) source
-│   ├── nmap_scanner.py
-│   └── ...
-├── kumo/              # Kumo (Web Spider) source
-│   ├── http_spider.py
-│   └── ...
-├── ryu/               # Ryu (Threat Assessment) source
-│   └── ...
-├── docker/            # Docker configuration
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── README.md
-├── daemon_api.py      # Django API endpoints (for reference)
-├── llm_enhancer.py    # LLM integration (optional)
-├── fallback_storage.py # Fallback storage system
-└── requirements.txt
+│   └── suzu_daemon.py
+├── ryu_app/              # Django application
+│   ├── views.py          # Dashboard views
+│   ├── daemon_api.py     # API endpoints
+│   └── templates/        # HTML templates
+├── kage/                 # Kage scanner implementation
+├── kaze/                 # Kaze scanner implementation
+├── kumo/                 # Kumo spider implementation
+├── ryu/                  # Ryu threat assessment
+├── suzu/                 # Suzu directory enumerator
+├── artificial_intelligence/
+│   └── personalities/
+│       └── reconnaissance/
+│           └── oak/      # Oak AI coordinator
+└── docker/               # Docker configuration
 ```
 
-## API Endpoints
-
-The daemons communicate with Django via these endpoints:
-
-- `GET /reconnaissance/api/daemon/<personality>/eggrecords/` - Get targets to process
-- `POST /reconnaissance/api/daemon/<personality>/scan/` - Submit scan results
-- `POST /reconnaissance/api/daemon/spider/` - Submit spider results
-- `POST /reconnaissance/api/daemon/assessment/` - Submit threat assessments
-- `GET /reconnaissance/api/daemon/<personality>/health/` - Health check
-
-## Configuration
-
-Environment variables:
+### Running Tests
 
 ```bash
-# Django API base URL
-export DJANGO_API_BASE="http://127.0.0.1:9000"
+# Run Django tests
+python manage.py test
 
-# Kage configuration
-export KAGE_SCAN_INTERVAL=30      # Seconds between scan cycles
-export KAGE_MAX_SCANS=5            # Max scans per cycle
-
-# Kumo configuration
-export KUMO_SPIDER_INTERVAL=45     # Seconds between spider cycles
-export KUMO_MAX_SPIDERS=3          # Max spiders per cycle
-
-# Ryu configuration
-export RYU_SCAN_INTERVAL=30        # Seconds between scan cycles
-export RYU_ASSESSMENT_INTERVAL=60  # Seconds between assessment cycles
-export RYU_MAX_SCANS=5              # Max scans per cycle
-export RYU_MAX_ASSESSMENTS=2       # Max assessments per cycle
+# Test individual agents
+python -m pytest tests/
 ```
 
-## Signal Handling
+## 🎓 Use Cases
 
-- **SIGTERM/SIGINT**: Graceful shutdown (finishes current work)
-- **SIGUSR1**: Pause daemon
-- **SIGUSR2**: Resume daemon
+- **Penetration Testing**: Automated reconnaissance phase
+- **Bug Bounty Programs**: Continuous target discovery and scanning
+- **Security Audits**: Comprehensive network assessment
+- **Threat Intelligence**: Infrastructure mapping and analysis
+- **Research & Development**: Reconnaissance technique development
 
-## Docker Commands
+## 🤝 Contributing
 
-```bash
-# Start all
-docker-compose up -d
+This is a professional/portfolio project. For questions or discussions, please open an issue.
 
-# Pause daemon
-docker kill --signal=SIGUSR1 recon-kage
+## 📄 License
 
-# Resume daemon
-docker kill --signal=SIGUSR2 recon-kage
+See [LICENSE](LICENSE) file for details.
 
-# Stop gracefully
-docker stop recon-kage
+## 👤 Author
 
-# View logs
-docker logs -f recon-kage
-```
+**EGO Revolution**
 
-## Development
+---
 
-This is an isolated version extracted from the main EgoWebs1 project. The agents are designed to work independently via API communication.
-
-## License
-
-[Add your license here]
-
-## Author
-
-EGO Revolution
-
+**Built with:** Python, Django, PostgreSQL, Docker, Nmap, and lots of ☕
