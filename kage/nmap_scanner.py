@@ -26,6 +26,7 @@ import json
 import warnings
 import subprocess
 import xml.etree.ElementTree as ET
+import ipaddress
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
