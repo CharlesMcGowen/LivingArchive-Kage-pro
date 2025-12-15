@@ -20,6 +20,55 @@
         height: fit-content;
         position: sticky;
         top: 100px;
+        margin-bottom: 20px;
+    }
+    
+    .eggrecord-filter-panel {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 25px;
+        border: 1px solid #334155;
+        height: fit-content;
+        position: sticky;
+        top: 100px;
+        margin-bottom: 20px;
+    }
+    
+    .eggrecord-generate-panel {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        padding: 25px;
+        border: 1px solid #334155;
+        height: fit-content;
+        position: sticky;
+        top: 100px;
+    }
+    
+    .form-group select {
+        width: 100%;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 2px solid #334155;
+        background: rgba(15, 23, 42, 0.8);
+        color: white;
+        font-size: 0.95rem;
+        transition: border-color 0.3s;
+        cursor: pointer;
+    }
+    
+    .form-group select:focus {
+        outline: none;
+        border-color: #8b5cf6;
+    }
+    
+    .filter-count {
+        margin-top: 10px;
+        padding: 8px;
+        background: rgba(139, 92, 246, 0.1);
+        border-radius: 8px;
+        color: #a78bfa;
+        font-size: 0.9rem;
+        text-align: center;
     }
     
     .eggrecord-create-panel h3 {
@@ -137,12 +186,86 @@
         margin-bottom: 20px;
         transition: all 0.3s;
         cursor: pointer;
+        position: relative;
     }
     
     .eggrecord-card:hover {
         border-color: #8b5cf6;
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    }
+    
+    .eggrecord-checkbox {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        z-index: 10;
+        accent-color: #8b5cf6;
+    }
+    
+    .eggrecord-checkbox:checked {
+        accent-color: #8b5cf6;
+    }
+    
+    .eggrecord-card.selected {
+        border-color: #8b5cf6;
+        background: rgba(139, 92, 246, 0.1);
+    }
+    
+    .selection-info {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: rgba(139, 92, 246, 0.1);
+        border-radius: 8px;
+        color: #a78bfa;
+        font-size: 0.9rem;
+        text-align: center;
+    }
+    
+    .btn-generate {
+        width: 100%;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+        color: white;
+        margin-top: 15px;
+    }
+    
+    .btn-generate:hover:not(:disabled) {
+        background: linear-gradient(135deg, #db2777 0%, #be185d 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(236, 72, 153, 0.4);
+    }
+    
+    .btn-generate:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .btn-select-all, .btn-deselect-all {
+        padding: 8px 15px;
+        border: 2px solid #334155;
+        border-radius: 8px;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-right: 10px;
+    }
+    
+    .btn-select-all:hover, .btn-deselect-all:hover {
+        border-color: #8b5cf6;
+        color: #a78bfa;
     }
     
     .eggrecord-card-header {
@@ -310,13 +433,54 @@
         </form>
     </div>
     
+    <!-- Filter Panel (below Create panel) -->
+    <div class="eggrecord-filter-panel">
+        <h3>🔍 Filter EggRecords</h3>
+        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+            Filter eggrecords by egg name or project egg
+        </p>
+        
+        <div class="form-group">
+            <label for="filter-eggname">Egg Name</label>
+            <select id="filter-eggname" name="filter-eggname" onchange="applyFilter()">
+                <option value="">All Egg Names</option>
+                {% for eggname in unique_eggnames|default:"" %}
+                <option value="{{ eggname }}">{{ eggname }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="filter-projectegg">Project Egg</label>
+            <select id="filter-projectegg" name="filter-projectegg" onchange="applyFilter()">
+                <option value="">All Project Eggs</option>
+                {% for projectegg in unique_projecteggs|default:"" %}
+                <option value="{{ projectegg }}">{{ projectegg }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-count" id="filter-count">
+            Showing all eggrecords
+        </div>
+        
+        <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
+            Clear Filter
+        </button>
+    </div>
+    
     <!-- Right Side: EggRecord List -->
     <div>
         <h3 style="margin-bottom: 20px; color: #8b5cf6;">📋 All EggRecords</h3>
 
 {% for eggrecord in eggrecords %}
-<a href="/reconnaissance/eggrecords/{{ eggrecord.id }}/" class="eggrecord-link">
-    <div class="eggrecord-card">
+<div class="eggrecord-card" 
+     data-egg-id="{{ eggrecord.id }}" 
+     id="egg-card-{{ eggrecord.id }}"
+     data-eggname="{{ eggrecord.eggname|default:'' }}"
+     data-projectegg="{{ eggrecord.projectegg|default:'' }}">
+    <input type="checkbox" class="eggrecord-checkbox" data-egg-id="{{ eggrecord.id }}" onchange="updateSelection()" onclick="event.stopPropagation();" />
+    <a href="/reconnaissance/eggrecords/{{ eggrecord.id }}/" class="eggrecord-link" style="text-decoration: none; color: inherit; display: block;">
         <div class="eggrecord-card-header">
             <div>
                 <div class="eggrecord-card-title">
@@ -480,6 +644,193 @@ document.getElementById('create-eggrecord-form').addEventListener('submit', asyn
         createBtn.textContent = originalText;
     }
 });
+
+// Selection and generation functionality
+let selectedEggs = new Set();
+
+function updateSelection() {
+    selectedEggs.clear();
+    const checkboxes = document.querySelectorAll('.eggrecord-checkbox:checked');
+    checkboxes.forEach(checkbox => {
+        selectedEggs.add(checkbox.dataset.eggId);
+        const card = document.getElementById(`egg-card-${checkbox.dataset.eggId}`);
+        if (card) {
+            card.classList.add('selected');
+        }
+    });
+    
+    // Update unchecked cards
+    document.querySelectorAll('.eggrecord-checkbox:not(:checked)').forEach(checkbox => {
+        const card = document.getElementById(`egg-card-${checkbox.dataset.eggId}`);
+        if (card) {
+            card.classList.remove('selected');
+        }
+    });
+    
+    // Update selection info and button state
+    const count = selectedEggs.size;
+    const infoDiv = document.getElementById('selection-info');
+    const generateBtn = document.getElementById('generate-btn');
+    
+    if (count === 0) {
+        infoDiv.textContent = 'No eggs selected';
+        generateBtn.disabled = true;
+    } else {
+        infoDiv.textContent = `${count} egg${count === 1 ? '' : 's'} selected`;
+        generateBtn.disabled = false;
+    }
+}
+
+function selectAllEggs() {
+    document.querySelectorAll('.eggrecord-checkbox').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    updateSelection();
+}
+
+function deselectAllEggs() {
+    document.querySelectorAll('.eggrecord-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    updateSelection();
+}
+
+async function generateEggRecords() {
+    if (selectedEggs.size === 0) {
+        showGenerateMessage('Please select at least one egg', 'error');
+        return;
+    }
+    
+    const generateBtn = document.getElementById('generate-btn');
+    const originalText = generateBtn.textContent;
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating...';
+    
+    const eggname = document.getElementById('generate-eggname').value.trim();
+    const projectegg = document.getElementById('generate-projectegg').value.trim();
+    
+    const selectedIds = Array.from(selectedEggs);
+    
+    try {
+        const response = await fetch('/reconnaissance/api/eggrecords/generate/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                egg_ids: selectedIds,
+                eggname: eggname || null,
+                projectegg: projectegg || null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showGenerateMessage(
+                `Successfully generated ${data.created_count} eggrecord(s) from ${selectedIds.length} selected egg(s)`,
+                'success'
+            );
+            // Clear selection after successful generation
+            deselectAllEggs();
+            document.getElementById('generate-eggname').value = '';
+            document.getElementById('generate-projectegg').value = '';
+            document.getElementById('generate-projectegg-display').style.display = 'none';
+            
+            // Reload page after 2 seconds to show new records
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showGenerateMessage(data.error || 'Failed to generate eggrecords', 'error');
+        }
+    } catch (error) {
+        showGenerateMessage('Error: ' + error.message, 'error');
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = originalText;
+    }
+}
+
+function showGenerateMessage(message, type) {
+    const messageDiv = document.getElementById('generate-message');
+    messageDiv.textContent = message;
+    messageDiv.className = 'form-message ' + type;
+    messageDiv.style.display = 'block';
+    
+    if (type === 'success') {
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+        }, 5000);
+    }
+}
+
+// Auto-generate projectegg when eggname is entered in generate panel
+document.getElementById('generate-eggname').addEventListener('input', function() {
+    if (this.value.trim()) {
+        generateProjectEggForGenerate();
+    } else {
+        document.getElementById('generate-projectegg-display').style.display = 'none';
+        document.getElementById('generate-projectegg').value = '';
+    }
+});
+
+async function generateProjectEggForGenerate() {
+    try {
+        const response = await fetch('/reconnaissance/api/projectegg/generate/', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('generate-projectegg').value = data.projectegg;
+            document.getElementById('generate-projectegg-display').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error generating project egg:', error);
+    }
+}
+
+// Filter functionality
+function applyFilter() {
+    const eggnameFilter = document.getElementById('filter-eggname').value.toLowerCase();
+    const projecteggFilter = document.getElementById('filter-projectegg').value.toLowerCase();
+    
+    const cards = document.querySelectorAll('.eggrecord-card');
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        const eggname = (card.dataset.eggname || '').toLowerCase();
+        const projectegg = (card.dataset.projectegg || '').toLowerCase();
+        
+        const matchesEggname = !eggnameFilter || eggname === eggnameFilter;
+        const matchesProjectegg = !projecteggFilter || projectegg === projecteggFilter;
+        
+        if (matchesEggname && matchesProjectegg) {
+            card.style.display = 'block';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    // Update filter count
+    const filterCountDiv = document.getElementById('filter-count');
+    if (eggnameFilter || projecteggFilter) {
+        filterCountDiv.textContent = `Showing ${visibleCount} of ${cards.length} eggrecords`;
+    } else {
+        filterCountDiv.textContent = 'Showing all eggrecords';
+    }
+}
+
+function clearFilter() {
+    document.getElementById('filter-eggname').value = '';
+    document.getElementById('filter-projectegg').value = '';
+    applyFilter();
+}
 </script>
 
 {% endblock %}
