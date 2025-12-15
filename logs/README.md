@@ -1,21 +1,21 @@
-# Agent Logs
+# Logs Directory
 
-This directory contains log files for all daemon agents.
+This directory contains log files for all daemon services.
 
 ## Directory Structure
 
 - `kage/` - Kage port scanner daemon logs
-- `kaze/` - Kaze high-speed port scanner daemon logs
+- `kaze/` - Kaze high-speed scanner daemon logs
 - `kumo/` - Kumo HTTP spider daemon logs
-- `ryu/` - Ryu cybersecurity assessment daemon logs
-- `suzu/` - Suzu directory enumeration daemon logs
+- `ryu/` - Ryu cybersecurity daemon logs
+- `suzu/` - Suzu directory enumerator daemon logs
 
 ## Log Files
 
-Log files are automatically created with daily rotation:
-- Format: `{agent}_daemon_{YYYYMMDD}.log`
-- Example: `kage_daemon_20251215.log`
+Log files are named by date: `{agent}_daemon_{YYYYMMDD}.log`
 
-## Git Configuration
+Example: `kage_daemon_20251215.log`
 
-Log files (`.log`, `.txt`) are excluded from git via `.gitignore`, but the directory structure is preserved with `.gitkeep` files. This allows the log directories to exist in the repository without committing actual log data.
+## Git
+
+Log files (`.log`) are ignored by git, but the directory structure is preserved via `.gitkeep` files.
