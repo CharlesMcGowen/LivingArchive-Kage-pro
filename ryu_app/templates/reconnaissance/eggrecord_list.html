@@ -7,7 +7,7 @@
     
     .eggrecord-layout {
         display: grid;
-        grid-template-columns: 350px 1fr;
+        grid-template-columns: 1fr 350px;
         gap: 30px;
         margin-top: 20px;
     }
@@ -31,7 +31,6 @@
         height: fit-content;
         position: sticky;
         top: 100px;
-        margin-bottom: 20px;
     }
     
     .eggrecord-generate-panel {
@@ -335,7 +334,8 @@
             grid-template-columns: 1fr;
         }
         
-        .eggrecord-create-panel {
+        .eggrecord-create-panel,
+        .eggrecord-filter-panel {
             position: static;
         }
     }
@@ -433,43 +433,7 @@
         </form>
     </div>
     
-    <!-- Filter Panel (below Create panel) -->
-    <div class="eggrecord-filter-panel">
-        <h3>🔍 Filter EggRecords</h3>
-        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
-            Filter eggrecords by egg name or project egg
-        </p>
-        
-        <div class="form-group">
-            <label for="filter-eggname">Egg Name</label>
-            <select id="filter-eggname" name="filter-eggname" onchange="applyFilter()">
-                <option value="">All Egg Names</option>
-                {% for eggname in unique_eggnames|default:"" %}
-                <option value="{{ eggname }}">{{ eggname }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="filter-projectegg">Project Egg</label>
-            <select id="filter-projectegg" name="filter-projectegg" onchange="applyFilter()">
-                <option value="">All Project Eggs</option>
-                {% for projectegg in unique_projecteggs|default:"" %}
-                <option value="{{ projectegg }}">{{ projectegg }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        
-        <div class="filter-count" id="filter-count">
-            Showing all eggrecords
-        </div>
-        
-        <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
-            Clear Filter
-        </button>
-    </div>
-    
-    <!-- Right Side: EggRecord List -->
+    <!-- Left Sidebar: EggRecord List (below Create panel) -->
     <div>
         <h3 style="margin-bottom: 20px; color: #8b5cf6;">📋 All EggRecords</h3>
 
@@ -524,6 +488,42 @@
     No EggRecords found in database.
 </div>
 {% endfor %}
+    </div>
+    
+    <!-- Right Side: Filter Panel -->
+    <div class="eggrecord-filter-panel">
+        <h3>🔍 Filter EggRecords</h3>
+        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+            Filter eggrecords by egg name or project egg
+        </p>
+        
+        <div class="form-group">
+            <label for="filter-eggname">Egg Name</label>
+            <select id="filter-eggname" name="filter-eggname" onchange="applyFilter()">
+                <option value="">All Egg Names</option>
+                {% for eggname in unique_eggnames|default:"" %}
+                <option value="{{ eggname }}">{{ eggname }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="filter-projectegg">Project Egg</label>
+            <select id="filter-projectegg" name="filter-projectegg" onchange="applyFilter()">
+                <option value="">All Project Eggs</option>
+                {% for projectegg in unique_projecteggs|default:"" %}
+                <option value="{{ projectegg }}">{{ projectegg }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-count" id="filter-count">
+            Showing all eggrecords
+        </div>
+        
+        <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
+            Clear Filter
+        </button>
     </div>
 </div>
 
