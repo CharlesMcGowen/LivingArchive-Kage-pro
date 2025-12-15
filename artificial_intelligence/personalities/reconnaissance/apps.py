@@ -54,17 +54,21 @@ class ReconnaissanceConfig(AppConfig):
         #     logger.warning(f"Could not start Oak service: {e}", exc_info=True)
         
         # Start Oak autonomous curation service
-        # TEMPORARILY DISABLED - This service was spamming the database with connections
-        # TODO: Re-enable after connection pooling is stable
-        # Uncomment the code below to re-enable:
+        # TEMPORARILY DISABLED - Still causing database connection exhaustion despite batch processing
+        # TODO: Investigate why batch processing isn't preventing connection exhaustion
+        # The service appears to still be opening too many concurrent connections
+        # Uncomment below to re-enable after fixing connection management:
         # try:
         #     from artificial_intelligence.personalities.reconnaissance.oak.target_curation.autonomous_curation_service import get_instance
+        #     
         #     curation_service = get_instance()
-        #     curation_service.start_service()
-        #     logger.info("🌳 Oak autonomous curation service started (Django app ready)")
+        #     if curation_service.start_service():
+        #         logger.info("🌳 Oak autonomous curation service started (Django app ready)")
+        #     else:
+        #         logger.warning("🌳 Oak autonomous curation service failed to start (may already be running)")
         # except ImportError as e:
         #     logger.warning(f"Could not import Oak autonomous curation service: {e}")
         # except Exception as e:
         #     logger.warning(f"Could not start Oak autonomous curation service: {e}", exc_info=True)
-        logger.info("🌳 Oak autonomous curation service auto-start DISABLED (was causing database connection exhaustion)")
+        logger.info("🌳 Oak autonomous curation service auto-start DISABLED (database connection exhaustion)")
 

@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="images/Kage-banner.png" alt="Kage Reconnaissance Team Banner">
+</div>
+
 # LivingArchive-Kage-Pro - Autonomous Reconnaissance Platform
 
 **Enterprise-grade autonomous reconnaissance system with multiple AI-driven agents for comprehensive network security assessment.**
