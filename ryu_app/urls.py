@@ -33,6 +33,7 @@ urlpatterns = [
     path('mitre-soc2/', views.mitre_soc2_dashboard, name='mitre_soc2_dashboard'),
     path('eggrecords/', views.eggrecord_list, name='eggrecord_list'),
     path('eggrecords/<uuid:eggrecord_id>/', views.eggrecord_detail, name='eggrecord_detail'),
+    path('settings/', views.settings_dashboard, name='settings_dashboard'),
     path('api/check-empty/', views.check_empty, name='check_empty'),
     path('api/seed-entries/', views.seed_initial_entries, name='seed_entries'),
     path('api/eggrecords/create/', views.create_eggrecord_api, name='create_eggrecord_api'),
@@ -89,5 +90,7 @@ urlpatterns = [
     path('api/mitre-soc2/status/', views.mitre_soc2_status_api, name='mitre_soc2_status_api'),
     path('api/mitre-soc2/map/', csrf_exempt(views.mitre_map_finding_api), name='mitre_map_finding_api'),
     path('api/mitre-soc2/analyze/', views.mitre_analyze_scans_api, name='mitre_analyze_scans_api'),
+    # GitHub update checking API
+    path('api/github/check-updates/', views.github_check_updates_api, name='github_check_updates_api'),
 ]
 

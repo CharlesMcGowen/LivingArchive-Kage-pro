@@ -4637,3 +4637,167 @@ def mitre_analyze_scans_api(request):
             'error': str(e)
         }, status=500)
 
+
+def settings_dashboard(request):
+    """Settings dashboard with GitHub update checking"""
+    from pathlib import Path
+    import subprocess
+    
+    # Get current version
+    current_version = "unknown"
+    current_commit = "unknown"
+    try:
+        # Try to get current commit hash
+        result = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=Path(__file__).parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            current_commit = result.stdout.strip()
+            current_version = current_commit
+        
+        # Try to get latest tag if available
+        tag_result = subprocess.run(
+            ['git', 'describe', '--tags', '--abbrev=0'],
+            cwd=Path(__file__).parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if tag_result.returncode == 0:
+            current_version = tag_result.stdout.strip()
+    except Exception as e:
+        logger.debug(f"Could not determine git version: {e}")
+    
+    context = {
+        'title': 'Settings',
+        'icon': '⚙️',
+        'color': '#64748b',
+        'personality': 'settings',
+        'current_version': current_version,
+        'current_commit': current_commit,
+        'repository_url': 'https://github.com/CharlesMcGowen/LivingArchive-Kage-pro',
+        'repository_owner': 'CharlesMcGowen',
+        'repository_name': 'LivingArchive-Kage-pro'
+    }
+    
+    return render(request, 'reconnaissance/settings_dashboard.html', context)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def github_check_updates_api(request):
+    """
+    API endpoint to check GitHub for updates.
+    
+    GET /reconnaissance/api/github/check-updates/
+    
+    Returns:
+        JSON with latest release/tag information and comparison with current version
+    """
+    import requests
+    import subprocess
+    from pathlib import Path
+    
+    try:
+        # Repository info
+        repo_owner = 'CharlesMcGowen'
+        repo_name = 'LivingArchive-Kage-pro'
+        
+        # Get current version
+        current_version = None
+        current_commit = None
+        try:
+            repo_path = Path(__file__).parent.parent
+            result = subprocess.run(
+                ['git', 'rev-parse', '--short', 'HEAD'],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                current_commit = result.stdout.strip()
+                current_version = current_commit
+            
+            # Try to get latest tag
+            tag_result = subprocess.run(
+                ['git', 'describe', '--tags', '--abbrev=0'],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if tag_result.returncode == 0:
+                current_version = tag_result.stdout.strip()
+        except Exception as e:
+            logger.debug(f"Could not determine current version: {e}")
+        
+        # Check for latest release
+        latest_release = None
+        latest_tag = None
+        update_available = False
+        
+        try:
+            # Try to get latest release
+            release_url = f'https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest'
+            response = requests.get(release_url, timeout=10)
+            
+            if response.status_code == 200:
+                release_data = response.json()
+                latest_release = {
+                    'tag_name': release_data.get('tag_name'),
+                    'name': release_data.get('name'),
+                    'published_at': release_data.get('published_at'),
+                    'html_url': release_data.get('html_url'),
+                    'body': release_data.get('body', ''),
+                    'prerelease': release_data.get('prerelease', False),
+                    'draft': release_data.get('draft', False)
+                }
+                latest_tag = latest_release['tag_name']
+                
+                # Compare versions (simple string comparison for tags)
+                if current_version and latest_tag and latest_tag != current_version:
+                    update_available = True
+            elif response.status_code == 404:
+                # No releases, try to get latest tag
+                tags_url = f'https://api.github.com/repos/{repo_owner}/{repo_name}/tags'
+                tags_response = requests.get(tags_url, params={'per_page': 1}, timeout=10)
+                
+                if tags_response.status_code == 200:
+                    tags_data = tags_response.json()
+                    if tags_data:
+                        latest_tag = tags_data[0].get('name')
+                        if current_version and latest_tag and latest_tag != current_version:
+                            update_available = True
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to check GitHub for updates: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Failed to connect to GitHub API: {str(e)}',
+                'current_version': current_version or 'unknown',
+                'update_available': False
+            }, status=500)
+        
+        return JsonResponse({
+            'success': True,
+            'current_version': current_version or 'unknown',
+            'current_commit': current_commit or 'unknown',
+            'latest_release': latest_release,
+            'latest_tag': latest_tag,
+            'update_available': update_available,
+            'repository_url': f'https://github.com/{repo_owner}/{repo_name}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking GitHub updates: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'current_version': 'unknown',
+            'update_available': False
+        }, status=500)
+
