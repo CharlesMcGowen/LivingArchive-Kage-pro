@@ -88,6 +88,12 @@ DB_PASSWORD = os.environ.get('DB_PASSWORD', 'postgres')
 WORKING_DB_PORT = os.environ.get('CUSTOMER_EGGS_DB_PORT', '15440')
 WORKING_DB_NAME = os.environ.get('CUSTOMER_EGGS_DB_NAME', 'customer_eggs')
 
+# Connection pool settings to reduce connection exhaustion
+# CONN_MAX_AGE in seconds: 0 = always close, None = unlimited, or set to pool time (e.g., 600 = 10 min)
+DEFAULT_CONN_MAX_AGE = int(os.environ.get('DJANGO_CONN_MAX_AGE', '600'))  # 10 minutes default
+# Customer Eggs gets its own pool with higher limit since it's most frequently used
+CUSTOMER_EGGS_CONN_MAX_AGE = int(os.environ.get('CUSTOMER_EGGS_CONN_MAX_AGE', '600'))  # 10 minutes
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -96,16 +102,19 @@ DATABASES = {
         'PASSWORD': DB_PASSWORD,
         'HOST': DB_HOST,
         'PORT': WORKING_DB_PORT,
-        'CONN_MAX_AGE': 0,
-        'CONN_HEALTH_CHECKS': False,  # Disable health checks to allow startup
+        'CONN_MAX_AGE': DEFAULT_CONN_MAX_AGE,  # Enable connection pooling (10 min default)
+        'CONN_HEALTH_CHECKS': True,  # Enable health checks to detect stale connections
         'OPTIONS': {
             'connect_timeout': 10,
             'sslmode': 'prefer',
-            'application_name': 'livingarchive_kage_pro',
+            'application_name': 'livingarchive_kage_pro_default',
+            # Limit max connections per application to prevent exhaustion
+            'options': '-c statement_timeout=30000',  # 30 second statement timeout
         },
     },
     # Customer Eggs database (actual EggRecord tables - Nmap, RequestMetadata)
-    # This is the primary database that daemons use
+    # This is the PRIMARY database with MOST traffic - separate connection pool
+    # Configured with dedicated pool settings to handle high load
     'customer_eggs': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': WORKING_DB_NAME,
@@ -113,16 +122,20 @@ DATABASES = {
         'PASSWORD': DB_PASSWORD,
         'HOST': DB_HOST,
         'PORT': WORKING_DB_PORT,
-        'CONN_MAX_AGE': 0,
-        'CONN_HEALTH_CHECKS': False,  # Disable health checks to allow startup
+        'CONN_MAX_AGE': CUSTOMER_EGGS_CONN_MAX_AGE,  # Dedicated pool with connection reuse (10 min default)
+        'CONN_HEALTH_CHECKS': True,  # Enable health checks for connection pool
         'OPTIONS': {
             'connect_timeout': 10,
             'sslmode': 'prefer',
-            'application_name': 'livingarchive_customer_eggs',
+            'application_name': 'livingarchive_customer_eggs_pooled',
+            # Optimized options for high-traffic database
+            'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000',
         },
+        # Additional pool configuration (handled by Django's CONN_MAX_AGE)
+        'ATOMIC_REQUESTS': False,  # Don't wrap in transaction by default for better performance
     },
     # EggRecords database (used for learning, heuristics, WAF detections)
-    # Points to same working database
+    # Points to same working database - lower traffic, shorter connection lifetime
     'eggrecords': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': WORKING_DB_NAME,
@@ -130,16 +143,17 @@ DATABASES = {
         'PASSWORD': DB_PASSWORD,
         'HOST': DB_HOST,
         'PORT': WORKING_DB_PORT,
-        'CONN_MAX_AGE': 0,
-        'CONN_HEALTH_CHECKS': False,  # Disable health checks to allow startup
+        'CONN_MAX_AGE': DEFAULT_CONN_MAX_AGE,  # Use default pool (10 min)
+        'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'connect_timeout': 10,
             'sslmode': 'prefer',
             'application_name': 'livingarchive_eggrecords',
+            'options': '-c statement_timeout=30000',
         },
     },
     # Oak Knowledge database (for Oak coordination and task queue)
-    # Points to same working database
+    # Points to same working database - lower traffic, shorter connection lifetime
     'oak_knowledge': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': WORKING_DB_NAME,
@@ -147,12 +161,13 @@ DATABASES = {
         'PASSWORD': DB_PASSWORD,
         'HOST': DB_HOST,
         'PORT': WORKING_DB_PORT,
-        'CONN_MAX_AGE': 0,
-        'CONN_HEALTH_CHECKS': False,  # Disable health checks to allow startup
+        'CONN_MAX_AGE': DEFAULT_CONN_MAX_AGE,  # Use default pool (10 min)
+        'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'connect_timeout': 10,
             'sslmode': 'prefer',
             'application_name': 'livingarchive_oak_knowledge',
+            'options': '-c statement_timeout=30000',
         },
     },
 }

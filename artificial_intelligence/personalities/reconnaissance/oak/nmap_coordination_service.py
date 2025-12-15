@@ -504,6 +504,8 @@ class OakNmapCoordinationService:
                     
             except Exception as e:
                 self.logger.warning(f"Error using Django ORM for template selection: {e}, falling back to registry")
+                import traceback
+                self.logger.debug(f"Django ORM error traceback: {traceback.format_exc()}")
         
         # Fallback: Use template registry service (raw SQL)
         self.logger.debug("Using template registry service as fallback")
@@ -543,8 +545,58 @@ class OakNmapCoordinationService:
         if registry:
             for fingerprint in fingerprints:
                 tech_name = fingerprint.get('technology_name', '')
+                category = fingerprint.get('category', '').lower()
                 if tech_name:
                     templates = registry.find_templates_by_technology(tech_name, severity=None)
+                    
+                    # If no templates found by technology field, try tags
+                    if not templates:
+                        tags_list = [tech_name.lower()]
+                        templates = registry.find_templates_by_tags(tags_list)
+                    
+                    # If still no templates, search by template_id patterns
+                    if not templates:
+                        template_patterns = self._get_template_patterns_for_technology(tech_name, category)
+                        try:
+                            with transaction.atomic(using='eggrecords'):
+                                try:
+                                    db = connections['eggrecords']
+                                except KeyError:
+                                    db = connections['default']
+                                
+                                with db.cursor() as cursor:
+                                    pattern_conditions = []
+                                    pattern_params = []
+                                    for pattern in template_patterns[:3]:  # Limit patterns
+                                        pattern_conditions.append("template_id LIKE %s")
+                                        pattern_params.append(f'%{pattern}%')
+                                    
+                                    if pattern_conditions:
+                                        query = f"""
+                                            SELECT template_id, template_path, template_name, severity
+                                            FROM enrichment_system_nucleitemplate
+                                            WHERE {' OR '.join(pattern_conditions)}
+                                            ORDER BY 
+                                                CASE severity
+                                                    WHEN 'critical' THEN 0
+                                                    WHEN 'high' THEN 1
+                                                    WHEN 'medium' THEN 2
+                                                    WHEN 'low' THEN 3
+                                                    ELSE 4
+                                                END
+                                            LIMIT 10
+                                        """
+                                        cursor.execute(query, pattern_params)
+                                        
+                                        for row in cursor.fetchall():
+                                            templates.append({
+                                                'template_id': row[0],
+                                                'template_path': row[1],
+                                                'template_name': row[2] or row[0],
+                                                'severity': row[3] or 'info'
+                                            })
+                        except Exception as e:
+                            self.logger.debug(f"Error searching templates by pattern: {e}")
                     
                     # Prioritize by severity (critical/high first)
                     templates.sort(key=lambda x: {
@@ -575,19 +627,68 @@ class OakNmapCoordinationService:
                 category = fingerprint.get('category', '').lower()
                 template_patterns = self._get_template_patterns_for_technology(tech_name, category)
                 
-                for pattern in template_patterns:
-                    if pattern not in template_ids_seen:
-                        selected.append({
-                            'template_id': pattern,
-                            'source': 'fingerprint',
-                            'source_id': fingerprint['id'],
-                            'priority': 'medium',
-                            'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')}",
-                            'confidence': fingerprint.get('confidence', 0.0)
-                        })
-                        template_ids_seen.add(pattern)
-                        if len(selected) >= max_templates:
-                            return selected
+                # Try to find templates by pattern in registry
+                if registry:
+                    for pattern in template_patterns:
+                        # Search by template_id pattern
+                        try:
+                            with transaction.atomic(using='eggrecords'):
+                                try:
+                                    db = connections['eggrecords']
+                                except KeyError:
+                                    db = connections['default']
+                                
+                                with db.cursor() as cursor:
+                                    cursor.execute("""
+                                        SELECT template_id, template_path, template_name, severity
+                                        FROM enrichment_system_nucleitemplate
+                                        WHERE template_id LIKE %s OR template_id LIKE %s
+                                        ORDER BY 
+                                            CASE severity
+                                                WHEN 'critical' THEN 0
+                                                WHEN 'high' THEN 1
+                                                WHEN 'medium' THEN 2
+                                                WHEN 'low' THEN 3
+                                                ELSE 4
+                                            END
+                                        LIMIT 5
+                                    """, [f'%{pattern}%', f'{pattern}-%'])
+                                    
+                                    for row in cursor.fetchall():
+                                        template_id = row[0]
+                                        if template_id and template_id not in template_ids_seen:
+                                            selected.append({
+                                                'template_id': template_id,
+                                                'template_path': row[1],
+                                                'template_name': row[2] or template_id,
+                                                'source': 'fingerprint',
+                                                'source_id': fingerprint['id'],
+                                                'priority': 'medium',
+                                                'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')} - Pattern: {pattern}",
+                                                'confidence': fingerprint.get('confidence', 0.0),
+                                                'severity': row[3] or 'info'
+                                            })
+                                            template_ids_seen.add(template_id)
+                                            if len(selected) >= max_templates:
+                                                return selected
+                        except Exception as e:
+                            self.logger.debug(f"Error searching templates by pattern {pattern}: {e}")
+                            continue
+                else:
+                    # No registry - use patterns as template IDs (fallback)
+                    for pattern in template_patterns:
+                        if pattern not in template_ids_seen:
+                            selected.append({
+                                'template_id': pattern,
+                                'source': 'fingerprint',
+                                'source_id': fingerprint['id'],
+                                'priority': 'medium',
+                                'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')}",
+                                'confidence': fingerprint.get('confidence', 0.0)
+                            })
+                            template_ids_seen.add(pattern)
+                            if len(selected) >= max_templates:
+                                return selected
         
         # Priority 4: Templates based on open ports/services
         for port_info in open_ports:

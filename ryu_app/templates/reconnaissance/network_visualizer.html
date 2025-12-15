@@ -433,7 +433,10 @@
     
     <!-- Node Details Panel - Right Side (Fixed width, always visible) -->
     <div id="node-details-panel" class="controls-panel" style="flex: 0 0 350px; background: rgba(59, 130, 246, 0.1); border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; height: calc(100vh - 350px); min-height: 600px; overflow-y: auto; display: flex; flex-direction: column;">
-        <h4 style="color: #3b82f6; margin-bottom: 15px; font-size: 1.1rem;">📋 Node List</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h4 style="color: #3b82f6; font-size: 1.1rem; margin: 0;">📋 Node List</h4>
+            <button onclick="clearAllCustomLabels()" style="padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; color: #ef4444; cursor: pointer; font-size: 0.75rem;" title="Clear all custom labels">Clear Labels</button>
+            </div>
         
         <!-- Node List Section -->
         <div id="node-list-container" style="flex: 1; overflow-y: auto; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 20px;">
@@ -509,6 +512,92 @@
 let cy;
 let graphData = { nodes: [], edges: [] };
 let selectedNode = null; // Store currently selected node for color updates
+
+// Custom Label Management Functions
+function getCustomLabels() {
+    try {
+        const stored = localStorage.getItem('network_node_labels');
+        return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+        console.warn('Error loading custom labels:', e);
+        return {};
+    }
+}
+
+function saveCustomLabels(labels) {
+    try {
+        localStorage.setItem('network_node_labels', JSON.stringify(labels));
+    } catch (e) {
+        console.warn('Error saving custom labels:', e);
+    }
+}
+
+function getCustomLabel(nodeId) {
+    const labels = getCustomLabels();
+    return labels[nodeId] || null;
+}
+
+function saveCustomLabel(nodeId) {
+    const input = document.getElementById('node-custom-label-input');
+    if (!input) return;
+    
+    const label = input.value.trim();
+    const labels = getCustomLabels();
+    
+    if (label) {
+        labels[nodeId] = label;
+        saveCustomLabels(labels);
+        
+        // Update node in graph to show custom label
+        if (cy) {
+            const node = cy.getElementById(nodeId);
+            if (node && node.length > 0) {
+                // Store original label if not already stored
+                if (!node.data('originalLabel')) {
+                    node.data('originalLabel', node.data('label'));
+                }
+                node.data('label', label);
+                node.data('hasCustomLabel', true);
+            }
+        }
+        
+        // Update node list to show new label
+        buildNodeList();
+        
+        // Update node details to reflect change
+        if (selectedNode && selectedNode.id() === nodeId) {
+            showNodeDetails(selectedNode);
+        }
+        
+        // Show success feedback
+        input.style.borderColor = '#10b981';
+        setTimeout(() => {
+            if (input) input.style.borderColor = '#334155';
+        }, 1000);
+    } else {
+        // Clear label if empty
+        clearCustomLabel(nodeId);
+    }
+}
+
+function clearCustomLabel(nodeId) {
+    const labels = getCustomLabels();
+    delete labels[nodeId];
+    saveCustomLabels(labels);
+    
+    // Update node list
+    buildNodeList();
+    
+    // Update node details
+    if (selectedNode && selectedNode.id() === nodeId) {
+        const input = document.getElementById('node-custom-label-input');
+        if (input) {
+            input.value = '';
+            input.style.borderColor = '#334155';
+        }
+        showNodeDetails(selectedNode);
+    }
+}
 
 // Function to update node color (called from node details panel)
 function updateNodeColor(color) {
@@ -754,7 +843,7 @@ function initCytoscape() {
             zoomValue.textContent = Math.round(currentZoom * 100) + '%';
         }
     });
-    
+        
     // Clustered drag functionality
     setupClusteredDrag();
 }
@@ -822,7 +911,24 @@ function buildNodeList() {
             
             const nodeLabel = document.createElement('div');
             nodeLabel.className = 'node-label';
-            nodeLabel.textContent = node.data('label');
+            
+            // Get custom label if available
+            const customLabel = getCustomLabel(node.id());
+            const displayLabel = customLabel || node.data('label');
+        
+            // Create label text
+            const labelText = document.createElement('span');
+            labelText.textContent = displayLabel;
+            nodeLabel.appendChild(labelText);
+            
+            // Add custom label indicator if exists
+            if (customLabel) {
+                const customBadge = document.createElement('span');
+                customBadge.textContent = ' 🏷️';
+                customBadge.style.cssText = 'font-size: 0.75rem; opacity: 0.7; margin-left: 4px;';
+                customBadge.title = `Custom label: ${customLabel}`;
+                nodeLabel.appendChild(customBadge);
+            }
             
             listItem.appendChild(nodeType);
             listItem.appendChild(nodeLabel);
@@ -872,121 +978,151 @@ window.selectNodeFromList = selectNodeFromList;
 function showNodeDetails(node) {
     const data = node.data('data');
     const currentColor = node.style('background-color') || '#3b82f6';
-    const content = document.getElementById('node-details-content');
-    
-    // Build HTML content
-    let html = '';
-    
-    // Node type and label
-    html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
-    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Type</div>`;
-    html += `<div style="font-size: 1.2rem; font-weight: 600; color: #3b82f6; margin-bottom: 10px;">${node.data('type').toUpperCase()}</div>`;
-    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Label</div>`;
-    html += `<div style="font-size: 1rem; color: #e2e8f0;">${node.data('label')}</div>`;
+        const content = document.getElementById('node-details-content');
+        
+        // Build HTML content
+        let html = '';
+        
+        // Node type and label
+        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Type</div>`;
+        html += `<div style="font-size: 1.2rem; font-weight: 600; color: #3b82f6; margin-bottom: 10px;">${node.data('type').toUpperCase()}</div>`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Label</div>`;
+    const originalLabel = node.data('originalLabel') || node.data('label');
+    const displayLabel = node.data('hasCustomLabel') ? node.data('label') : originalLabel;
+    html += `<div style="font-size: 1rem; color: #e2e8f0;">${displayLabel}</div>`;
+    if (node.data('hasCustomLabel')) {
+        html += `<div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">Original: ${originalLabel}</div>`;
+    }
     html += `</div>`;
     
-    // Node Color Control Section
+    // Custom Label Section
+    const nodeId = node.id();
+    const customLabel = getCustomLabel(nodeId);
     html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
-    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Node Color</div>`;
+    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Custom Label</div>`;
     html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">`;
-    html += `<input type="color" id="node-details-color-picker" value="${rgbToHex(currentColor)}" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">`;
-    html += `<button onclick="updateNodeColor(document.getElementById('node-details-color-picker').value)" style="padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Apply Color</button>`;
+    html += `<input type="text" id="node-custom-label-input" value="${customLabel || ''}" placeholder="Add a custom label..." style="flex: 1; padding: 8px 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 0.9rem;" maxlength="50">`;
+    html += `<button onclick="saveCustomLabel('${nodeId}')" style="padding: 8px 16px; background: #10b981; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Save</button>`;
     html += `</div>`;
-    html += `<div style="font-size: 0.75rem; color: #64748b;">Change the color of this node</div>`;
-    html += `</div>`;
-    
-    if (data) {
-        // Scanned status
-        if (data.scanned !== undefined) {
-            html += `<div style="margin-bottom: 15px;">`;
-            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Scanned</div>`;
-            html += `<div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: ${data.scanned ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)'}; color: ${data.scanned ? '#10b981' : '#64748b'};">${data.scanned ? 'Yes' : 'No'}</div>`;
-            html += `</div>`;
-        }
+    if (customLabel) {
+        html += `<button onclick="clearCustomLabel('${nodeId}')" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; cursor: pointer; font-size: 0.8rem;">Clear Label</button>`;
+    }
+    html += `<div style="font-size: 0.75rem; color: #64748b; margin-top: 8px;">Add a custom label to identify this node</div>`;
+        html += `</div>`;
         
-        // Associated Eggs
-        if (data.eggs && data.eggs.length > 0) {
-            html += `<div style="margin-bottom: 15px;">`;
-            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Associated Eggs (${data.eggs.length})</div>`;
-            html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
-            data.eggs.forEach((egg, idx) => {
-                html += `<div style="padding: 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid #334155;">`;
-                if (egg.eggname) html += `<div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">${egg.eggname}</div>`;
-                if (egg.projectegg) html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Project: ${egg.projectegg}</div>`;
-                if (egg.domainname) html += `<div style="font-size: 0.85rem; color: #64748b;">Domain: ${egg.domainname}</div>`;
+        // Node Color Control Section
+        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Node Color</div>`;
+        html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">`;
+        html += `<input type="color" id="node-details-color-picker" value="${rgbToHex(currentColor)}" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">`;
+        html += `<button onclick="updateNodeColor(document.getElementById('node-details-color-picker').value)" style="padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Apply Color</button>`;
+        html += `</div>`;
+        html += `<div style="font-size: 0.75rem; color: #64748b;">Change the color of this node</div>`;
+        html += `</div>`;
+        
+        if (data) {
+            // Scanned status
+            if (data.scanned !== undefined) {
+                html += `<div style="margin-bottom: 15px;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Scanned</div>`;
+                html += `<div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: ${data.scanned ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)'}; color: ${data.scanned ? '#10b981' : '#64748b'};">${data.scanned ? 'Yes' : 'No'}</div>`;
                 html += `</div>`;
-            });
-            html += `</div>`;
-            html += `</div>`;
-        }
-        
-        // Other data fields
-        const otherFields = [];
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
-                if (key === 'ports' && Array.isArray(value)) {
-                    otherFields.push({key: key, value: `${value.length} ports`, isArray: true, arrayData: value});
-                } else if (key === 'services' && Array.isArray(value)) {
-                    otherFields.push({key: key, value: value.join(', '), isArray: true, arrayData: value});
-                } else {
-                    otherFields.push({key: key, value: value, isArray: false});
+            }
+            
+            // Associated Eggs
+            if (data.eggs && data.eggs.length > 0) {
+                html += `<div style="margin-bottom: 15px;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Associated Eggs (${data.eggs.length})</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+                data.eggs.forEach((egg, idx) => {
+                    html += `<div style="padding: 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid #334155;">`;
+                    if (egg.eggname) html += `<div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">${egg.eggname}</div>`;
+                    if (egg.projectegg) html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Project: ${egg.projectegg}</div>`;
+                    if (egg.domainname) html += `<div style="font-size: 0.85rem; color: #64748b;">Domain: ${egg.domainname}</div>`;
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                html += `</div>`;
+            }
+            
+            // Other data fields
+            const otherFields = [];
+            for (const [key, value] of Object.entries(data)) {
+                if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
+                    if (key === 'ports' && Array.isArray(value)) {
+                        otherFields.push({key: key, value: `${value.length} ports`, isArray: true, arrayData: value});
+                    } else if (key === 'services' && Array.isArray(value)) {
+                        otherFields.push({key: key, value: value.join(', '), isArray: true, arrayData: value});
+                    } else {
+                        otherFields.push({key: key, value: value, isArray: false});
+                    }
                 }
+            }
+            
+            if (otherFields.length > 0) {
+                html += `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #334155;">`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Additional Information</div>`;
+                html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+                otherFields.forEach(field => {
+                    html += `<div>`;
+                    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">${field.key.charAt(0).toUpperCase() + field.key.slice(1).replace(/_/g, ' ')}</div>`;
+                    if (field.isArray && field.arrayData.length > 0) {
+                        html += `<div style="padding: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 4px; font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                    } else {
+                        html += `<div style="font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                    }
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                html += `</div>`;
             }
         }
         
-        if (otherFields.length > 0) {
-            html += `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #334155;">`;
-            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Additional Information</div>`;
-            html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
-            otherFields.forEach(field => {
-                html += `<div>`;
-                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">${field.key.charAt(0).toUpperCase() + field.key.slice(1).replace(/_/g, ' ')}</div>`;
-                if (field.isArray && field.arrayData.length > 0) {
-                    html += `<div style="padding: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 4px; font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
-                } else {
-                    html += `<div style="font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
-                }
-                html += `</div>`;
-            });
-            html += `</div>`;
-            html += `</div>`;
-        }
-    }
-    
     // Update content and show details section
-    content.innerHTML = html;
+        content.innerHTML = html;
     content.style.display = 'block'; // Make sure details section is visible
-    
-    // Add event listener for color picker changes
-    const colorPicker = document.getElementById('node-details-color-picker');
-    if (colorPicker) {
-        colorPicker.addEventListener('input', function(e) {
-            // Optional: update color in real-time as user picks
-            // updateNodeColor(e.target.value);
+        
+        // Add event listener for color picker changes
+        const colorPicker = document.getElementById('node-details-color-picker');
+        if (colorPicker) {
+            colorPicker.addEventListener('input', function(e) {
+                // Optional: update color in real-time as user picks
+                // updateNodeColor(e.target.value);
+            });
+        }
+        
+    // Add event listener for custom label input (Enter key to save)
+    const labelInput = document.getElementById('node-custom-label-input');
+    if (labelInput) {
+        labelInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                saveCustomLabel(nodeId);
+            }
         });
     }
     
     // Scroll details into view
     content.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-// Function to update node color (called from node details panel)
-function updateNodeColor(color) {
-    if (!selectedNode) {
-        console.warn('No node selected');
-        return;
     }
     
-    // Update the node's style directly
-    selectedNode.style('background-color', color);
-    selectedNode.style('border-color', color);
+    // Function to update node color (called from node details panel)
+    function updateNodeColor(color) {
+        if (!selectedNode) {
+            console.warn('No node selected');
+            return;
+        }
+        
+        // Update the node's style directly
+        selectedNode.style('background-color', color);
+        selectedNode.style('border-color', color);
+        
+        // Log the change
+        const nodeId = selectedNode.id();
+        const nodeLabel = selectedNode.data('label');
+        console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
+    }
     
-    // Log the change
-    const nodeId = selectedNode.id();
-    const nodeLabel = selectedNode.data('label');
-    console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
-}
-
 // Setup clustered drag functionality
 function setupClusteredDrag() {
     if (!cy) return;
@@ -1145,13 +1281,28 @@ function updateGraph() {
         const nodeData = {
             id: node.id,
             label: node.label,
-            type: node.type,
-            scanned: node.data?.scanned ? 'true' : 'false'  // Set as direct attribute for CSS selector
+            type: node.type
         };
         
-        // Add all node data properties
+        // Add all node data properties first
         if (node.data) {
             Object.assign(nodeData, node.data);
+        }
+        
+        // Ensure scanned is always a string 'true' or 'false' for CSS selector matching
+        if (nodeData.scanned === true || nodeData.scanned === 'true') {
+            nodeData.scanned = 'true';
+        } else {
+            nodeData.scanned = 'false';
+        }
+        
+        // Apply custom label if available (after loading from localStorage)
+        const customLabel = getCustomLabel(node.id);
+        if (customLabel) {
+            // Store original label and use custom label for display
+            nodeData.originalLabel = nodeData.label;
+            nodeData.label = customLabel;
+            nodeData.hasCustomLabel = true;
         }
         
         elements.push({
@@ -1179,6 +1330,17 @@ function updateGraph() {
     cy.add(elements);
     
     console.log(`Graph elements added. Total elements: ${cy.elements().length}`);
+    
+    // Apply custom labels to nodes after they're added to the graph
+    cy.nodes().forEach(function(node) {
+        const customLabel = getCustomLabel(node.id());
+        if (customLabel) {
+            // Update the node's label in the graph
+            node.data('label', customLabel);
+            node.data('hasCustomLabel', true);
+            node.data('originalLabel', node.data('originalLabel') || node.data('label'));
+        }
+    });
     
     // Apply layout - use grid if no edges, dagre if edges exist
     const hasEdges = elements.some(el => el.data.source && el.data.target);
@@ -1213,25 +1375,28 @@ function updateGraph() {
     
     // Apply current layout (this will position nodes)
     applyLayout().then(() => {
-        // Fit and center the graph
-        cy.fit();
-        cy.center();
-        console.log('Graph layout applied and centered');
+    // Fit and center the graph
+    cy.fit();
+    cy.center();
+    console.log('Graph layout applied and centered');
+        
+        // Re-apply visual settings after layout (ensures colors are set)
+        applyVisualSettingsToGraph();
         
         // Apply dynamic edge coloring after layout settles
         updateEdgeColorsByWeight();
         
         // Build node list in right panel
         buildNodeList();
-        
-        // Initialize zoom slider
-        const zoomSlider = document.getElementById('zoom-slider');
-        const zoomValue = document.getElementById('zoom-value');
-        if (zoomSlider && zoomValue) {
-            const currentZoom = cy.zoom();
-            zoomSlider.value = currentZoom;
-            zoomValue.textContent = Math.round(currentZoom * 100) + '%';
-        }
+    
+    // Initialize zoom slider
+    const zoomSlider = document.getElementById('zoom-slider');
+    const zoomValue = document.getElementById('zoom-value');
+    if (zoomSlider && zoomValue) {
+        const currentZoom = cy.zoom();
+        zoomSlider.value = currentZoom;
+        zoomValue.textContent = Math.round(currentZoom * 100) + '%';
+    }
     });
 }
 
@@ -1618,20 +1783,22 @@ function applyVisualSettingsToGraph() {
     if (!cy) return;
     
     // Update colors for all node types
-    cy.nodes('[type="ip"][scanned="true"]').style({
-        'background-color': visualSettings.nodeColors.scanned
-    });
-    
-    cy.nodes('[type="ip"][scanned="false"]').style({
-        'background-color': visualSettings.nodeColors.unscanned
-    });
-    
-    cy.nodes('[type="cidr"]').style({
-        'background-color': visualSettings.nodeColors.cidr
-    });
-    
-    cy.nodes('[type="asn"]').style({
-        'background-color': visualSettings.nodeColors.asn
+    // Use forEach to ensure we apply colors to all nodes regardless of selector matching
+    cy.nodes().forEach(function(node) {
+        const nodeType = node.data('type');
+        const scanned = node.data('scanned');
+        
+        if (nodeType === 'ip') {
+            if (scanned === 'true' || scanned === true) {
+                node.style('background-color', visualSettings.nodeColors.scanned);
+            } else {
+                node.style('background-color', visualSettings.nodeColors.unscanned);
+            }
+        } else if (nodeType === 'cidr') {
+            node.style('background-color', visualSettings.nodeColors.cidr);
+        } else if (nodeType === 'asn') {
+            node.style('background-color', visualSettings.nodeColors.asn);
+        }
     });
     
     // Fixed sizing based on Node Size slider (always use slider value)
@@ -1811,12 +1978,12 @@ function resetVisualSettings() {
             asn: '#f59e0b'
         },
         nodeSize: 30,
-    edgeColor: '#64748b',
+        edgeColor: '#64748b',
     edgeWidth: 1,
-    edgeColorNetwork: '#8b5cf6',
+        edgeColorNetwork: '#8b5cf6',
     edgeColorProject: '#ec4899',
     weightBasedColoring: true  // Enable dynamic edge coloring based on relationship weight
-};
+    };
     applyVisualSettingsToControls();
     applyVisualSettingsToGraph();
 }

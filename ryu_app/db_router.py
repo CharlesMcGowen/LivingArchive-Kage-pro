@@ -63,6 +63,11 @@ class PostgresRouter:
         # Allow Surge app to migrate to eggrecords database
         if app_label == 'surge' and db == 'eggrecords':
             return True
+        # Allow customer_eggs_eggrecords_general_models enrichment tables to migrate to eggrecords
+        if app_label == 'customer_eggs_eggrecords_general_models' and db == 'eggrecords':
+            # Only allow enrichment system models (TechnologyFingerprint, CVEFingerprintMatch)
+            if model_name in ('TechnologyFingerprint', 'CVEFingerprintMatch'):
+                return True
         # PostgreSQL models are managed=False, so no migrations
         if db in ('customer_eggs', 'eggrecords'):
             return False

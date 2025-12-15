@@ -35,34 +35,36 @@ class ReconnaissanceConfig(AppConfig):
         except ImportError:
             logger.warning("Could not import reconnaissance signals")
         
-        # Start Oak service in background thread
-        try:
-            from artificial_intelligence.personalities.reconnaissance.oak.service import OakService
-            
-            oak_service = OakService()
-            oak_thread = threading.Thread(
-                target=oak_service.run,
-                daemon=True,
-                name='OakService'
-            )
-            oak_thread.start()
-            
-            logger.info("🌳 Oak coordinator service started (Django app ready)")
-        except ImportError as e:
-            logger.warning(f"Could not import Oak service: {e}")
-        except Exception as e:
-            logger.warning(f"Could not start Oak service: {e}", exc_info=True)
+        # Oak service startup - DISABLED
+        # The OakService module doesn't exist - Oak functionality is handled via
+        # autonomous curation service and management commands instead
+        # try:
+        #     from artificial_intelligence.personalities.reconnaissance.oak.service import OakService
+        #     oak_service = OakService()
+        #     oak_thread = threading.Thread(
+        #         target=oak_service.run,
+        #         daemon=True,
+        #         name='OakService'
+        #     )
+        #     oak_thread.start()
+        #     logger.info("🌳 Oak coordinator service started (Django app ready)")
+        # except ImportError as e:
+        #     logger.warning(f"Could not import Oak service: {e}")
+        # except Exception as e:
+        #     logger.warning(f"Could not start Oak service: {e}", exc_info=True)
         
         # Start Oak autonomous curation service
-        try:
-            from artificial_intelligence.personalities.reconnaissance.oak.target_curation.autonomous_curation_service import get_instance
-            
-            curation_service = get_instance()
-            curation_service.start_service()
-            
-            logger.info("🌳 Oak autonomous curation service started (Django app ready)")
-        except ImportError as e:
-            logger.warning(f"Could not import Oak autonomous curation service: {e}")
-        except Exception as e:
-            logger.warning(f"Could not start Oak autonomous curation service: {e}", exc_info=True)
+        # TEMPORARILY DISABLED - This service was spamming the database with connections
+        # TODO: Re-enable after connection pooling is stable
+        # Uncomment the code below to re-enable:
+        # try:
+        #     from artificial_intelligence.personalities.reconnaissance.oak.target_curation.autonomous_curation_service import get_instance
+        #     curation_service = get_instance()
+        #     curation_service.start_service()
+        #     logger.info("🌳 Oak autonomous curation service started (Django app ready)")
+        # except ImportError as e:
+        #     logger.warning(f"Could not import Oak autonomous curation service: {e}")
+        # except Exception as e:
+        #     logger.warning(f"Could not start Oak autonomous curation service: {e}", exc_info=True)
+        logger.info("🌳 Oak autonomous curation service auto-start DISABLED (was causing database connection exhaustion)")
 

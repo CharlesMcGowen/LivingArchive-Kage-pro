@@ -1085,22 +1085,37 @@ async function uploadFiles() {
         // For large files, skip duplicate check in browser (saves memory)
         // Server will handle deduplication during upload
         let duplicateCheck = null;
-        if (file.size < 5 * 1024 * 1024) { // Only check files < 5MB in browser
+        const fileSizeMB = file.size / 1024 / 1024;
+        const MAX_BROWSER_CHECK_SIZE = 5 * 1024 * 1024; // 5MB
+        
+        // Warn about very large files that might cause browser issues
+        if (file.size > 100 * 1024 * 1024) { // > 100MB
+            console.warn(`⚠️ Large file detected: ${file.name} (${fileSizeMB.toFixed(1)}MB). Browser upload may fail for files >100MB. Consider splitting the file.`);
+        }
+        
+        if (file.size < MAX_BROWSER_CHECK_SIZE) { // Only check files < 5MB in browser
             try {
                 // Read file content to check paths (only for small files)
-        const fileText = await file.text();
-        const paths = fileText.split('\n')
-            .map(line => line.trim())
-            .filter(line => line && !line.startsWith('#'))
-            .map(line => line.startsWith('/') ? line : '/' + line);
-        
+                // Use FileReader instead of file.text() for better error handling
+                const fileText = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.onerror = (e) => reject(new Error(`Failed to read file: ${e.target.error?.message || 'Unknown error'}`));
+                    reader.readAsText(file);
+                });
+                
+                const paths = fileText.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line && !line.startsWith('#'))
+                    .map(line => line.startsWith('/') ? line : '/' + line);
+                
                 // Check for duplicates (non-blocking - if it fails, we proceed anyway)
                 duplicateCheck = await checkDuplicates(file.name, paths, fileCMS);
             } catch (e) {
                 console.log(`Skipping duplicate check for ${file.name} (file too large or error: ${e.message})`);
             }
         } else {
-            console.log(`⏭️ Skipping browser-side duplicate check for ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB - server will deduplicate during upload)`);
+            console.log(`⏭️ Skipping browser-side duplicate check for ${file.name} (${fileSizeMB.toFixed(1)}MB - server will deduplicate during upload)`);
         }
         
         if (duplicateCheck) {
@@ -1168,15 +1183,26 @@ async function uploadFiles() {
         statusText.textContent = `Uploading ${i + 1}/${selectedFiles.length}: ${file.name}`;
         
         try {
-            // Use AbortController for timeout protection (5 minutes for large files)
+            // Use AbortController for timeout protection (10 minutes for large files)
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
+            const fileSizeMB = file.size / 1024 / 1024;
+            // Longer timeout for larger files: 10 minutes base + 1 minute per 10MB over 50MB
+            const timeoutDuration = Math.max(
+                10 * 60 * 1000, // 10 minutes minimum
+                10 * 60 * 1000 + Math.ceil((fileSizeMB - 50) / 10) * 60 * 1000 // Extra time for large files
+            );
+            const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+            
+            // Log upload attempt with file size
+            console.log(`Uploading ${file.name} (${fileSizeMB.toFixed(1)}MB) with ${(timeoutDuration / 1000 / 60).toFixed(1)} minute timeout...`);
             
             const response = await fetch('/reconnaissance/api/suzu/paths/upload-file/', {
                 method: 'POST',
                 body: formData,
                 credentials: 'same-origin',
-                signal: controller.signal
+                signal: controller.signal,
+                // Don't set Content-Length header - browser will handle it
+                // Large files need to be streamed by the browser
             });
             
             clearTimeout(timeoutId);
@@ -1237,10 +1263,19 @@ async function uploadFiles() {
         } catch (error) {
             failCount++;
             let errorMsg = error.message || 'Unknown error';
+            
+            // Handle specific browser errors
             if (error.name === 'AbortError') {
                 errorMsg = `Upload timeout for ${file.name} (file may be too large - server is still processing)`;
+            } else if (error.message && (error.message.includes('ERR_ACCESS_DENIED') || error.message.includes('Access Denied'))) {
+                const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
+                errorMsg = `Browser blocked upload of ${file.name} (${fileSizeMB}MB). This usually happens with very large files (>100MB). Try: 1) Split the file into smaller chunks, 2) Use direct server upload, or 3) Check browser settings for large file uploads.`;
+                console.error(`ERR_ACCESS_DENIED for ${file.name}: File size ${fileSizeMB}MB. Browser may have limits on file upload size.`);
             } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_SOCKET_NOT_CONNECTED') || error.message.includes('ERR_CONNECTION'))) {
                 errorMsg = `Connection error for ${file.name} - server may be processing large file. Check server logs or try again.`;
+            } else if (error.message && error.message.includes('NetworkError') || error.message.includes('Network request failed')) {
+                const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
+                errorMsg = `Network error uploading ${file.name} (${fileSizeMB}MB). File may be too large for browser upload. Try splitting into smaller files or uploading directly to server.`;
             }
             
             addUploadHistory({

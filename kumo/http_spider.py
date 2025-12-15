@@ -359,23 +359,23 @@ class KumoHttpSpider:
                 # Try to create RequestMetaData entry if model exists
                 # Only write if write_to_db=True (daemons should use write_to_db=False and submit via API)
                 if write_to_db:
+                try:
+                    # Check if RequestMetaData model exists
+                    RequestMetaData = None
                     try:
-                        # Check if RequestMetaData model exists
-                        RequestMetaData = None
+                        RequestMetaData = apps.get_model('customer_eggs_eggrecords_general_models', 'RequestMetaData')
+                    except (LookupError, ValueError):
                         try:
-                            RequestMetaData = apps.get_model('customer_eggs_eggrecords_general_models', 'RequestMetaData')
-                        except (LookupError, ValueError):
+                            from customer_eggs_eggrecords_general_models.core_models.record_models import RequestMetaData
+                        except ImportError:
                             try:
-                                from customer_eggs_eggrecords_general_models.core_models.record_models import RequestMetaData
+                                from customer_eggs_eggrecords_general_models.core_models.research_models import RequestMetaData
                             except ImportError:
-                                try:
-                                    from customer_eggs_eggrecords_general_models.core_models.research_models import RequestMetaData
-                                except ImportError:
-                                    RequestMetaData = None
-                        
-                        if RequestMetaData:
-                            # Create RequestMetaData entry using Django ORM
-                            try:
+                                RequestMetaData = None
+                    
+                    if RequestMetaData:
+                        # Create RequestMetaData entry using Django ORM
+                        try:
                             # Try to get egg_record object for ORM, or use ID string
                             try:
                                 EggRecord = apps.get_model('customer_eggs_eggrecords_general_models', 'EggRecord')
@@ -435,51 +435,51 @@ class KumoHttpSpider:
                                 ])
                             db.commit()  # Commit the transaction to persist RequestMetaData entries
                             metadata_created += 1
-                        else:
-                            # Fallback: Store in images JSON field
-                            request_metadata = {
-                                'request_id': request_id,
-                                'session_id': session_id,
-                                'url': current_url,
-                                'method': 'GET',
-                                'status_code': response.status_code,
-                                'response_time_ms': int(response.elapsed.total_seconds() * 1000),
-                                'request_headers': headers,
-                                'response_headers': headers_with_cookies,
-                                'response_body': html_content[:10000],  # Limit body size
-                                'cookies': cookies,
-                                'user_agent': self.session.headers.get('User-Agent', ''),
-                                'spider_agent': 'kumo',
-                                'scan_session': f"kumo-{egg_record_id}",
-                                'scan_stage': 'spidering',
-                                'timestamp': datetime.now().isoformat()
-                            }
+                    else:
+                        # Fallback: Store in images JSON field
+                        request_metadata = {
+                            'request_id': request_id,
+                            'session_id': session_id,
+                            'url': current_url,
+                            'method': 'GET',
+                            'status_code': response.status_code,
+                            'response_time_ms': int(response.elapsed.total_seconds() * 1000),
+                            'request_headers': headers,
+                            'response_headers': headers_with_cookies,
+                            'response_body': html_content[:10000],  # Limit body size
+                            'cookies': cookies,
+                            'user_agent': self.session.headers.get('User-Agent', ''),
+                            'spider_agent': 'kumo',
+                            'scan_session': f"kumo-{egg_record_id}",
+                            'scan_stage': 'spidering',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        # Update via raw SQL if needed
+                        db = connections['customer_eggs']
+                        with db.cursor() as cursor:
+                            # Get current images
+                            cursor.execute("""
+                                SELECT images FROM customer_eggs_eggrecords_general_models_eggrecord
+                                WHERE id = %s
+                            """, [str(egg_record_id)])
+                            row = cursor.fetchone()
+                            current_metadata = json.loads(row[0]) if row and row[0] else []
+                            current_metadata.append(request_metadata)
                             
-                            # Update via raw SQL if needed
-                            db = connections['customer_eggs']
-                            with db.cursor() as cursor:
-                                # Get current images
-                                cursor.execute("""
-                                    SELECT images FROM customer_eggs_eggrecords_general_models_eggrecord
-                                    WHERE id = %s
-                                """, [str(egg_record_id)])
-                                row = cursor.fetchone()
-                                current_metadata = json.loads(row[0]) if row and row[0] else []
-                                current_metadata.append(request_metadata)
-                                
-                                # Update
-                                cursor.execute("""
-                                    UPDATE customer_eggs_eggrecords_general_models_eggrecord
-                                    SET images = %s
-                                    WHERE id = %s
-                                """, [json.dumps(current_metadata), str(egg_record_id)])
-                                db.commit()  # Commit the fallback update
-                            
-                            metadata_created += 1
-                            logger.debug(f"  ✅ Stored metadata in images field (fallback)")
-                    except Exception as e:
-                        logger.warning(f"Could not create RequestMetaData entry: {e}")
-                        metadata_created += 1  # Count as created even if fallback used
+                            # Update
+                            cursor.execute("""
+                                UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                                SET images = %s
+                                WHERE id = %s
+                            """, [json.dumps(current_metadata), str(egg_record_id)])
+                            db.commit()  # Commit the fallback update
+                        
+                        metadata_created += 1
+                        logger.debug(f"  ✅ Stored metadata in images field (fallback)")
+                except Exception as e:
+                    logger.warning(f"Could not create RequestMetaData entry: {e}")
+                    metadata_created += 1  # Count as created even if fallback used
                 
                 # Use LLM to analyze content if available
                 llm_content_analysis = None

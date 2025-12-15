@@ -3534,31 +3534,53 @@ def network_graph_api(request):
 
 def eggrecord_list(request):
     """List all EggRecords with summary statistics using Django ORM"""
+    import logging
     from django.db import connections
     from django.db.models import Count
     from .postgres_models import PostgresEggRecord
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get filter parameters from query string
+    filter_egg_id = request.GET.get('egg', '').strip()
     
     context = {
         'title': 'EggRecords Database',
         'icon': '🥚',
         'color': '#8b5cf6',
-        'personality': 'eggrecords'
+        'personality': 'eggrecords',
+        'filter_egg_id': filter_egg_id
     }
     
     if 'customer_eggs' in connections.databases:
         try:
+            # Build base queryset
+            eggrecords_qs = PostgresEggRecord.objects.using('customer_eggs').select_related('egg_id')
+            
+            # Apply egg filter if provided
+            if filter_egg_id:
+                try:
+                    eggrecords_qs = eggrecords_qs.filter(egg_id_id=filter_egg_id)
+                except Exception as filter_error:
+                    logger.warning(f"Error applying egg filter: {filter_error}")
+            
             # Try with annotations first, fallback to simple query if annotations fail
             try:
-                eggrecords_qs = PostgresEggRecord.objects.using('customer_eggs').select_related('egg_id').annotate(
+                eggrecords_qs = eggrecords_qs.annotate(
                     nmap_count=Count('nmap_scans', distinct=True),
                     request_count=Count('http_requests', distinct=True),
                     dns_count=Count('dns_queries', distinct=True)
-                ).order_by('-updated_at')[:200]
+                ).order_by('-updated_at')
                 use_annotations = True
             except Exception as annot_error:
                 logger.warning(f"Annotations failed, using simple query: {annot_error}")
-                eggrecords_qs = PostgresEggRecord.objects.using('customer_eggs').select_related('egg_id').order_by('-updated_at')[:200]
+                eggrecords_qs = eggrecords_qs.order_by('-updated_at')
                 use_annotations = False
+            
+            # Limit to 200 records only if no filter is applied (for performance)
+            # When filtered, show all matching records (could be large, but user expects to see all)
+            if not filter_egg_id:
+                eggrecords_qs = eggrecords_qs[:200]
             
             # Convert queryset to list of dicts
             context['eggrecords'] = []
@@ -3586,9 +3608,23 @@ def eggrecord_list(request):
                     eggrecord_dict['dns_count'] = 0
                 context['eggrecords'].append(eggrecord_dict)
             
+            # Get filtered count for display
+            if filter_egg_id:
+                # If filtered, get all matching records count (not just the limited set)
+                filtered_qs = PostgresEggRecord.objects.using('customer_eggs').filter(egg_id_id=filter_egg_id)
+                context['filtered_count'] = filtered_qs.count()
+            else:
+                context['filtered_count'] = len(context['eggrecords'])
+            
             context['total_count'] = len(context['eggrecords'])
-            context['total_eggrecords'] = PostgresEggRecord.objects.using('customer_eggs').count()
-            context['alive_count'] = PostgresEggRecord.objects.using('customer_eggs').filter(alive=True).count()
+            
+            # Get total counts based on filter
+            if filter_egg_id:
+                context['total_eggrecords'] = PostgresEggRecord.objects.using('customer_eggs').filter(egg_id_id=filter_egg_id).count()
+                context['alive_count'] = PostgresEggRecord.objects.using('customer_eggs').filter(egg_id_id=filter_egg_id, alive=True).count()
+            else:
+                context['total_eggrecords'] = PostgresEggRecord.objects.using('customer_eggs').count()
+                context['alive_count'] = PostgresEggRecord.objects.using('customer_eggs').filter(alive=True).count()
             
             # Get unique eggs from the Eggs relationship for filter dropdowns
             try:
@@ -3702,11 +3738,39 @@ def eggrecord_detail(request, eggrecord_id):
             # Get eggrecord using Django ORM
             try:
                 eggrecord = PostgresEggRecord.objects.using('customer_eggs').get(id=eggrecord_id)
+                # Get IP addresses - check both ip_address field and ip JSONB field
+                ip_address_str = str(eggrecord.ip_address) if eggrecord.ip_address else None
+                ip_list = []
+                
+                # Try to get additional IPs from the ip JSONB field
+                try:
+                    ip_field = getattr(eggrecord, 'ip', None)
+                    if ip_field:
+                        if isinstance(ip_field, list):
+                            ip_list = [str(ip) for ip in ip_field if ip]
+                        elif isinstance(ip_field, str):
+                            import json
+                            try:
+                                ip_list = json.loads(ip_field) if ip_field else []
+                            except (json.JSONDecodeError, TypeError):
+                                ip_list = []
+                    # If ip_address is set but not in ip_list, add it
+                    if ip_address_str and ip_address_str not in ip_list:
+                        ip_list.insert(0, ip_address_str)
+                    elif not ip_address_str and ip_list:
+                        # Use first IP from list as primary if ip_address is not set
+                        ip_address_str = ip_list[0] if ip_list else None
+                except Exception as e:
+                    logger.debug(f"Could not parse IP list: {e}")
+                    if ip_address_str:
+                        ip_list = [ip_address_str]
+                
                 context['eggrecord'] = {
                     'id': str(eggrecord.id),
                     'subDomain': eggrecord.subDomain,
                     'domainname': eggrecord.domainname,
-                    'ip_address': str(eggrecord.ip_address) if eggrecord.ip_address else None,
+                    'ip_address': ip_address_str,
+                    'ip_addresses': ip_list,  # List of all IP addresses
                     'alive': eggrecord.alive,
                     'eggname': eggrecord.eggname,
                     'projectegg': eggrecord.projectegg,

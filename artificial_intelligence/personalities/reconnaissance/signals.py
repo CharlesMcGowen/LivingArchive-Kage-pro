@@ -16,6 +16,7 @@ Migrated to Kage-pro: 2024
 
 import logging
 from django.db.models.signals import post_save
+from django.db.models import Q
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -89,7 +90,7 @@ def fingerprint_to_cve_correlation(sender, instance, created, **kwargs):
         TechnologyFingerprint → CVE Database Query → CVEFingerprintMatch → Scan Recommendations
     
     This ensures every fingerprint immediately gets CVE intelligence.
-    Note: CVE correlation is handled by Bugsy's CVE intelligence service (still in main codebase).
+    Correlates technology fingerprints with Nuclei templates that have matching CVE IDs.
     """
     if not created:
         return
@@ -100,10 +101,124 @@ def fingerprint_to_cve_correlation(sender, instance, created, **kwargs):
         return
     
     try:
-        # CVE correlation is handled by Bugsy's CVE intelligence service
-        # This signal is here for future enhancements or custom logic
-        logger.debug(f"🌳 Oak: Technology fingerprint created → CVE correlation will be handled by Bugsy service")
+        from django.db import connections, transaction
+        from artificial_intelligence.customer_eggs_eggrecords_general_models.models import (
+            NucleiTemplate, CVEFingerprintMatch
+        )
+        import uuid as uuid_lib
         
+        tech_name = instance.technology_name.lower() if instance.technology_name else ''
+        if not tech_name:
+            return
+        
+        # Map common protocol/service names to technology keywords for template matching
+        tech_mapping = {
+            'http': ['http', 'web', 'cms', 'wordpress', 'drupal', 'joomla'],
+            'https': ['https', 'ssl', 'tls', 'web', 'cms'],
+            'ftp': ['ftp', 'file'],
+            'ssh': ['ssh', 'linux', 'unix'],
+            'mysql': ['mysql', 'database', 'db'],
+            'postgresql': ['postgres', 'postgresql', 'database', 'db'],
+            'mongodb': ['mongodb', 'database', 'db'],
+            'redis': ['redis', 'database', 'cache'],
+            'dns': ['dns', 'domain'],
+            'smtp': ['smtp', 'mail', 'email'],
+            'imap': ['imap', 'mail', 'email'],
+            'pop3': ['pop3', 'mail', 'email'],
+            'wordpress': ['wordpress', 'wp', 'cms'],
+            'apache': ['apache', 'httpd', 'web'],
+            'nginx': ['nginx', 'web'],
+            'tomcat': ['tomcat', 'apache', 'java'],
+        }
+        
+        # Get search keywords for this technology
+        search_keywords = tech_mapping.get(tech_name, [tech_name])
+        
+        # Find Nuclei templates matching this technology that have CVE IDs
+        # Try multiple matching strategies since templates may not have technology field populated
+        matching_templates = NucleiTemplate.objects.none()
+        
+        # Strategy 1: Match by technology field (if populated)
+        matching_templates |= NucleiTemplate.objects.filter(
+            technology__iexact=tech_name
+        ).exclude(cve_id__isnull=True).exclude(cve_id='')
+        
+        # Strategy 2: Match by tags containing technology keywords
+        for keyword in search_keywords:
+            matching_templates |= NucleiTemplate.objects.filter(
+                tags__icontains=keyword
+            ).exclude(cve_id__isnull=True).exclude(cve_id='')
+        
+        # Strategy 3: Match by template_id containing technology name
+        matching_templates |= NucleiTemplate.objects.filter(
+            template_id__icontains=tech_name
+        ).exclude(cve_id__isnull=True).exclude(cve_id='')
+        
+        # Strategy 4: Match by template_name containing technology name
+        matching_templates |= NucleiTemplate.objects.filter(
+            template_name__icontains=tech_name
+        ).exclude(cve_id__isnull=True).exclude(cve_id='')
+        
+        # Remove duplicates and limit
+        matching_templates = matching_templates.distinct()[:20]
+        
+        if not matching_templates.exists():
+            logger.debug(f"🌳 Oak: No CVE templates found for technology '{tech_name}' (tried keywords: {search_keywords})")
+            return
+        
+        cve_matches_created = 0
+        
+        # Create CVEFingerprintMatch records for each matching CVE template
+        with transaction.atomic(using='eggrecords'):
+            try:
+                db = connections['eggrecords']
+            except KeyError:
+                db = connections['default']
+            
+            for template in matching_templates:
+                cve_id = template.cve_id.upper() if template.cve_id else None
+                if not cve_id:
+                    continue
+                
+                # Check if CVE match already exists
+                existing_match = CVEFingerprintMatch.objects.filter(
+                    egg_record_id=instance.egg_record_id,
+                    cve_id=cve_id,
+                    technology_fingerprint_id=instance.id
+                ).first()
+                
+                if existing_match:
+                    continue  # Already matched
+                
+                # Calculate match confidence based on template match
+                match_confidence = instance.confidence_score if hasattr(instance, 'confidence_score') else 0.7
+                
+                # Check if Nuclei template exists for this CVE
+                nuclei_template_available = True
+                nuclei_template_ids = [template.template_id]
+                
+                # Create CVEFingerprintMatch record
+                cve_match = CVEFingerprintMatch.objects.create(
+                    egg_record_id=instance.egg_record_id,
+                    technology_fingerprint_id=instance.id,
+                    cve_id=cve_id,
+                    cve_severity=template.severity.upper() if template.severity else 'UNKNOWN',
+                    cve_cvss_score=0.0,  # Would need CVE database for actual CVSS
+                    technology_name=tech_name,
+                    match_confidence=match_confidence,
+                    nuclei_template_available=nuclei_template_available,
+                    nuclei_template_ids=nuclei_template_ids,
+                    recommended_for_scanning=True
+                )
+                
+                cve_matches_created += 1
+                logger.debug(f"🌳 Oak: Created CVE match {cve_id} for {tech_name} (confidence: {match_confidence:.2f})")
+        
+        if cve_matches_created > 0:
+            logger.info(f"🌳 Oak: Created {cve_matches_created} CVE match(es) for fingerprint '{tech_name}'")
+        
+    except ImportError as e:
+        logger.debug(f"🌳 Oak: CVE correlation models not available: {e}")
     except Exception as e:
         logger.error(f"❌ Oak: Fingerprint CVE correlation failed: {e}", exc_info=True)
 

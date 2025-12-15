@@ -32,12 +32,13 @@ class OakTemplateRegistryService:
     correlate templates with EggRecords based on technology fingerprints and CVEs.
     """
     
-    def __init__(self, templates_dir: Optional[str] = None):
+    def __init__(self, templates_dir: Optional[str] = None, additional_dirs: Optional[List[str]] = None):
         """
         Initialize template registry service.
         
         Args:
-            templates_dir: Path to Nuclei templates directory (default: /home/ego/nuclei-templates)
+            templates_dir: Path to primary Nuclei templates directory (default: /home/ego/nuclei-templates)
+            additional_dirs: List of additional template directories to scan
         """
         self.logger = logging.getLogger(__name__)
         
@@ -46,6 +47,23 @@ class OakTemplateRegistryService:
             templates_dir = os.environ.get('NUCLEI_TEMPLATES_DIR', '/home/ego/nuclei-templates')
         
         self.templates_dir = Path(templates_dir)
+        
+        # Additional template directories (e.g., from Celestia's cloned repos)
+        self.additional_dirs = []
+        if additional_dirs:
+            self.additional_dirs = [Path(d) for d in additional_dirs if Path(d).exists()]
+        else:
+            # Auto-detect common additional directories
+            auto_dirs = [
+                '/home/ego/webapps-nvme/artificial_intelligence/personalities/research/celestia/cloned_repos/40k-nuclei-templates',
+                '/home/ego/webapps-nvme/artificial_intelligence/personalities/research/celestia/cloned_repos/nuclei-templates',
+                '/home/ego/webapps-nvme/artificial_intelligence/personalities/research/celestia/cloned_repos/nuclei-templates-ai',
+            ]
+            for dir_path in auto_dirs:
+                path = Path(dir_path)
+                if path.exists():
+                    self.additional_dirs.append(path)
+        
         self._ensure_database_table()
     
     def _ensure_database_table(self):
@@ -138,15 +156,34 @@ class OakTemplateRegistryService:
                 'errors': 0
             }
         
-        self.logger.info(f"🔍 Scanning templates directory: {self.templates_dir}")
+        # Collect all template directories to scan
+        all_dirs = [self.templates_dir] + self.additional_dirs
+        dirs_to_scan = [d for d in all_dirs if d.exists()]
+        
+        if not dirs_to_scan:
+            self.logger.warning(f"No template directories found to scan")
+            return {
+                'success': False,
+                'error': 'No template directories found',
+                'scanned': 0,
+                'indexed': 0,
+                'errors': 0
+            }
+        
+        self.logger.info(f"🔍 Scanning {len(dirs_to_scan)} template directory(ies):")
+        for d in dirs_to_scan:
+            self.logger.info(f"   - {d}")
         
         scanned = 0
         indexed = 0
         updated = 0
         errors = 0
         
-        # Find all YAML template files
-        template_files = list(self.templates_dir.rglob('*.yaml')) + list(self.templates_dir.rglob('*.yml'))
+        # Find all YAML template files from all directories
+        template_files = []
+        for template_dir in dirs_to_scan:
+            template_files.extend(list(template_dir.rglob('*.yaml')))
+            template_files.extend(list(template_dir.rglob('*.yml')))
         
         self.logger.info(f"Found {len(template_files)} template files")
         
@@ -281,7 +318,20 @@ class OakTemplateRegistryService:
                 
                 with db.cursor() as cursor:
                     template_id = template_data['template_id']
-                    template_path = str(template_file.relative_to(self.templates_dir))
+                    
+                    # Find which directory this template belongs to
+                    all_dirs = [self.templates_dir] + self.additional_dirs
+                    template_path = str(template_file)
+                    for template_dir in all_dirs:
+                        try:
+                            template_path = str(template_file.relative_to(template_dir))
+                            break
+                        except ValueError:
+                            # File is not in this directory, try next
+                            continue
+                    # If not found in any directory, use absolute path
+                    if template_path == str(template_file):
+                        template_path = str(template_file)
                     
                     # Check if template already exists
                     cursor.execute("""

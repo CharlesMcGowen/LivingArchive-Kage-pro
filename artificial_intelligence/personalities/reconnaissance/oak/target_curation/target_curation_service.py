@@ -67,6 +67,145 @@ class OakTargetCurationService:
             # Continue without services - curation can still queue records
     
     
+    def queue_subdomains_batch(self, egg_records: List, discovery_source: str = 'unknown', 
+                               priority: str = 'normal') -> Dict[str, Any]:
+        """
+        Batch queue multiple subdomains for curation in a single transaction.
+        
+        Args:
+            egg_records: List of EggRecord objects or IDs to queue
+            discovery_source: 'ash', 'jade', 'ash_jade_discovery', etc.
+            priority: 'high', 'normal', or 'low'
+            
+        Returns:
+            Dict with batch results: {'success': bool, 'queued': int, 'failed': int, 'errors': list}
+        """
+        if not egg_records:
+            return {'success': True, 'queued': 0, 'failed': 0, 'errors': []}
+        
+        queued_count = 0
+        failed_count = 0
+        errors = []
+        
+        try:
+            from django.db import connections, transaction
+            import json
+            import uuid as uuid_lib
+            
+            # Use a single transaction for all queue operations
+            with transaction.atomic(using='eggrecords'):
+                try:
+                    db = connections['eggrecords']
+                except KeyError:
+                    db = connections['default']
+                
+                with db.cursor() as cursor:
+                    # Prepare batch insert
+                    queue_entries = []
+                    existing_ids = set()
+                    
+                    # First, check which records already exist in queue
+                    egg_record_ids = [str(er.id) if hasattr(er, 'id') else str(er) for er in egg_records]
+                    
+                    if egg_record_ids:
+                        placeholders = ','.join(['%s'] * len(egg_record_ids))
+                        cursor.execute(f"""
+                            SELECT egg_record_id, id, status, retry_count
+                            FROM enrichment_system_subdomaincurationqueue
+                            WHERE egg_record_id IN ({placeholders})
+                        """, egg_record_ids)
+                        
+                        for row in cursor.fetchall():
+                            existing_ids.add(row[0])
+                            # Update failed entries to queued
+                            if row[2] == 'failed':
+                                cursor.execute("""
+                                    UPDATE enrichment_system_subdomaincurationqueue
+                                    SET status = 'queued',
+                                        retry_count = %s,
+                                        queued_at = NOW(),
+                                        updated_at = NOW()
+                                    WHERE id = %s
+                                """, [row[3] + 1, row[1]])
+                                queued_count += 1
+                    
+                    # Prepare batch insert for new entries
+                    metadata = {}
+                    for egg_record in egg_records:
+                        egg_record_id = str(egg_record.id) if hasattr(egg_record, 'id') else str(egg_record)
+                        
+                        # Skip if already exists
+                        if egg_record_id in existing_ids:
+                            continue
+                        
+                        queue_entry_id = str(uuid_lib.uuid4())
+                        queue_entries.append((
+                            queue_entry_id,
+                            egg_record_id,
+                            'queued',
+                            priority,
+                            discovery_source,
+                            json.dumps(metadata),
+                            0  # retry_count
+                        ))
+                    
+                    # Batch insert new queue entries
+                    if queue_entries:
+                        cursor.executemany("""
+                            INSERT INTO enrichment_system_subdomaincurationqueue (
+                                id, egg_record_id, status, priority, discovery_source,
+                                queued_at, metadata, retry_count, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s, NOW(), NOW())
+                        """, queue_entries)
+                        queued_count += len(queue_entries)
+                    
+                    # Transaction commits automatically on success
+                    
+            return {
+                'success': True,
+                'queued': queued_count,
+                'failed': failed_count,
+                'errors': errors,
+                'total': len(egg_records)
+            }
+            
+        except Exception as e:
+            error_msg = str(e)
+            # Check if table doesn't exist
+            if 'does not exist' in error_msg or 'relation' in error_msg.lower():
+                self.logger.debug("SubdomainCurationQueue table not available, processing individually")
+                # Fallback to individual processing
+                return self._queue_subdomains_individually(egg_records, discovery_source, priority)
+            
+            self.logger.warning(f"Batch queue failed: {error_msg[:200]}, falling back to individual processing")
+            return self._queue_subdomains_individually(egg_records, discovery_source, priority)
+    
+    def _queue_subdomains_individually(self, egg_records: List, discovery_source: str, priority: str) -> Dict[str, Any]:
+        """Fallback: queue subdomains one at a time."""
+        queued = 0
+        failed = 0
+        errors = []
+        
+        for egg_record in egg_records:
+            try:
+                result = self.queue_subdomain_for_curation(egg_record, discovery_source, priority)
+                if result.get('success'):
+                    queued += 1
+                else:
+                    failed += 1
+                    errors.append(f"{egg_record.id if hasattr(egg_record, 'id') else egg_record}: {result.get('error', 'Unknown')}")
+            except Exception as e:
+                failed += 1
+                errors.append(f"{egg_record.id if hasattr(egg_record, 'id') else egg_record}: {str(e)[:100]}")
+        
+        return {
+            'success': queued > 0,
+            'queued': queued,
+            'failed': failed,
+            'errors': errors,
+            'total': len(egg_records)
+        }
+    
     def queue_subdomain_for_curation(self, egg_record, discovery_source: str = 'unknown', 
                                     priority: str = 'normal') -> Dict[str, Any]:
         """
@@ -971,18 +1110,33 @@ class OakTargetCurationService:
         """
         Create a comprehensive vulnerability profile for the subdomain.
         Stores aggregated intelligence for quick access.
+        
+        Note: This method handles connection errors gracefully to prevent connection exhaustion.
         """
         try:
             # Aggregate CVE data using raw SQL (no TargetVulnerabilityProfile model needed)
             from django.db import connections, transaction
             import json
             
-            # Use transaction.atomic() to properly manage connections
+            # Use transaction.atomic() to properly manage connections with error handling
             with transaction.atomic(using='eggrecords'):
                 try:
                     db = connections['eggrecords']
                 except KeyError:
                     db = connections['default']
+                
+                # Ensure connection is valid before proceeding
+                try:
+                    db.ensure_connection()
+                except Exception as conn_err:
+                    if 'too many clients' in str(conn_err).lower():
+                        self.logger.error(f"Database connection pool exhausted, skipping vulnerability profile creation")
+                        return {
+                            'success': False,
+                            'error': 'Connection pool exhausted',
+                            'skipped': True
+                        }
+                    raise
                 
                 with db.cursor() as cursor:
                     # Get CVE counts
@@ -1032,11 +1186,22 @@ class OakTargetCurationService:
             }
             
         except Exception as e:
-            self.logger.error(f"Failed to create vulnerability profile: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            # Handle connection errors gracefully
+            error_str = str(e).lower()
+            if 'too many clients' in error_str or 'connection' in error_str:
+                self.logger.warning(f"Database connection issue creating vulnerability profile: {e}")
+                # Return a skipped status instead of failing completely
+                return {
+                    'success': False,
+                    'error': 'Connection pool exhausted',
+                    'skipped': True
+                }
+            else:
+                self.logger.error(f"Failed to create vulnerability profile: {e}")
+                return {
+                    'success': False,
+                    'error': str(e)
+                }
 
 
     def curate_nmap_scans_for_reconnaissance(self, scan_types: List[str] = None) -> Dict[str, Any]:

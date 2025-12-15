@@ -723,6 +723,48 @@ class KazeNmapScanner:
                     ])
                     db.commit()  # Commit the transaction to persist Nmap entries
                     nmap_entries_created = 1
+                    
+                    # Update eggrecord with IP address(es) if found
+                    try:
+                        all_ips = []
+                        if ip_address:
+                            all_ips.append(ip_address)
+                        if ipv6_addresses:
+                            all_ips.extend(ipv6_addresses)
+                        
+                        if all_ips:
+                            # Get primary IPv4 address for ip_address field
+                            primary_ip = None
+                            for ip in all_ips:
+                                try:
+                                    ipaddress.IPv4Address(ip)
+                                    primary_ip = ip
+                                    break
+                                except ValueError:
+                                    pass
+                            
+                            # If no IPv4, use first IP
+                            if not primary_ip and all_ips:
+                                primary_ip = all_ips[0]
+                            
+                            # Update eggrecord ip_address field
+                            if primary_ip:
+                                cursor.execute("""
+                                    UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                                    SET ip_address = %s::inet,
+                                        ip = %s::jsonb,
+                                        updated_at = %s
+                                    WHERE id = %s
+                                """, [
+                                    primary_ip,
+                                    json.dumps(all_ips),
+                                    timezone.now(),
+                                    str(egg_record_id)
+                                ])
+                                db.commit()
+                                logger.debug(f"  ✅ Updated eggrecord IP address: {primary_ip} (total: {len(all_ips)} IPs)")
+                    except Exception as e:
+                        logger.warning(f"  ⚠️  Failed to update eggrecord IP address: {e}")
                 
                 if nmap_entries_created > 0:
                     logger.info(f"  ✅ Created {nmap_entries_created} Nmap entry with {len(open_ports)} ports for Bugsy")

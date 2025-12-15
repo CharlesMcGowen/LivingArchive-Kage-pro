@@ -39,7 +39,7 @@ class NucleiScan(models.Model):
     # Scan configuration
     templates_used = models.JSONField(default=list, blank=True, help_text="List of Nuclei template IDs used")
     scan_parameters = models.JSONField(default=dict, blank=True, help_text="Additional scan parameters")
-    pokemon_deployed = models.JSONField(default=list, blank=True, help_text="List of Pokemon/Kontrol agents deployed")
+    pokemon_deployed = models.JSONField(default=list, blank=True, help_text="List of agents deployed (legacy field name, contains agent names)")
     
     # Scan execution
     status = models.CharField(
@@ -65,7 +65,7 @@ class NucleiScan(models.Model):
     output_file = models.CharField(max_length=1024, null=True, blank=True, help_text="Path to scan output file")
     log_file = models.CharField(max_length=1024, null=True, blank=True, help_text="Path to scan log file")
     
-    # Integration with Pokemon AI
+    # Integration with Agent AI
     egg_id = models.CharField(max_length=36, null=True, blank=True, db_index=True, help_text="Related Kontrol AI egg ID")
     
     # Metadata

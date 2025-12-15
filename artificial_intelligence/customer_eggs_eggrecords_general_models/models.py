@@ -108,7 +108,7 @@ class TechnologyFingerprint(models.Model):
     class Meta:
         app_label = 'customer_eggs_eggrecords_general_models'
         db_table = 'enrichment_system_technologyfingerprint'
-        managed = False  # Table exists, don't create migrations
+        managed = True  # Enable migrations to create table
         indexes = [
             models.Index(fields=['egg_record_id']),
             models.Index(fields=['technology_name']),
@@ -132,10 +132,15 @@ class CVEFingerprintMatch(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     egg_record_id = models.UUIDField(null=False, db_index=True)
-    technology_fingerprint_id = models.UUIDField(null=False, db_index=True)
+    technology_fingerprint_id = models.UUIDField(null=True, blank=True, db_index=True)  # Optional - can match without fingerprint
     cve_id = models.CharField(max_length=50, null=False, blank=False, db_index=True)  # e.g., "CVE-2023-1234"
+    cve_severity = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # CRITICAL, HIGH, MEDIUM, LOW
+    cve_cvss_score = models.FloatField(null=True, blank=True, db_index=True)  # CVSS score (0.0-10.0)
+    technology_name = models.CharField(max_length=255, null=True, blank=True, db_index=True)  # Technology from fingerprint
     match_confidence = models.FloatField(null=False, default=0.0, db_index=True)
-    nuclei_template_ids = models.JSONField(null=False, default=list)  # Array of template IDs
+    nuclei_template_available = models.BooleanField(default=False, db_index=True)  # Whether Nuclei template exists
+    nuclei_template_ids = models.JSONField(null=True, blank=True, default=list)  # Array of template IDs
+    recommended_for_scanning = models.BooleanField(default=True, db_index=True)  # Whether to recommend for scanning
     bugsy_confidence_notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
     updated_at = models.DateTimeField(null=True, blank=True, auto_now=True)
@@ -143,12 +148,16 @@ class CVEFingerprintMatch(models.Model):
     class Meta:
         app_label = 'customer_eggs_eggrecords_general_models'
         db_table = 'enrichment_system_cvefingerprintmatch'
-        managed = False  # Table exists, don't create migrations
+        managed = True  # Enable migrations to create table
         indexes = [
             models.Index(fields=['egg_record_id']),
             models.Index(fields=['technology_fingerprint_id']),
             models.Index(fields=['cve_id']),
+            models.Index(fields=['cve_severity']),
+            models.Index(fields=['cve_cvss_score']),
             models.Index(fields=['match_confidence']),
+            models.Index(fields=['recommended_for_scanning']),
+            models.Index(fields=['nuclei_template_available']),
         ]
         verbose_name = 'CVE Fingerprint Match'
         verbose_name_plural = 'CVE Fingerprint Matches'

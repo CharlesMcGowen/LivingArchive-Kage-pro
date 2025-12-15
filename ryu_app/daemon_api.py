@@ -41,8 +41,9 @@ def daemon_get_eggrecords(request, personality):
             if personality == 'ryu' and scan_type == 'ryu_port_scan':
                 # Get eggrecords that need Ryu Nmap scanning
                 # Rule: Only scan once per year (max 1 scan from any scanner: Kage, Kaze, or Ryu)
+                # Note: egg_id_id is included but nullable, so it won't affect query results
                 cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
                     AND (
@@ -58,8 +59,9 @@ def daemon_get_eggrecords(request, personality):
             elif personality == 'kage':
                 # Get eggrecords that need Nmap scanning
                 # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
+                # Note: egg_id_id is included but nullable, so it won't affect query results
                 cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
                     AND (
@@ -75,8 +77,9 @@ def daemon_get_eggrecords(request, personality):
             elif personality == 'kaze':
                 # Get eggrecords that need high-speed Nmap scanning
                 # Rule: Only scan once per year (max 1 scan from any scanner: Kage or Kaze)
+                # Note: egg_id_id is included but nullable, so it won't affect query results
                 cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     WHERE e.alive = true
                     AND (
@@ -91,8 +94,9 @@ def daemon_get_eggrecords(request, personality):
                 
             elif personality == 'kumo':
                 # Get eggrecords that need HTTP spidering
+                # Note: egg_id_id is included but nullable, so it won't affect query results
                 cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id
                     FROM customer_eggs_eggrecords_general_models_eggrecord e
                     LEFT JOIN customer_eggs_eggrecords_general_models_requestmetadata r ON r.record_id_id = e.id
                     WHERE e.alive = true
@@ -107,8 +111,9 @@ def daemon_get_eggrecords(request, personality):
             elif personality == 'ryu':
                 # Get eggrecords that need assessment (have scan or HTTP data)
                 # Note: This is used when scan_type is NOT 'ryu_port_scan' (defaults to assessment query)
+                # Note: egg_id_id is included but nullable, so it won't affect query results
                 cursor.execute("""
-                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at,
+                    SELECT DISTINCT e.id, e."subDomain", e.domainname, e.alive, e.updated_at, e.egg_id_id,
                         CASE 
                             WHEN EXISTS (
                                 SELECT 1 FROM customer_eggs_eggrecords_general_models_nmap n 
@@ -174,12 +179,20 @@ def daemon_get_eggrecords(request, personality):
             for row in cursor.fetchall():
                 row_dict = dict(zip(columns, row))
                 # Convert UUID to string
-                if 'id' in row_dict:
+                if 'id' in row_dict and row_dict['id']:
                     row_dict['id'] = str(row_dict['id'])
+                # Convert egg_id_id UUID to string if present
+                if 'egg_id_id' in row_dict and row_dict['egg_id_id']:
+                    row_dict['egg_id_id'] = str(row_dict['egg_id_id'])
                 # Convert datetime to ISO format
                 if 'updated_at' in row_dict and row_dict['updated_at']:
                     row_dict['updated_at'] = row_dict['updated_at'].isoformat()
                 results.append(row_dict)
+            
+            # Log query results for debugging
+            logger.debug(f"Query for {personality} returned {len(results)} eggrecords (limit was {limit})")
+            if len(results) == 0:
+                logger.info(f"No eggrecords found for {personality} - all may have been scanned recently or none are alive")
             
             return JsonResponse({
                 'success': True,

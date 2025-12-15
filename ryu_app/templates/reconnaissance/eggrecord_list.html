@@ -449,17 +449,21 @@
         
         <div class="form-group">
             <label for="filter-egg">Egg</label>
-            <select id="filter-egg" name="filter-egg" onchange="applyFilter()">
+            <select id="filter-egg" name="filter-egg" onchange="applyServerFilter()">
                 <option value="">All Eggs</option>
                 {% for egg in unique_eggs|default:"" %}
-                <option value="{{ egg.id }}">{{ egg.eggName }} ({{ egg.eisystem_in_thorm }})</option>
+                <option value="{{ egg.id }}" {% if filter_egg_id == egg.id|stringformat:"s" %}selected{% endif %}>{{ egg.eggName }} ({{ egg.eisystem_in_thorm }})</option>
                 {% endfor %}
             </select>
         </div>
         
         
         <div class="filter-count" id="filter-count">
-            Showing all eggrecords
+            {% if filter_egg_id %}
+                Showing {{ total_count }} of {{ total_eggrecords }} eggrecords for selected egg
+            {% else %}
+                Showing {{ total_count }} of {{ total_eggrecords }} eggrecords (most recent)
+            {% endif %}
         </div>
         
         <button type="button" class="btn-clear" onclick="clearFilter()" style="width: 100%; margin-top: 10px;">
@@ -796,40 +800,29 @@ async function generateProjectEggForGenerate() {
     }
 }
 
-// Filter functionality
-function applyFilter() {
+// Server-side filter - reload page with filter parameter
+function applyServerFilter() {
     const eggFilter = document.getElementById('filter-egg') ? document.getElementById('filter-egg').value : '';
+    const url = new URL(window.location);
     
-    const cards = document.querySelectorAll('.eggrecord-card');
-    let visibleCount = 0;
-    
-    cards.forEach(card => {
-        // Match by egg ID (primary filter) - use data-egg-id-relation for the actual egg_id foreign key
-        const eggIdRelation = card.dataset.eggIdRelation || '';
-        const matchesEgg = !eggFilter || eggIdRelation === eggFilter;
-        
-        if (matchesEgg) {
-            card.style.display = 'block';
-            visibleCount++;
-        } else {
-            card.style.display = 'none';
-        }
-    });
-    
-    // Update filter count
-    const filterCountDiv = document.getElementById('filter-count');
     if (eggFilter) {
-        filterCountDiv.textContent = `Showing ${visibleCount} of ${cards.length} eggrecords`;
+        url.searchParams.set('egg', eggFilter);
     } else {
-        filterCountDiv.textContent = 'Showing all eggrecords';
+        url.searchParams.delete('egg');
     }
+    
+    window.location.href = url.toString();
+}
+
+// Client-side filter for legacy compatibility (fallback)
+function applyFilter() {
+    applyServerFilter();  // Use server-side filtering
 }
 
 function clearFilter() {
-    if (document.getElementById('filter-egg')) {
-        document.getElementById('filter-egg').value = '';
-    }
-    applyFilter();
+    const url = new URL(window.location);
+    url.searchParams.delete('egg');
+    window.location.href = url.toString();
 }
 </script>
 

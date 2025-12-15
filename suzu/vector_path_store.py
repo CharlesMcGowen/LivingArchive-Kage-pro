@@ -453,7 +453,14 @@ class VectorPathStore:
                 
                 # Generate metadata
                 # #region agent log
-                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"vector_path_store.py:405","message":"Before metadata creation","data":{"final_cms":final_cms,"final_weight":final_weight,"weight_type":type(final_weight).__name__,"weight_valid":isinstance(final_weight,(int,float)) and 0.0<=final_weight<=1.0},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+                # Safe comparison for logging - ensure final_weight is valid before comparing
+                weight_valid = False
+                if isinstance(final_weight, (int, float)) and not (isinstance(final_weight, float) and __import__('math').isnan(final_weight)):
+                    try:
+                        weight_valid = 0.0 <= final_weight <= 1.0
+                    except (TypeError, ValueError):
+                        weight_valid = False
+                import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"vector_path_store.py:405","message":"Before metadata creation","data":{"final_cms":final_cms,"final_weight":final_weight,"weight_type":type(final_weight).__name__,"weight_valid":weight_valid},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
                 # #endregion
                 metadata = {
                     'path': path,

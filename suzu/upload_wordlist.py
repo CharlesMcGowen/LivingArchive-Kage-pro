@@ -352,31 +352,64 @@ def calculate_weight_for_single_path(
     # #region agent log
     import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"upload_wordlist.py:330","message":"calculate_weight_for_single_path entry","data":{"path":path,"detected_cms":detected_cms,"confidence":confidence,"confidence_type":type(confidence).__name__,"filename_cms_hint":filename_cms_hint},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
     # #endregion
+    
+    # Safety check: ensure confidence is a valid number
+    if confidence is None or not isinstance(confidence, (int, float)):
+        confidence = 0.0
+    confidence = float(confidence)
+    # Clamp confidence to valid range
+    confidence = max(0.0, min(1.0, confidence))
+    
     base_weight = 0.4
     weight = base_weight
     
     # --- 1. CMS Confidence Boost ---
-    if detected_cms and confidence > 0:
+    if detected_cms and confidence is not None and confidence > 0:
         # Scale confidence to boost (max +0.4)
-        cms_boost = confidence * 0.4
-        weight += cms_boost
+        # Ensure confidence is valid before multiplication
+        if isinstance(confidence, (int, float)) and not (isinstance(confidence, float) and __import__('math').isnan(confidence)):
+            cms_boost = float(confidence) * 0.4
+            weight += cms_boost
     
     # --- 2. High-Value Pattern Boost ---
     high_value_patterns = ['admin', 'config', '.env', 'backup', 'database', 'api', 'login', 'license', '.git', '.svn', 'wp-config', 'settings', 'credentials']
-    path_lower = path.lower()
+    path_lower = path.lower() if path else ''
     
     # Check if path contains high-value patterns
     high_value_found = any(pattern in path_lower for pattern in high_value_patterns)
     if high_value_found:
-        weight = min(weight + 0.1, 0.85)
+        # Ensure weight is valid before min() operation
+        if weight is not None and isinstance(weight, (int, float)):
+            weight = min(float(weight) + 0.1, 0.85)
+        else:
+            weight = base_weight + 0.1
     
     # --- 3. Filename Hint Boost ---
     if filename_cms_hint and detected_cms and detected_cms == filename_cms_hint:
         # Small boost if detected CMS matches filename hint
-        weight = min(weight + 0.05, 0.9)
+        # Ensure weight is valid before min() operation
+        if weight is not None and isinstance(weight, (int, float)):
+            weight = min(float(weight) + 0.05, 0.9)
+        else:
+            weight = base_weight + 0.05
     
     # --- 4. Final Bounding ---
-    final_weight = max(0.3, min(weight, 0.9))
+    # Ensure weight is a valid number before comparison
+    if weight is None or not isinstance(weight, (int, float)):
+        weight = base_weight
+    try:
+        weight = float(weight)
+        # Check for NaN
+        if isinstance(weight, float) and __import__('math').isnan(weight):
+            weight = base_weight
+    except (ValueError, TypeError):
+        weight = base_weight
+    
+    # Final bounding with safety checks
+    try:
+        final_weight = max(0.3, min(weight, 0.9))
+    except (TypeError, ValueError):
+        final_weight = base_weight
     
     # #region agent log
     import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"upload_wordlist.py:365","message":"calculate_weight_for_single_path exit","data":{"final_weight":final_weight,"weight":weight,"base_weight":base_weight},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()

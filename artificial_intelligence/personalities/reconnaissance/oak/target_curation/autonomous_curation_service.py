@@ -14,16 +14,47 @@ Migrated to Kage-pro: 2024
 import logging
 import threading
 import time
-import psutil
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.core.cache import cache
 
-# Note: BaseBugsyService is still in main codebase (Bugsy services not migrated)
-from artificial_intelligence.personalities.security.bugsy.base_services import BaseBugsyService
-
 logger = logging.getLogger(__name__)
+
+# Try to import psutil, but make it optional
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logger.warning("psutil not available - system resource monitoring will be disabled for Oak autonomous curation")
+
+# Note: BaseBugsyService is still in main codebase (Bugsy services not migrated)
+try:
+    from artificial_intelligence.personalities.security.bugsy.base_services import BaseBugsyService
+except ImportError:
+    # Fallback if BaseBugsyService is not available
+    logger.warning("BaseBugsyService not available - using minimal implementation")
+    class BaseBugsyService:
+        def __init__(self, name, version):
+            self.name = name
+            self.version = version
+            self.is_running = False
+            self.start_time = None
+            self.end_time = None
+            self.logger = logging.getLogger(__name__)
+        
+        def log_service_event(self, event_type, data):
+            self.logger.info(f"Service event: {event_type} - {data}")
+        
+        def get_service_status(self):
+            return {
+                'name': self.name,
+                'version': self.version,
+                'is_running': self.is_running,
+                'start_time': self.start_time.isoformat() if self.start_time else None,
+                'end_time': self.end_time.isoformat() if self.end_time else None
+            }
 
 
 class OakAutonomousCurationService(BaseBugsyService):
@@ -44,7 +75,7 @@ class OakAutonomousCurationService(BaseBugsyService):
         # Monitoring configuration
         self.monitor_interval = 300  # 5 minutes
         self.idle_threshold = 600  # 10 minutes of inactivity
-        self.batch_size = 50
+        self.batch_size = 10  # Reduced from 50 to prevent connection exhaustion
         
         # State tracking
         self.last_activity_time = None
@@ -55,13 +86,19 @@ class OakAutonomousCurationService(BaseBugsyService):
         # being used as a context manager.
         self._curation_lock = threading.Lock()
         
+        # Connection exhaustion tracking
+        self.connection_errors = 0
+        self.last_connection_error_time = None
+        self.backoff_multiplier = 1  # Multiplier for monitor_interval when connections fail
+        
         # Statistics
         self.stats = {
             'cycles_completed': 0,
             'idle_detections': 0,
             'curation_batches': 0,
             'targets_processed': 0,
-            'errors': 0
+            'errors': 0,
+            'connection_errors': 0
         }
         
         self.logger.info("🌳 Oak Autonomous Curation Service initialized")
@@ -146,8 +183,22 @@ class OakAutonomousCurationService(BaseBugsyService):
                     cycle_end = datetime.now()
                 cycle_duration = (cycle_end - cycle_start).total_seconds()
                 
+                # Adjust wait time based on connection errors (exponential backoff)
+                wait_time = self.monitor_interval * self.backoff_multiplier
+                
+                # Reset backoff if no recent connection errors (after 30 minutes)
+                if self.last_connection_error_time:
+                    time_since_error = time.time() - self.last_connection_error_time
+                    if time_since_error > 1800:  # 30 minutes
+                        self.connection_errors = 0
+                        self.backoff_multiplier = 1
+                        self.last_connection_error_time = None
+                    elif self.connection_errors > 5:
+                        # Increase backoff if still having issues
+                        self.backoff_multiplier = min(self.backoff_multiplier * 1.5, 4)  # Max 4x delay
+                
                 # Wait for next cycle
-                time.sleep(self.monitor_interval)
+                time.sleep(wait_time)
                 
         except Exception as e:
             self.logger.error(f"Error in monitoring loop: {e}")
@@ -203,13 +254,18 @@ class OakAutonomousCurationService(BaseBugsyService):
             if self.is_curating:
                 return False
             
-            # Check system resources
-            cpu_percent = psutil.cpu_percent(interval=None)
-            memory_percent = psutil.virtual_memory().percent
-            
-            if cpu_percent > 50 or memory_percent > 70:
-                self.logger.debug(f"System resources busy: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%")
-                return False
+            # Check system resources (if psutil is available)
+            if PSUTIL_AVAILABLE:
+                try:
+                    cpu_percent = psutil.cpu_percent(interval=None)
+                    memory_percent = psutil.virtual_memory().percent
+                    
+                    if cpu_percent > 50 or memory_percent > 70:
+                        self.logger.debug(f"System resources busy: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%")
+                        return False
+                except Exception as e:
+                    self.logger.debug(f"Error checking system resources: {e}")
+                    # Continue without resource check if psutil fails
             
             # Check cache for recent activity (wrap in try/except to avoid database access during init)
             try:
@@ -274,117 +330,57 @@ class OakAutonomousCurationService(BaseBugsyService):
                 self.logger.error(f"Failed to import curation service: {e}")
                 raise
             
-            # Import Django ORM models
+            # Batch fetch all EggRecords in a single query
+            targets = self._batch_fetch_egg_records(target_ids)
+            
+            if not targets:
+                self.logger.warning("No valid targets found after batch fetch")
+                return
+            
+            self.logger.info(f"Fetched {len(targets)} EggRecords in batch")
+            
+            # Use batch queue method to reduce connection overhead
             try:
-                from artificial_intelligence.customer_eggs_eggrecords_general_models.models import EggRecord
-                use_django_orm = True
-            except ImportError:
-                try:
-                    from customer_eggs_eggrecords_general_models.models import EggRecord
-                    use_django_orm = True
-                except ImportError:
-                    use_django_orm = False
-                    self.logger.warning("Django ORM EggRecord not available, using raw SQL fallback")
+                batch_result = curation_service.queue_subdomains_batch(
+                    egg_records=targets,
+                    discovery_source='autonomous_curation',
+                    priority='normal'
+                )
+                
+                processed = batch_result.get('queued', 0)
+                failed = batch_result.get('failed', 0)
+                
+                if batch_result.get('success'):
+                    self.stats['targets_processed'] += processed
+                    self.logger.info(f"✅ Batch queued {processed}/{len(targets)} targets successfully")
+                    
+                    if failed > 0:
+                        self.stats['errors'] += failed
+                        self.logger.warning(f"Failed to queue {failed} targets in batch")
+                        if batch_result.get('errors'):
+                            for error in batch_result['errors'][:5]:  # Log first 5 errors
+                                self.logger.debug(f"Batch queue error: {error}")
+                else:
+                    self.stats['errors'] += failed
+                    self.logger.error(f"Batch queue failed: {batch_result.get('errors', [])[:3]}")
+                    
+            except Exception as batch_error:
+                error_str = str(batch_error)
+                # Check for connection-related errors
+                if 'too many clients' in error_str.lower() or 'connection' in error_str.lower():
+                    self.connection_errors += 1
+                    self.stats['connection_errors'] += 1
+                    self.last_connection_error_time = time.time()
+                    self.logger.warning(f"Connection error during batch queue, stopping batch early")
+                    return
+                
+                # Fallback to individual processing if batch fails
+                self.logger.warning(f"Batch queue failed ({error_str[:100]}), falling back to individual processing")
+                processed = self._process_targets_individually(targets, curation_service)
             
-            # Process targets
-            processed = 0
-            for target_id in target_ids:
-                try:
-                    # Check if we should stop
-                    if not self.is_curating and not self.is_running:
-                        self.logger.info("Curation stopped by user")
-                        break
-                    
-                    # Get EggRecord object using Django ORM (wrap in thread to avoid async context issues)
-                    target = None
-                    if use_django_orm:
-                        try:
-                            # Use raw SQL to avoid Django ORM async context issues
-                            from django.db import connections
-                            db = connections['eggrecords']
-                            with db.cursor() as cursor:
-                                cursor.execute("""
-                                    SELECT id, "subDomain", domainname, alive, "skipScan"
-                                    FROM customer_eggs_eggrecords_general_models_eggrecord
-                                    WHERE id = %s
-                                """, [target_id])
-                                row = cursor.fetchone()
-                                if row:
-                                    class SimpleEggRecord:
-                                        def __init__(self, id, subDomain, domainname, alive, skipScan):
-                                            self.id = id
-                                            self.subDomain = subDomain
-                                            self.domainname = domainname
-                                            self.alive = alive
-                                            self.skipScan = skipScan
-                                            # discovery_metadata column doesn't exist, skip
-                                            pass
-                                    
-                                    target = SimpleEggRecord(row[0], row[1], row[2], row[3], row[4])
-                        except Exception as e:
-                            self.logger.debug(f"Could not load EggRecord {target_id}: {e}")
-                            self.logger.warning(f"EggRecord {target_id} not found in database")
-                            continue
-                        except Exception as e:
-                            self.logger.warning(f"Django ORM query failed for {target_id}: {e}, trying raw SQL")
-                            target = None
-                    
-                    # Fallback: Use raw SQL to get record data and create a minimal object
-                    if target is None:
-                        try:
-                            from django.db import connections
-                            db_connection = connections['eggrecords']
-                            with db_connection.cursor() as cursor:
-                                cursor.execute("""
-                                    SELECT id, "subDomain", domainname, alive, "skipScan"
-                                    FROM customer_eggs_eggrecords_general_models_eggrecord
-                                    WHERE id = %s
-                                """, [target_id])
-                                row = cursor.fetchone()
-                                if row:
-                                    # Create a simple object with the needed attributes
-                                    class SimpleEggRecord:
-                                        def __init__(self, id, subDomain, domainname, alive, skipScan):
-                                            self.id = id
-                                            self.subDomain = subDomain
-                                            self.domainname = domainname
-                                            self.alive = alive
-                                            self.skipScan = skipScan
-                                            self.discovery_metadata = {}
-                                    
-                                    target = SimpleEggRecord(row[0], row[1], row[2], row[3], row[4])
-                                else:
-                                    self.logger.warning(f"EggRecord {target_id} not found in database")
-                                    continue
-                        except Exception as e:
-                            self.logger.warning(f"Failed to load EggRecord {target_id}: {e}, skipping")
-                            continue
-                    
-                    if target is None:
-                        continue
-                    
-                    # Queue for curation
-                    result = curation_service.queue_subdomain_for_curation(
-                        egg_record=target,
-                        discovery_source='manual_trigger',
-                        priority='normal'
-                    )
-                    
-                    if result['success']:
-                        processed += 1
-                        self.stats['targets_processed'] += 1
-                        self.logger.debug(f"Queued {target.subDomain or target.domainname} for curation")
-                    else:
-                        self.stats['errors'] += 1
-                        self.logger.warning(f"Failed to queue {target.subDomain or target.domainname}: {result.get('error', 'Unknown error')}")
-                        
-                except Exception as e:
-                    self.stats['errors'] += 1
-                    self.logger.error(f"Error processing target {target_id}: {e}", exc_info=True)
+            self.logger.info(f"✅ Batch complete: {processed}/{len(targets)} targets processed")
             
-            self.logger.info(f"✅ Batch complete: {processed}/{len(target_ids)} processed")
-            
-            # Also curate nmap scans from Kaze, Kage, and Ryu
+            # Also curate nmap scans from Kaze, Kage, and Ryu (if enabled)
             try:
                 nmap_result = curation_service.curate_nmap_scans_for_reconnaissance(
                     scan_types=['kaze_port_scan', 'kage_port_scan', 'ryu_port_scan']
@@ -395,7 +391,7 @@ class OakAutonomousCurationService(BaseBugsyService):
             except Exception as e:
                 self.logger.debug(f"Nmap scan curation not available: {e}")
             
-            # Mark last curation time (use datetime to avoid database access)
+            # Mark last curation time
             from datetime import datetime
             try:
                 self.last_activity_time = timezone.now()
@@ -406,16 +402,116 @@ class OakAutonomousCurationService(BaseBugsyService):
             try:
                 cache.set('oak_last_autonomous_curation', cache_time, timeout=86400)
             except Exception:
-                # Cache may not be available during initialization
                 pass
             
         except Exception as e:
             self.logger.error(f"Error in curation batch: {e}", exc_info=True)
             self.stats['errors'] += 1
-            
+        
         finally:
             with self._curation_lock:
                 self.is_curating = False
+    
+    def _batch_fetch_egg_records(self, target_ids: List[str]) -> List:
+        """
+        Batch fetch EggRecords in a single database query.
+        
+        Args:
+            target_ids: List of UUID strings for EggRecords
+            
+        Returns:
+            List of SimpleEggRecord objects
+        """
+        if not target_ids:
+            return []
+        
+        targets = []
+        try:
+            from django.db import connections
+            
+            try:
+                db = connections['eggrecords']
+            except KeyError:
+                db = connections['default']
+            
+            with db.cursor() as cursor:
+                # Build batch query
+                placeholders = ','.join(['%s'] * len(target_ids))
+                cursor.execute(f"""
+                    SELECT id, "subDomain", domainname, alive, "skipScan"
+                    FROM customer_eggs_eggrecords_general_models_eggrecord
+                    WHERE id IN ({placeholders})
+                """, target_ids)
+                
+                # Create SimpleEggRecord objects
+                class SimpleEggRecord:
+                    def __init__(self, id, subDomain, domainname, alive, skipScan):
+                        self.id = id
+                        self.subDomain = subDomain
+                        self.domainname = domainname
+                        self.alive = alive
+                        self.skipScan = skipScan
+                        self.discovery_metadata = {}
+                
+                for row in cursor.fetchall():
+                    targets.append(SimpleEggRecord(row[0], row[1], row[2], row[3], row[4]))
+                
+        except Exception as e:
+            self.logger.error(f"Error in batch fetch: {e}", exc_info=True)
+        
+        return targets
+    
+    def _process_targets_individually(self, targets: List, curation_service) -> int:
+        """
+        Fallback method to process targets individually if batch processing fails.
+        
+        Args:
+            targets: List of EggRecord objects
+            curation_service: OakTargetCurationService instance
+            
+        Returns:
+            Number of successfully processed targets
+        """
+        processed = 0
+        max_consecutive_errors = 3
+        consecutive_errors = 0
+        
+        for target in targets:
+            try:
+                result = curation_service.queue_subdomain_for_curation(
+                    egg_record=target,
+                    discovery_source='autonomous_curation',
+                    priority='normal'
+                )
+                
+                if result['success']:
+                    processed += 1
+                    consecutive_errors = 0  # Reset on success
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    if 'too many clients' in str(error_msg).lower() or 'connection' in str(error_msg).lower():
+                        self.connection_errors += 1
+                        self.stats['connection_errors'] += 1
+                        self.last_connection_error_time = time.time()
+                        consecutive_errors += 1
+                        if consecutive_errors >= max_consecutive_errors:
+                            self.logger.warning(f"Too many consecutive connection errors, stopping early")
+                            break
+                    self.stats['errors'] += 1
+                    
+            except Exception as e:
+                error_str = str(e)
+                if 'too many clients' in error_str.lower() or 'connection' in error_str.lower():
+                    self.connection_errors += 1
+                    self.stats['connection_errors'] += 1
+                    self.last_connection_error_time = time.time()
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        self.logger.warning(f"Too many consecutive connection errors, stopping early")
+                        break
+                self.stats['errors'] += 1
+        
+        return processed
     
     def _get_uncured_targets(self, batch_size: int = 50, egg_id: Optional[str] = None):
         """
@@ -526,6 +622,24 @@ class OakAutonomousCurationService(BaseBugsyService):
             # Cache may not be available during initialization
             pass
     
+    def _get_time_since_activity_seconds(self) -> Optional[float]:
+        """Get time since last activity in seconds, handling timezone-aware/naive datetime."""
+        if not self.last_activity_time:
+            return None
+        try:
+            now = timezone.now()
+            last = self.last_activity_time
+            # Handle timezone mismatch
+            if now.tzinfo and not last.tzinfo:
+                from datetime import datetime
+                last = datetime.now() - timedelta(seconds=self.idle_threshold + 1)
+            elif not now.tzinfo and last.tzinfo:
+                from datetime import datetime
+                now = datetime.now()
+            return (now - last).total_seconds()
+        except Exception:
+            return None
+    
     def get_autonomous_stats(self) -> Dict[str, Any]:
         """Get autonomous curation statistics."""
         return {
@@ -541,7 +655,7 @@ class OakAutonomousCurationService(BaseBugsyService):
                 'is_idle': self._is_idle(),
                 'is_curating': self.is_curating,
                 'last_activity': self.last_activity_time.isoformat() if self.last_activity_time else None,
-                'time_since_activity_seconds': (timezone.now() - self.last_activity_time).total_seconds() if self.last_activity_time else None
+                'time_since_activity_seconds': self._get_time_since_activity_seconds()
             }
         }
 

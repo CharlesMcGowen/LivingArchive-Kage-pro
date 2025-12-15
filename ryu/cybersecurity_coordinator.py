@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ryu's Cybersecurity Coordinator Service
-Coordinates all cybersecurity operations between Ryu's Pokémon team
+Coordinates all cybersecurity operations between Ryu's agent team
 """
 
 import logging
@@ -48,20 +48,20 @@ class SecurityTask:
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
     results: Dict[str, Any] = None
-    pokemon_team: List[str] = None
+    agent_team: List[str] = None
 
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
         if self.results is None:
             self.results = {}
-        if self.pokemon_team is None:
-            self.pokemon_team = []
+        if self.agent_team is None:
+            self.agent_team = []
 
 class RyuCybersecurityCoordinator:
     """
     Ryu's Cybersecurity Coordinator
-    Coordinates cybersecurity operations between all Pokémon team members
+    Coordinates cybersecurity operations between all agent team members
     """
     
     def __init__(self):
@@ -71,13 +71,13 @@ class RyuCybersecurityCoordinator:
         self.worker_threads = []
         self.running = False
         
-        # Initialize Pokémon team services
-        self.porygon_z = None  # Data Analyzer
-        self.metagross = None  # Defensive Monitor
-        self.gardevoir = None  # Threat Assessment AI
-        self.xatu = None       # Network Guardian
-        self.alakazam = None   # Vulnerability Scanner
-        self.sableye = None    # Decoy Defender
+        # Initialize agent team services
+        self.trident = None    # Data Analyzer (formerly Porygon-Z)
+        self.bastion = None    # Defensive Monitor (formerly Metagross)
+        self.guardian = None   # Threat Assessment AI (formerly Gardevoir)
+        self.vigil = None      # Network Guardian (formerly Xatu)
+        self.mindeye = None    # Vulnerability Scanner (formerly Alakazam)
+        self.phantom = None    # Decoy Defender (formerly Sableye)
         
         # Configuration
         self.max_concurrent_assessments = 3
@@ -253,135 +253,135 @@ class RyuCybersecurityCoordinator:
                 logger.error(f"Ryu's security worker thread error: {e}")
     
     def _execute_vulnerability_scan(self, task: SecurityTask):
-        """Execute vulnerability scan using Porygon-Z and Alakazam"""
+        """Execute vulnerability scan using Trident and MindEye"""
         logger.info(f"Executing vulnerability scan for task {task.task_id}")
         
         try:
-            # Import Porygon-Z Data Analyzer
-            from .vulnerability_scanner import PorygonZDataAnalyzer
-            if not self.porygon_z:
-                self.porygon_z = PorygonZDataAnalyzer()
+            # Import Trident Data Analyzer (formerly Porygon-Z)
+            from .vulnerability_scanner import TridentDataAnalyzer
+            if not self.trident:
+                self.trident = TridentDataAnalyzer()
             
             # Execute Signal Beam analysis
-            signal_beam_results = self.porygon_z.signal_beam_analysis(task.target_url)
+            signal_beam_results = self.trident.signal_beam_analysis(task.target_url)
             task.results['signal_beam_analysis'] = signal_beam_results
             
             # Execute Tri Attack analysis
-            tri_attack_results = self.porygon_z.tri_attack_analysis(task.target_url)
+            tri_attack_results = self.trident.tri_attack_analysis(task.target_url)
             task.results['tri_attack_analysis'] = tri_attack_results
             
-            # Add Porygon-Z to team
-            task.pokemon_team.append("Porygon-Z")
+            # Add Trident to team
+            task.agent_team.append("Trident")
             
-            # Import Alakazam Vulnerability Scanner
-            from .vulnerability_analyzer_service import AlakazamVulnerabilityScanner
-            if not self.alakazam:
-                self.alakazam = AlakazamVulnerabilityScanner()
+            # Import MindEye Vulnerability Scanner (formerly Alakazam)
+            from .vulnerability_analyzer_service import MindEyeVulnerabilityScanner
+            if not self.mindeye:
+                self.mindeye = MindEyeVulnerabilityScanner()
             
             # Execute Psyshock scan
-            psyshock_results = self.alakazam.psyshock_scan(task.target_url)
+            psyshock_results = self.mindeye.psyshock_scan(task.target_url)
             task.results['psyshock_scan'] = psyshock_results
             
             # Execute Confusion scan
-            confusion_results = self.alakazam.confusion_scan(task.target_url)
+            confusion_results = self.mindeye.confusion_scan(task.target_url)
             task.results['confusion_scan'] = confusion_results
             
-            # Add Alakazam to team
-            task.pokemon_team.append("Alakazam")
+            # Add MindEye to team
+            task.agent_team.append("MindEye")
             
         except Exception as e:
             logger.error(f"Vulnerability scan execution failed: {e}")
             raise
     
     def _execute_threat_assessment(self, task: SecurityTask):
-        """Execute threat assessment using Gardevoir"""
+        """Execute threat assessment using Guardian"""
         logger.info(f"Executing threat assessment for task {task.task_id}")
         
         try:
-            # Import Gardevoir Threat Assessment AI
-            from .threat_assessment_service import GardevoirThreatAssessmentAI
-            if not self.gardevoir:
-                self.gardevoir = GardevoirThreatAssessmentAI()
+            # Import Guardian Threat Assessment AI (formerly Gardevoir)
+            from .threat_assessment_service import GuardianThreatAssessmentAI
+            if not self.guardian:
+                self.guardian = GuardianThreatAssessmentAI()
             
             # Execute Psychic analysis
-            psychic_results = self.gardevoir.psychic_analysis(task.target_url)
+            psychic_results = self.guardian.psychic_analysis(task.target_url)
             task.results['psychic_analysis'] = psychic_results
             
             # Execute Future Sight prediction
-            future_sight_results = self.gardevoir.future_sight_prediction(task.target_url)
+            future_sight_results = self.guardian.future_sight_prediction(task.target_url)
             task.results['future_sight_prediction'] = future_sight_results
             
-            # Add Gardevoir to team
-            task.pokemon_team.append("Gardevoir")
+            # Add Guardian to team
+            task.agent_team.append("Guardian")
             
         except Exception as e:
             logger.error(f"Threat assessment execution failed: {e}")
             raise
     
     def _execute_network_analysis(self, task: SecurityTask):
-        """Execute network analysis using Xatu"""
+        """Execute network analysis using Vigil"""
         logger.info(f"Executing network analysis for task {task.task_id}")
         
         try:
-            # Import Xatu Network Guardian
-            from .network_guardian_service import XatuNetworkGuardian
-            if not self.xatu:
-                self.xatu = XatuNetworkGuardian()
+            # Import Vigil Network Guardian (formerly Xatu)
+            from .network_guardian_service import VigilNetworkGuardian
+            if not self.vigil:
+                self.vigil = VigilNetworkGuardian()
             
             # Execute Miracle Eye analysis
-            miracle_eye_results = self.xatu.miracle_eye_analysis(task.target_url)
+            miracle_eye_results = self.vigil.miracle_eye_analysis(task.target_url)
             task.results['miracle_eye_analysis'] = miracle_eye_results
             
             # Execute Psychic network analysis
-            psychic_network_results = self.xatu.psychic_network_analysis(task.target_url)
+            psychic_network_results = self.vigil.psychic_network_analysis(task.target_url)
             task.results['psychic_network_analysis'] = psychic_network_results
             
-            # Add Xatu to team
-            task.pokemon_team.append("Xatu")
+            # Add Vigil to team
+            task.agent_team.append("Vigil")
             
         except Exception as e:
             logger.error(f"Network analysis execution failed: {e}")
             raise
     
     def _execute_data_integrity_check(self, task: SecurityTask):
-        """Execute data integrity check using Metagross"""
+        """Execute data integrity check using Bastion"""
         logger.info(f"Executing data integrity check for task {task.task_id}")
         
         try:
-            # Import Metagross Defensive Monitor
-            from .defensive_monitor_service import MetagrossDefensiveMonitor
-            if not self.metagross:
-                self.metagross = MetagrossDefensiveMonitor()
+            # Import Bastion Defensive Monitor (formerly Metagross)
+            from .defensive_monitor_service import BastionDefensiveMonitor
+            if not self.bastion:
+                self.bastion = BastionDefensiveMonitor()
             
             # Execute Zen Headbutt analysis
-            zen_headbutt_results = self.metagross.zen_headbutt_analysis(task.target_url)
+            zen_headbutt_results = self.bastion.zen_headbutt_analysis(task.target_url)
             task.results['zen_headbutt_analysis'] = zen_headbutt_results
             
             # Execute Bullet Punch analysis
-            bullet_punch_results = self.metagross.bullet_punch_analysis(task.target_url)
+            bullet_punch_results = self.bastion.bullet_punch_analysis(task.target_url)
             task.results['bullet_punch_analysis'] = bullet_punch_results
             
-            # Add Metagross to team
-            task.pokemon_team.append("Metagross")
+            # Add Bastion to team
+            task.agent_team.append("Bastion")
             
         except Exception as e:
             logger.error(f"Data integrity check execution failed: {e}")
             raise
     
     def _execute_full_security_audit(self, task: SecurityTask):
-        """Execute full security audit using all Pokémon"""
+        """Execute full security audit using all agents"""
         logger.info(f"Executing full security audit for task {task.task_id}")
         
-        # Execute all assessment types (these will add Pokémon to team automatically)
-        self._execute_vulnerability_scan(task)  # Adds Porygon-Z and Alakazam
-        self._execute_threat_assessment(task)    # Adds Gardevoir
-        self._execute_network_analysis(task)    # Adds Xatu
-        self._execute_data_integrity_check(task) # Adds Metagross
+        # Execute all assessment types (these will add agents to team automatically)
+        self._execute_vulnerability_scan(task)  # Adds Trident and MindEye
+        self._execute_threat_assessment(task)    # Adds Guardian
+        self._execute_network_analysis(task)    # Adds Vigil
+        self._execute_data_integrity_check(task) # Adds Bastion
         
-        # Note: Sableye (Decoy Defender) is not yet implemented in full audit
-        # All other Pokémon are already added by the individual methods
+        # Note: Phantom (Decoy Defender) is not yet implemented in full audit
+        # All other agents are already added by the individual methods
         
-        logger.info(f"Full security audit completed for task {task.task_id} with Pokémon team: {task.pokemon_team}")
+        logger.info(f"Full security audit completed for task {task.task_id} with agent team: {task.agent_team}")
     
     def _has_critical_vulnerabilities(self, task: SecurityTask) -> bool:
         """Check if task has critical vulnerabilities"""

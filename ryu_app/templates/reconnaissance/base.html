@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,6 +34,12 @@
         .navbar h1 {
             color: #3b82f6;
             font-size: 1.5rem;
+        }
+        
+        .navbar-banner {
+            display: flex;
+            align-items: center;
+            height: 64px;
         }
         
         .navbar-links {
@@ -447,7 +454,13 @@
 </head>
 <body>
     <nav class="navbar">
-        <h1>🔍 Reconnaissance Team</h1>
+        <div class="navbar-banner">
+            <img src="{% static 'images/KRT.png' %}" 
+                 alt="Reconnaissance Team" 
+                 style="width: 64px; height: 64px; object-fit: contain; cursor: pointer;"
+                 onclick="window.location.href='/reconnaissance/'"
+                 onerror="this.style.display='none'; this.parentElement.innerHTML='<h1 style=&quot;color: #3b82f6; font-size: 1.5rem; margin: 0;&quot;>🔍 Reconnaissance Team</h1>';">
+        </div>
         <div class="navbar-links">
             <a href="/" title="Home">🏠 Home</a>
             <a href="/reconnaissance/general/" class="{% if personality == 'general' %}active{% endif %}">🔍 General</a>
@@ -479,6 +492,14 @@
             <a href="/reconnaissance/settings/" class="{% if personality == 'settings' %}active{% endif %}">⚙️ Settings</a>
         </div>
     </nav>
+    
+    <!-- Reconnaissance Team Banner -->
+    <div style="width: 100%; text-align: center; padding: 20px 0; background: rgba(15, 23, 42, 0.5); border-bottom: 1px solid #334155; display: flex; justify-content: center; align-items: center;">
+        <img src="{% static 'images/Kage-banner.png' %}" 
+             alt="Reconnaissance Team Banner" 
+             style="max-width: 100%; width: 750px; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);"
+             onerror="this.style.display='none';">
+    </div>
     
     <!-- Reconnaissance Team Control Panel -->
     <div class="recon-control-header">
@@ -1225,9 +1246,9 @@
         // Auto-refresh status every 5 seconds (only if checks are enabled)
         setInterval(() => {
             if (!statusChecksDisabled) {
-                personalities.forEach(personality => {
-                    checkPersonalityStatus(personality);
-                });
+            personalities.forEach(personality => {
+                checkPersonalityStatus(personality);
+            });
             }
         }, 5000);
     }
