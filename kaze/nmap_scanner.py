@@ -21,6 +21,7 @@ Version: 1.0.0 - High-Speed Parallel Threading
 """
 
 import socket
+import ipaddress
 import logging
 import time
 import json
@@ -723,7 +724,7 @@ class KazeNmapScanner:
                     ])
                     db.commit()  # Commit the transaction to persist Nmap entries
                     nmap_entries_created = 1
-                    
+                
                     # Update eggrecord with IP address(es) if found
                     try:
                         all_ips = []
