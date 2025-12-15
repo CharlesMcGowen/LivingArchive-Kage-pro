@@ -295,7 +295,7 @@ class RyuDaemon:
                                 logger.info(f"🔍 Scanning {target} ({eggrecord_id})")
                                 # Set write_to_db=False so we submit via API for consistent timestamping
                                 # Pass eggrecord data to avoid Django model lookup
-                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan', write_to_db=False, egg_record_data=eggrecord)
+                                result = self.scanner.scan_egg_record(eggrecord_id, scan_type='ryu_port_scan', write_to_db=False, eggrecord_data=eggrecord)
                                 
                                 if result.get('success'):
                                     self._submit_scan_result(eggrecord_id, target, result)
