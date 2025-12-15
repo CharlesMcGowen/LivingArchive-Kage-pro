@@ -20,11 +20,20 @@ class PostgresRouter:
         'WAFDetectionDetail',
         'IPTechniqueEffectiveness',
         'TechnologyFingerprint',
+        'CVEFingerprintMatch',
+        'NucleiTemplate',
         'KageScanResult',
+        # Surge models
+        'NucleiScan',
+        'NucleiVulnerability',
+        'SurgeKontrolDeployment',
     }
     
     def db_for_read(self, model, **hints):
         """Route read operations"""
+        # Route Surge app models to eggrecords
+        if model._meta.app_label == 'surge':
+            return 'eggrecords'
         if model.__name__ in self.customer_eggs_models:
             return 'customer_eggs'
         elif model.__name__ in self.eggrecords_models:
@@ -33,6 +42,9 @@ class PostgresRouter:
     
     def db_for_write(self, model, **hints):
         """Route write operations"""
+        # Route Surge app models to eggrecords
+        if model._meta.app_label == 'surge':
+            return 'eggrecords'
         if model.__name__ in self.customer_eggs_models:
             return 'customer_eggs'
         elif model.__name__ in self.eggrecords_models:
@@ -48,6 +60,9 @@ class PostgresRouter:
     
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         """Control which migrations run on which database"""
+        # Allow Surge app to migrate to eggrecords database
+        if app_label == 'surge' and db == 'eggrecords':
+            return True
         # PostgreSQL models are managed=False, so no migrations
         if db in ('customer_eggs', 'eggrecords'):
             return False

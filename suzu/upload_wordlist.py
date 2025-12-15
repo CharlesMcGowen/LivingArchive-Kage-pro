@@ -61,21 +61,37 @@ def load_paths_from_file(file_path: Path) -> List[str]:
         return []
 
 
-def infer_cms_from_filename(filename: str) -> str:
-    """Infer CMS name from wordlist filename"""
+def infer_cms_from_filename(filename: str) -> Optional[str]:
+    """Infer CMS name from wordlist filename - comprehensive mapping"""
     filename_lower = filename.lower()
     
+    # Comprehensive CMS mappings matching frontend patterns
     cms_mappings = {
-        'wordpress': ['wordpress', 'wp-'],
-        'drupal': ['drupal'],
-        'joomla': ['joomla'],
-        'magento': ['magento'],
-        'shopify': ['shopify'],
-        'sitecore': ['sitecore'],
-        'vbulletin': ['vbulletin', 'vb-'],
-        'aem': ['aem', 'adobe'],
+        'wordpress': ['wordpress', 'wp-', 'wp_', 'wp.', 'wpadmin', 'wp-content', 'wp-includes'],
+        'drupal': ['drupal', 'drupal-', 'drupal_'],
+        'joomla': ['joomla', 'joomla-', 'joomla_'],
+        'magento': ['magento', 'magento-', 'magento_'],
+        'shopify': ['shopify', 'shopify-', 'shopify_'],
+        'sitecore': ['sitecore', 'sitecore-', 'sitecore_'],
+        'vbulletin': ['vbulletin', 'vb-', 'vb_', 'vbulletin-'],
+        'aem': ['aem', 'adobe', 'adobe-'],
+        'django': ['django', 'django-', 'django_'],
+        'laravel': ['laravel', 'laravel-', 'laravel_'],
+        'aspnet': ['asp.net', 'aspnet', 'aspx', 'asp-', 'asp_'],
+        'coldfusion': ['coldfusion', 'cf-', 'cf_', 'coldfusion-'],
+        'box-cms': ['box-cms', 'boxcms', 'box-cms-', 'box_cms', 'caobox'],  # Added caobox
+        'sap': ['sap', 'sap-', 'sap_'],
+        'typo3': ['typo3', 'typo3-', 'typo3_'],
+        'prestashop': ['prestashop', 'prestashop-', 'prestashop_'],
+        'ghost': ['ghost', 'ghost-', 'ghost_'],
+        'moodle': ['moodle', 'moodle-', 'moodle_'],
+        'liferay': ['liferay', 'liferay-', 'liferay_'],
+        'kentico': ['kentico', 'kentico-', 'kentico_'],
+        'tikiwiki': ['tikiwiki', 'tiki-wiki', 'tiki_wiki', 'tiki-'],
+        'blogger': ['blogger', 'blogger-', 'blogger_'],
     }
     
+    # Check filename for CMS patterns
     for cms_name, keywords in cms_mappings.items():
         if any(keyword in filename_lower for keyword in keywords):
             return cms_name

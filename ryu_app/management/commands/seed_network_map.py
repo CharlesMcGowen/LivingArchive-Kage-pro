@@ -51,7 +51,8 @@ class Command(BaseCommand):
                 'technologies': ['RouterOS', 'MikroTik'],
                 'ports': [80, 443, 22, 8080],
                 'services': ['http', 'https', 'ssh', 'http-proxy'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'infrastructure-core'
             },
             {
                 'ip': '192.168.1.10',
@@ -60,7 +61,8 @@ class Command(BaseCommand):
                 'technologies': ['Apache', 'PHP', 'MySQL', 'WordPress'],
                 'ports': [80, 443, 3306, 22],
                 'services': ['http', 'https', 'mysql', 'ssh'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.20',
@@ -69,7 +71,8 @@ class Command(BaseCommand):
                 'technologies': ['Samba', 'NFS', 'FTP'],
                 'ports': [21, 22, 139, 445, 2049],
                 'services': ['ftp', 'ssh', 'netbios-ssn', 'microsoft-ds', 'nfs'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.30',
@@ -78,7 +81,8 @@ class Command(BaseCommand):
                 'technologies': ['PostgreSQL', 'Redis', 'MongoDB'],
                 'ports': [5432, 6379, 27017, 22],
                 'services': ['postgresql', 'redis', 'mongodb', 'ssh'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.40',
@@ -87,7 +91,8 @@ class Command(BaseCommand):
                 'technologies': ['Node.js', 'Docker', 'Nginx'],
                 'ports': [80, 443, 3000, 8080, 22],
                 'services': ['http', 'https', 'http-alt', 'http-proxy', 'ssh'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.50',
@@ -96,7 +101,8 @@ class Command(BaseCommand):
                 'technologies': ['Grafana', 'Prometheus', 'InfluxDB'],
                 'ports': [3000, 9090, 8086, 22],
                 'services': ['http-alt', 'prometheus', 'influxdb', 'ssh'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'infrastructure-monitoring'
             },
             {
                 'ip': '192.168.1.60',
@@ -105,7 +111,8 @@ class Command(BaseCommand):
                 'technologies': ['Bacula', 'rsync'],
                 'ports': [9101, 9102],
                 'services': ['bacula-fd', 'bacula-sd'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'infrastructure-backup'
             },
             {
                 'ip': '192.168.1.70',
@@ -114,7 +121,8 @@ class Command(BaseCommand):
                 'technologies': ['Linux', 'Docker'],
                 'ports': [22, 2376],
                 'services': ['ssh', 'docker'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'development-env'
             },
             {
                 'ip': '192.168.1.80',
@@ -123,7 +131,8 @@ class Command(BaseCommand):
                 'technologies': ['Jenkins', 'GitLab'],
                 'ports': [8080, 443],
                 'services': ['http-proxy', 'https'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'development-env'
             },
             {
                 'ip': '192.168.1.90',
@@ -132,7 +141,8 @@ class Command(BaseCommand):
                 'technologies': ['Postfix', 'Dovecot'],
                 'ports': [25, 143, 993, 587],
                 'services': ['smtp', 'imap', 'imaps', 'submission'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'infrastructure-core'
             },
             {
                 'ip': '192.168.1.100',
@@ -141,7 +151,8 @@ class Command(BaseCommand):
                 'technologies': ['HP Printer', 'CUPS'],
                 'ports': [80, 443, 631, 9100],
                 'services': ['http', 'https', 'ipp', 'jetdirect'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'office-infrastructure'
             },
             {
                 'ip': '192.168.1.110',
@@ -150,7 +161,8 @@ class Command(BaseCommand):
                 'technologies': ['IoT Hub'],
                 'ports': [1883],
                 'services': ['mqtt'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'iot-project'
             },
             {
                 'ip': '192.168.1.120',
@@ -159,7 +171,8 @@ class Command(BaseCommand):
                 'technologies': ['OpenVPN', 'WireGuard'],
                 'ports': [1194, 51820],
                 'services': ['openvpn', 'wireguard'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'infrastructure-core'
             },
             {
                 'ip': '192.168.1.130',
@@ -168,7 +181,8 @@ class Command(BaseCommand):
                 'technologies': ['BIND', 'DNS'],
                 'ports': [53],
                 'services': ['domain'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'infrastructure-core'
             },
             {
                 'ip': '192.168.1.150',
@@ -177,7 +191,8 @@ class Command(BaseCommand):
                 'technologies': ['Synology', 'SMB', 'AFP'],
                 'ports': [80, 443, 5000, 5001, 139, 445],
                 'services': ['http', 'https', 'http-alt', 'https-alt', 'netbios-ssn', 'microsoft-ds'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'infrastructure-backup'
             },
             {
                 'ip': '192.168.1.160',
@@ -186,7 +201,8 @@ class Command(BaseCommand):
                 'technologies': ['Plex', 'Jellyfin'],
                 'ports': [32400, 8096],
                 'services': ['plex', 'jellyfin'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'media-services'
             },
             {
                 'ip': '192.168.1.170',
@@ -195,7 +211,8 @@ class Command(BaseCommand):
                 'technologies': ['IP Camera', 'RTSP'],
                 'ports': [80, 554],
                 'services': ['http', 'rtsp'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'security-surveillance'
             },
             {
                 'ip': '192.168.1.180',
@@ -204,7 +221,8 @@ class Command(BaseCommand):
                 'technologies': ['Managed Switch', 'SNMP'],
                 'ports': [23, 161],
                 'services': ['telnet', 'snmp'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'infrastructure-core'
             },
             {
                 'ip': '192.168.1.200',
@@ -213,7 +231,8 @@ class Command(BaseCommand):
                 'technologies': ['IP Camera', 'RTSP', 'ONVIF'],
                 'ports': [80, 554, 8554],
                 'services': ['http', 'rtsp', 'rtsp-alt'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'security-surveillance'
             },
             {
                 'ip': '192.168.1.210',
@@ -222,7 +241,8 @@ class Command(BaseCommand):
                 'technologies': ['HAProxy', 'Nginx'],
                 'ports': [80, 443, 8404],
                 'services': ['http', 'https', 'haproxy'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.220',
@@ -231,7 +251,8 @@ class Command(BaseCommand):
                 'technologies': ['Redis', 'Memcached'],
                 'ports': [6379, 11211],
                 'services': ['redis', 'memcache'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.230',
@@ -240,7 +261,8 @@ class Command(BaseCommand):
                 'technologies': ['Backup Storage'],
                 'ports': [873],
                 'services': ['rsync'],
-                'scanned': False  # Unscanned for demo
+                'scanned': False,  # Unscanned for demo
+                'projectegg': 'infrastructure-backup'
             },
             {
                 'ip': '192.168.1.240',
@@ -249,7 +271,8 @@ class Command(BaseCommand):
                 'technologies': ['Kong', 'API Gateway'],
                 'ports': [8000, 8443],
                 'services': ['http-alt', 'https-alt'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'web-app-production'
             },
             {
                 'ip': '192.168.1.254',
@@ -258,7 +281,8 @@ class Command(BaseCommand):
                 'technologies': ['Cisco Switch', 'SNMP'],
                 'ports': [23, 80, 161],
                 'services': ['telnet', 'http', 'snmp'],
-                'scanned': True
+                'scanned': True,
+                'projectegg': 'infrastructure-core'
             }
         ]
         
@@ -307,7 +331,7 @@ class Command(BaseCommand):
                     # Create eggrecord
                     eggrecord_id = str(uuid.uuid4())
                     eggname = f"sample-{host['hostname']}"
-                    projectegg = "sample-network"
+                    projectegg = host.get('projectegg', 'sample-network')
                     
                     # Generate MD5 hash
                     import hashlib
@@ -388,39 +412,39 @@ class Command(BaseCommand):
                     
                     # Create nmap scan for each open port (only if scanned is True)
                     if host.get('scanned', True):  # Default to True for backward compatibility
-                        for port, service in zip(host['ports'], host['services']):
-                            nmap_id = str(uuid.uuid4())
-                            open_ports_json = json.dumps([{
-                                'port': port,
-                                'protocol': 'tcp',
-                                'service': service,
-                                'state': 'open'
-                            }])
-                            
-                            cursor.execute("""
-                                INSERT INTO customer_eggs_eggrecords_general_models_nmap
-                                (id, record_id_id, target, scan_type, scan_stage, scan_status,
-                                 port, service_name, open_ports, scan_command, name, hostname,
-                                 date, created_at, updated_at, md5)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """, [
-                                nmap_id,
-                                eggrecord_id,
-                                host['ip'],
-                                'kage_port_scan',
-                                'completed',
-                                'completed',
-                                port,
-                                service,
-                                open_ports_json,
-                                f"nmap -p {port} {host['ip']}",
-                                host['hostname'],
-                                host['ip'],
-                                timezone.now(),
-                                timezone.now(),
-                                timezone.now(),
-                                str(uuid.uuid4())[:32]  # MD5 hash
-                            ])
+                    for port, service in zip(host['ports'], host['services']):
+                        nmap_id = str(uuid.uuid4())
+                        open_ports_json = json.dumps([{
+                            'port': port,
+                            'protocol': 'tcp',
+                            'service': service,
+                            'state': 'open'
+                        }])
+                        
+                        cursor.execute("""
+                            INSERT INTO customer_eggs_eggrecords_general_models_nmap
+                            (id, record_id_id, target, scan_type, scan_stage, scan_status,
+                             port, service_name, open_ports, scan_command, name, hostname,
+                             date, created_at, updated_at, md5)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, [
+                            nmap_id,
+                            eggrecord_id,
+                            host['ip'],
+                            'kage_port_scan',
+                            'completed',
+                            'completed',
+                            port,
+                            service,
+                            open_ports_json,
+                            f"nmap -p {port} {host['ip']}",
+                            host['hostname'],
+                            host['ip'],
+                            timezone.now(),
+                            timezone.now(),
+                            timezone.now(),
+                            str(uuid.uuid4())[:32]  # MD5 hash
+                        ])
                         self.stdout.write(f"  ✅ Created {host['hostname']} ({host['ip']}) with {len(host['ports'])} services (scanned)")
                     else:
                         self.stdout.write(f"  ✅ Created {host['hostname']} ({host['ip']}) with {len(host['ports'])} services (unscanned)")

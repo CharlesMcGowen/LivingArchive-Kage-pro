@@ -214,90 +214,74 @@ def api_scanner_status(request):
 def api_findings(request):
     """API endpoint to get recent vulnerability findings"""
     try:
-        from django.db import connections
-        import json
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import NucleiVulnerability, ScanSeverity
         
         # Get query parameters
         limit = int(request.GET.get('limit', 50))
         severity = request.GET.get('severity', None)
         days = int(request.GET.get('days', 7))
         
-        # Use eggrecords database
-        conn = connections['eggrecords']
+        # Calculate cutoff date
+        cutoff_date = timezone.now() - timedelta(days=days)
         
-        with conn.cursor() as cursor:
-            # Build query - use correct table names (plural)
-            where_clauses = []
-            params = []
+        # Build queryset using Django ORM
+        # Database router automatically routes surge models to 'eggrecords'
+        queryset = NucleiVulnerability.objects.select_related('scan').filter(
+            discovered_at__gte=cutoff_date
+        )
+        
+        # Filter by severity if provided
+        if severity:
+            severity_lower = severity.lower()
+            # Validate severity value
+            if severity_lower in [choice[0] for choice in ScanSeverity.choices]:
+                queryset = queryset.filter(severity=severity_lower)
+        
+        # Get results ordered by discovery time
+        vulnerabilities = queryset.order_by('-discovered_at')[:limit]
+        
+        # Convert to dict format for API response
+        findings = []
+        for vuln in vulnerabilities:
+            # Use discovered_at as created_at for consistency
+            created_at = vuln.discovered_at
+            if not created_at and vuln.scan:
+                created_at = vuln.scan.started_at or vuln.scan.completed_at
             
-            # Use discovered_at from vulnerability or scan's started_at for time filtering
-            # Build INTERVAL directly in SQL (not parameterized)
-            where_clauses.append("COALESCE(v.discovered_at, s.started_at, s.completed_at) > NOW() - INTERVAL '{} days'".format(days))
-            
-            if severity:
-                where_clauses.append("v.severity::text = %s")
-                params.append(severity.lower())
-            
-            where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
-            
-            # Build query - use string concatenation to avoid % formatting conflicts
-            query = """
-                SELECT 
-                    v.id,
-                    v.scan_id,
-                    v.template_id,
-                    v.template_name,
-                    v.vulnerability_name,
-                    v.severity::text,
-                    v.cve_id,
-                    v.cwe_id,
-                    v.cvss_score,
-                    v.matched_at,
-                    v.description,
-                    COALESCE(v.discovered_at, s.started_at, s.completed_at) as created_at,
-                    s.target,
-                    s.scan_type
-                FROM nuclei_vulnerabilities v
-                LEFT JOIN nuclei_scans s ON s.id = v.scan_id
-                WHERE """ + where_clause + """
-                ORDER BY COALESCE(v.discovered_at, s.started_at, s.completed_at) DESC
-                LIMIT """ + str(limit)
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            findings = []
-            for row in rows:
-                findings.append({
-                    'id': str(row[0]) if row[0] else None,
-                    'scan_id': str(row[1]) if row[1] else None,
-                    'template_id': row[2],
-                    'template_name': row[3],
-                    'vulnerability_name': row[4],
-                    'severity': row[5],
-                    'cve_id': row[6],
-                    'cwe_id': row[7],
-                    'cvss_score': float(row[8]) if row[8] else None,
-                    'matched_at': row[9],
-                    'description': row[10],
-                    'created_at': row[11].isoformat() if row[11] else None,
-                    'target': row[12],
-                    'scan_type': row[13]
-                })
-            
-            return JsonResponse({
-                'success': True,
-                'count': len(findings),
-                'findings': findings
+            findings.append({
+                'id': str(vuln.id),
+                'scan_id': str(vuln.scan_id) if vuln.scan_id else None,
+                'template_id': vuln.template_id,
+                'template_name': vuln.template_name,
+                'vulnerability_name': vuln.vulnerability_name,
+                'severity': vuln.severity,
+                'cve_id': vuln.cve_id,
+                'cwe_id': vuln.cwe_id,
+                'cvss_score': float(vuln.cvss_score) if vuln.cvss_score else None,
+                'matched_at': vuln.matched_at,
+                'description': vuln.description,
+                'created_at': created_at.isoformat() if created_at else None,
+                'target': vuln.scan.target if vuln.scan else None,
+                'scan_type': vuln.scan.scan_type if vuln.scan else None
             })
+        
+        return JsonResponse({
+            'success': True,
+            'count': len(findings),
+            'findings': findings
+        })
     
     except Exception as e:
         logger.error(f"Error getting findings: {e}", exc_info=True)
+        # Return a graceful error response instead of 500
         return JsonResponse({
             'success': False,
-            'error': str(e)
-        }, status=500)
+            'error': str(e),
+            'count': 0,
+            'findings': []
+        })
 
 @csrf_exempt
 @require_http_methods(["GET"])

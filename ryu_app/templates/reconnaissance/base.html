@@ -662,7 +662,7 @@
             // Handle specific network errors gracefully
             if (error.name === 'NetworkError' || error.message.includes('SOCKET_NOT_CONNECTED') || error.message.includes('NetworkError')) {
                 // Temporary network issue - don't disable checks, just log silently
-                logger.debug(`Network error checking ${personality} status: ${error.message}`);
+                console.debug(`Network error checking ${personality} status: ${error.message}`);
                 // Don't increment error count for network issues - they're transient
                 connectionErrorCount = Math.max(0, connectionErrorCount - 1);
                 return; // Skip this check, will retry next interval

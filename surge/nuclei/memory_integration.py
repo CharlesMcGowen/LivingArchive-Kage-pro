@@ -18,16 +18,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from sqlalchemy import or_
-
-# Try to import database components (optional EgoLlama dependency)
+# Database components are optional - use Django ORM if available
 try:
-    from database import SessionLocal
-    from vulnerability_models import NucleiTemplate
+    from ...models import NucleiVulnerability
+    _django_orm_available = True
 except ImportError:
-    # Fallback for standalone mode
-    SessionLocal = None
-    NucleiTemplate = None
+    _django_orm_available = False
+    NucleiVulnerability = None
 
 logger = logging.getLogger(__name__)
 

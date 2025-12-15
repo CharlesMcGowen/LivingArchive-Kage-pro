@@ -34,9 +34,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'ryu_app',
     'surge',  # Surge Nuclei Scanner (integrated)
+    'artificial_intelligence.customer_eggs_eggrecords_general_models',  # Core models (EggRecord, Nmap, etc.)
     # Add Oak and reconnaissance apps if available
     # 'artificial_intelligence.personalities.coordination.oak',  # Oak target curation
-    # 'artificial_intelligence.personalities.reconnaissance',  # Nmap agents (Kage, Kaze, etc.)
+    'artificial_intelligence.personalities.reconnaissance',  # Nmap agents (Kage, Kaze, etc.) - Oak template correlation
 ]
 
 MIDDLEWARE = [
@@ -184,6 +185,13 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# File upload settings - allow large wordlist files
+# Remove limits to allow files of any size
+DATA_UPLOAD_MAX_MEMORY_SIZE = None  # No limit - stream to disk for large files
+FILE_UPLOAD_MAX_MEMORY_SIZE = None  # No limit - stream to disk for large files
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None  # No limit on form fields
+DATA_UPLOAD_MAX_NUMBER_FILES = None  # No limit on number of files
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

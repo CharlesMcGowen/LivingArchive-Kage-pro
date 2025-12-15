@@ -143,6 +143,54 @@
         flex: 1;
         max-width: 150px;
     }
+    /* Node list styling */
+    #node-list-container {
+        scrollbar-width: thin;
+        scrollbar-color: #334155 #1e293b;
+    }
+    #node-list-container::-webkit-scrollbar {
+        width: 6px;
+    }
+    #node-list-container::-webkit-scrollbar-track {
+        background: #1e293b;
+        border-radius: 3px;
+    }
+    #node-list-container::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 3px;
+    }
+    #node-list-container::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+    }
+    .node-list-item {
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid #334155;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+        color: #e2e8f0;
+    }
+    .node-list-item:hover {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: #3b82f6;
+    }
+    .node-list-item.selected {
+        background: rgba(59, 130, 246, 0.3);
+        border-color: #3b82f6;
+        border-width: 2px;
+        font-weight: 600;
+    }
+    .node-list-item .node-type {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+    }
+    .node-list-item .node-label {
+        color: #e2e8f0;
+    }
 {% endblock %}
 
 {% block content %}
@@ -269,8 +317,8 @@
                 </div>
                 <div class="control-item">
                     <label>Line Width:</label>
-                    <input type="range" id="edge-width" min="1" max="10" value="2" style="width: 120px;">
-                    <span id="edge-width-value" style="color: #94a3b8; margin-left: 10px;">2px</span>
+                    <input type="range" id="edge-width" min="0.5" max="10" step="0.1" value="1" style="width: 120px;">
+                    <span id="edge-width-value" style="color: #94a3b8; margin-left: 10px;">1px</span>
                 </div>
                 <div class="control-item">
                     <label>Network Edge Color:</label>
@@ -279,6 +327,15 @@
                 <div class="control-item">
                     <label>Project Edge Color:</label>
                     <input type="color" id="edge-color-project" value="#ec4899" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+                <div class="control-item">
+                    <label>
+                        <input type="checkbox" id="weight-based-coloring" checked style="margin-right: 8px;">
+                        Color by Relationship Weight (Intelligence-Based)
+                    </label>
+                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px; margin-left: 24px;">
+                        High (≥0.75): Red | Medium (0.5-0.75): Orange | Low (&lt;0.5): Grey/Dashed
+                    </div>
                 </div>
             </div>
             
@@ -323,8 +380,8 @@
                 </div>
                 <div class="control-item">
                     <label>Repel Force:</label>
-                    <input type="range" id="repel-force" min="0.1" max="10" step="0.1" value="10" style="width: 120px;">
-                    <span id="repel-force-value" style="color: #94a3b8; margin-left: 10px;">10.0</span>
+                    <input type="range" id="repel-force" min="0.1" max="10" step="0.1" value="5" style="width: 120px;">
+                    <span id="repel-force-value" style="color: #94a3b8; margin-left: 10px;">5.0</span>
                 </div>
                 <div class="control-item">
                     <label>Center Force:</label>
@@ -375,12 +432,19 @@
     </div>
     
     <!-- Node Details Panel - Right Side (Fixed width, always visible) -->
-    <div id="node-details-panel" class="controls-panel" style="flex: 0 0 350px; background: rgba(59, 130, 246, 0.1); border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; height: calc(100vh - 350px); min-height: 600px; overflow-y: auto;">
-        <h4 style="color: #3b82f6; margin-bottom: 15px; font-size: 1.1rem;">📋 Node Details</h4>
-        <div id="node-details-content" style="color: #e2e8f0;">
-            <div style="text-align: center; padding: 40px 20px; color: #64748b; font-size: 0.9rem;">
-                Click on a node to view details
+    <div id="node-details-panel" class="controls-panel" style="flex: 0 0 350px; background: rgba(59, 130, 246, 0.1); border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; height: calc(100vh - 350px); min-height: 600px; overflow-y: auto; display: flex; flex-direction: column;">
+        <h4 style="color: #3b82f6; margin-bottom: 15px; font-size: 1.1rem;">📋 Node List</h4>
+        
+        <!-- Node List Section -->
+        <div id="node-list-container" style="flex: 1; overflow-y: auto; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 20px;">
+            <div id="node-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Node list will be populated here -->
             </div>
+        </div>
+        
+        <!-- Node Details Section (shown when node is selected) -->
+        <div id="node-details-content" style="color: #e2e8f0; display: none;">
+            <!-- Node details will be shown here -->
         </div>
     </div>
 </div>
@@ -668,142 +732,13 @@ function initCytoscape() {
     cy.on('tap', 'node', function(evt) {
         const node = evt.target;
         selectedNode = node; // Store selected node
-        const data = node.data('data');
         
-        // Get current node color
-        const currentColor = node.style('background-color') || '#3b82f6';
+        // Highlight selected node in the list
+        highlightNodeInList(node.id());
         
-        // Show the node details panel
-        const panel = document.getElementById('node-details-panel');
-        const content = document.getElementById('node-details-content');
-        
-        // Build HTML content
-        let html = '';
-        
-        // Node type and label
-        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
-        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Type</div>`;
-        html += `<div style="font-size: 1.2rem; font-weight: 600; color: #3b82f6; margin-bottom: 10px;">${node.data('type').toUpperCase()}</div>`;
-        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Label</div>`;
-        html += `<div style="font-size: 1rem; color: #e2e8f0;">${node.data('label')}</div>`;
-        html += `</div>`;
-        
-        // Node Color Control Section
-        html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
-        html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Node Color</div>`;
-        html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">`;
-        html += `<input type="color" id="node-details-color-picker" value="${rgbToHex(currentColor)}" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">`;
-        html += `<button onclick="updateNodeColor(document.getElementById('node-details-color-picker').value)" style="padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Apply Color</button>`;
-        html += `</div>`;
-        html += `<div style="font-size: 0.75rem; color: #64748b;">Change the color of this node</div>`;
-        html += `</div>`;
-        
-        if (data) {
-            // Scanned status
-            if (data.scanned !== undefined) {
-                html += `<div style="margin-bottom: 15px;">`;
-                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Scanned</div>`;
-                html += `<div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: ${data.scanned ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)'}; color: ${data.scanned ? '#10b981' : '#64748b'};">${data.scanned ? 'Yes' : 'No'}</div>`;
-                html += `</div>`;
-            }
-            
-            // Associated Eggs
-            if (data.eggs && data.eggs.length > 0) {
-                html += `<div style="margin-bottom: 15px;">`;
-                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Associated Eggs (${data.eggs.length})</div>`;
-                html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
-                data.eggs.forEach((egg, idx) => {
-                    html += `<div style="padding: 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid #334155;">`;
-                    if (egg.eggname) html += `<div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">${egg.eggname}</div>`;
-                    if (egg.projectegg) html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Project: ${egg.projectegg}</div>`;
-                    if (egg.domainname) html += `<div style="font-size: 0.85rem; color: #64748b;">Domain: ${egg.domainname}</div>`;
-                    html += `</div>`;
-                });
-                html += `</div>`;
-                html += `</div>`;
-            }
-            
-            // Other data fields
-            const otherFields = [];
-            for (const [key, value] of Object.entries(data)) {
-                if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
-                    if (key === 'ports' && Array.isArray(value)) {
-                        otherFields.push({key: key, value: `${value.length} ports`, isArray: true, arrayData: value});
-                    } else if (key === 'services' && Array.isArray(value)) {
-                        otherFields.push({key: key, value: value.join(', '), isArray: true, arrayData: value});
-                    } else {
-                        otherFields.push({key: key, value: value, isArray: false});
-                    }
-                }
-            }
-            
-            if (otherFields.length > 0) {
-                html += `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #334155;">`;
-                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Additional Information</div>`;
-                html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
-                otherFields.forEach(field => {
-                    html += `<div>`;
-                    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">${field.key.charAt(0).toUpperCase() + field.key.slice(1).replace(/_/g, ' ')}</div>`;
-                    if (field.isArray && field.arrayData.length > 0) {
-                        html += `<div style="padding: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 4px; font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
-                    } else {
-                        html += `<div style="font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
-                    }
-                    html += `</div>`;
-                });
-                html += `</div>`;
-                html += `</div>`;
-            }
-        }
-        
-        // Update content
-        content.innerHTML = html;
-        
-        // Add event listener for color picker changes
-        const colorPicker = document.getElementById('node-details-color-picker');
-        if (colorPicker) {
-            colorPicker.addEventListener('input', function(e) {
-                // Optional: update color in real-time as user picks
-                // updateNodeColor(e.target.value);
-            });
-        }
-        
-        // Scroll to top of panel
-        panel.scrollTop = 0;
+        // Show node details
+        showNodeDetails(node);
     });
-    
-    // Helper function to convert RGB to hex
-    function rgbToHex(rgb) {
-        if (!rgb) return '#3b82f6';
-        if (rgb.startsWith('#')) return rgb;
-        if (rgb.startsWith('rgb')) {
-            const matches = rgb.match(/\d+/g);
-            if (matches && matches.length >= 3) {
-                return '#' + matches.map(x => {
-                    const hex = parseInt(x).toString(16);
-                    return hex.length === 1 ? '0' + hex : hex;
-                }).join('');
-            }
-        }
-        return '#3b82f6'; // Default fallback
-    }
-    
-    // Function to update node color (called from node details panel)
-    function updateNodeColor(color) {
-        if (!selectedNode) {
-            console.warn('No node selected');
-            return;
-        }
-        
-        // Update the node's style directly
-        selectedNode.style('background-color', color);
-        selectedNode.style('border-color', color);
-        
-        // Log the change
-        const nodeId = selectedNode.id();
-        const nodeLabel = selectedNode.data('label');
-        console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
-    }
     
     // Add pan/zoom controls
     cy.on('pan', function() {});
@@ -822,6 +757,234 @@ function initCytoscape() {
     
     // Clustered drag functionality
     setupClusteredDrag();
+}
+
+// Helper function to convert RGB to hex
+function rgbToHex(rgb) {
+    if (!rgb) return '#3b82f6';
+    if (rgb.startsWith('#')) return rgb;
+    if (rgb.startsWith('rgb')) {
+        const matches = rgb.match(/\d+/g);
+        if (matches && matches.length >= 3) {
+            return '#' + matches.map(x => {
+                const hex = parseInt(x).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            }).join('');
+        }
+    }
+    return '#3b82f6'; // Default fallback
+}
+
+// Function to build the node list
+function buildNodeList() {
+    if (!cy) return;
+    
+    const nodeList = document.getElementById('node-list');
+    if (!nodeList) return;
+    
+    nodeList.innerHTML = '';
+    
+    // Group nodes by type
+    const nodesByType = {
+        'ip': [],
+        'cidr': [],
+        'asn': []
+    };
+    
+    cy.nodes().forEach(function(node) {
+        const nodeType = node.data('type');
+        if (nodesByType[nodeType]) {
+            nodesByType[nodeType].push(node);
+        }
+    });
+    
+    // Build list HTML grouped by type
+    ['ip', 'cidr', 'asn'].forEach(function(type) {
+        if (nodesByType[type].length === 0) return;
+        
+        const typeLabel = type.toUpperCase();
+        const typeHeader = document.createElement('div');
+        typeHeader.style.cssText = 'font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-top: 15px; margin-bottom: 8px; font-weight: 600;';
+        typeHeader.textContent = `${typeLabel} (${nodesByType[type].length})`;
+        nodeList.appendChild(typeHeader);
+        
+        nodesByType[type].forEach(function(node) {
+            const listItem = document.createElement('div');
+            listItem.className = 'node-list-item';
+            listItem.setAttribute('data-node-id', node.id());
+            listItem.onclick = function() {
+                selectNodeFromList(node.id());
+            };
+            
+            const nodeType = document.createElement('div');
+            nodeType.className = 'node-type';
+            nodeType.textContent = node.data('type').toUpperCase();
+            
+            const nodeLabel = document.createElement('div');
+            nodeLabel.className = 'node-label';
+            nodeLabel.textContent = node.data('label');
+            
+            listItem.appendChild(nodeType);
+            listItem.appendChild(nodeLabel);
+            nodeList.appendChild(listItem);
+        });
+    });
+}
+
+// Function to highlight a node in the list
+function highlightNodeInList(nodeId) {
+    const listItems = document.querySelectorAll('.node-list-item');
+    listItems.forEach(function(item) {
+        if (item.getAttribute('data-node-id') === nodeId) {
+            item.classList.add('selected');
+            // Scroll into view
+            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+// Function to select a node from the list
+function selectNodeFromList(nodeId) {
+    if (!cy) return;
+    
+    const node = cy.getElementById(nodeId);
+    if (!node || node.length === 0) return;
+    
+    selectedNode = node;
+    
+    // Highlight in list
+    highlightNodeInList(nodeId);
+    
+    // Show node details
+    showNodeDetails(node);
+    
+    // Center and zoom on the node
+    cy.center(node);
+    cy.fit(node, 50); // 50px padding
+}
+
+// Make selectNodeFromList available globally
+window.selectNodeFromList = selectNodeFromList;
+
+// Function to show node details
+function showNodeDetails(node) {
+    const data = node.data('data');
+    const currentColor = node.style('background-color') || '#3b82f6';
+    const content = document.getElementById('node-details-content');
+    
+    // Build HTML content
+    let html = '';
+    
+    // Node type and label
+    html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Type</div>`;
+    html += `<div style="font-size: 1.2rem; font-weight: 600; color: #3b82f6; margin-bottom: 10px;">${node.data('type').toUpperCase()}</div>`;
+    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Label</div>`;
+    html += `<div style="font-size: 1rem; color: #e2e8f0;">${node.data('label')}</div>`;
+    html += `</div>`;
+    
+    // Node Color Control Section
+    html += `<div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #334155;">`;
+    html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Node Color</div>`;
+    html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">`;
+    html += `<input type="color" id="node-details-color-picker" value="${rgbToHex(currentColor)}" style="width: 60px; height: 35px; border: none; border-radius: 4px; cursor: pointer;">`;
+    html += `<button onclick="updateNodeColor(document.getElementById('node-details-color-picker').value)" style="padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Apply Color</button>`;
+    html += `</div>`;
+    html += `<div style="font-size: 0.75rem; color: #64748b;">Change the color of this node</div>`;
+    html += `</div>`;
+    
+    if (data) {
+        // Scanned status
+        if (data.scanned !== undefined) {
+            html += `<div style="margin-bottom: 15px;">`;
+            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">Scanned</div>`;
+            html += `<div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: ${data.scanned ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)'}; color: ${data.scanned ? '#10b981' : '#64748b'};">${data.scanned ? 'Yes' : 'No'}</div>`;
+            html += `</div>`;
+        }
+        
+        // Associated Eggs
+        if (data.eggs && data.eggs.length > 0) {
+            html += `<div style="margin-bottom: 15px;">`;
+            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Associated Eggs (${data.eggs.length})</div>`;
+            html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+            data.eggs.forEach((egg, idx) => {
+                html += `<div style="padding: 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid #334155;">`;
+                if (egg.eggname) html += `<div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">${egg.eggname}</div>`;
+                if (egg.projectegg) html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Project: ${egg.projectegg}</div>`;
+                if (egg.domainname) html += `<div style="font-size: 0.85rem; color: #64748b;">Domain: ${egg.domainname}</div>`;
+                html += `</div>`;
+            });
+            html += `</div>`;
+            html += `</div>`;
+        }
+        
+        // Other data fields
+        const otherFields = [];
+        for (const [key, value] of Object.entries(data)) {
+            if (key !== 'scanned' && key !== 'eggs' && value !== null && value !== undefined) {
+                if (key === 'ports' && Array.isArray(value)) {
+                    otherFields.push({key: key, value: `${value.length} ports`, isArray: true, arrayData: value});
+                } else if (key === 'services' && Array.isArray(value)) {
+                    otherFields.push({key: key, value: value.join(', '), isArray: true, arrayData: value});
+                } else {
+                    otherFields.push({key: key, value: value, isArray: false});
+                }
+            }
+        }
+        
+        if (otherFields.length > 0) {
+            html += `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #334155;">`;
+            html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px;">Additional Information</div>`;
+            html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+            otherFields.forEach(field => {
+                html += `<div>`;
+                html += `<div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">${field.key.charAt(0).toUpperCase() + field.key.slice(1).replace(/_/g, ' ')}</div>`;
+                if (field.isArray && field.arrayData.length > 0) {
+                    html += `<div style="padding: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 4px; font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                } else {
+                    html += `<div style="font-size: 0.9rem; color: #e2e8f0;">${field.value}</div>`;
+                }
+                html += `</div>`;
+            });
+            html += `</div>`;
+            html += `</div>`;
+        }
+    }
+    
+    // Update content and show details section
+    content.innerHTML = html;
+    content.style.display = 'block'; // Make sure details section is visible
+    
+    // Add event listener for color picker changes
+    const colorPicker = document.getElementById('node-details-color-picker');
+    if (colorPicker) {
+        colorPicker.addEventListener('input', function(e) {
+            // Optional: update color in real-time as user picks
+            // updateNodeColor(e.target.value);
+        });
+    }
+    
+    // Scroll details into view
+    content.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Function to update node color (called from node details panel)
+function updateNodeColor(color) {
+    if (!selectedNode) {
+        console.warn('No node selected');
+        return;
+    }
+    
+    // Update the node's style directly
+    selectedNode.style('background-color', color);
+    selectedNode.style('border-color', color);
+    
+    // Log the change
+    const nodeId = selectedNode.id();
+    const nodeLabel = selectedNode.data('label');
+    console.log(`Updated node ${nodeId} (${nodeLabel}) color to ${color}`);
 }
 
 // Setup clustered drag functionality
@@ -855,24 +1018,67 @@ function setupClusteredDrag() {
         const draggedNode = evt.target;
         if (draggedNode.id() !== dragState.draggedNode.id()) return;
         
+        // For force-directed layouts (cose), use a softer approach that allows physics
+        // Instead of locking positions, apply a gentle pull that physics can work with
+        const layoutType = layoutSettings.type;
         const draggedPos = draggedNode.position();
         const neighbors = draggedNode.neighborhood().nodes();
         
-        // Update neighbor positions to maintain relative positions
-        neighbors.forEach(function(neighbor) {
-            const stored = dragState.neighborPositions.get(neighbor.id());
-            if (stored) {
-                const newX = draggedPos.x + stored.relativeX;
-                const newY = draggedPos.y + stored.relativeY;
-                neighbor.position({ x: newX, y: newY });
-            }
-        });
+        if (layoutType === 'cose') {
+            // For force-directed: Apply gentle displacement instead of absolute positioning
+            // This allows the physics engine to create the "bobbing" effect
+            neighbors.forEach(function(neighbor) {
+                const stored = dragState.neighborPositions.get(neighbor.id());
+                if (stored) {
+                    const targetX = draggedPos.x + stored.relativeX;
+                    const targetY = draggedPos.y + stored.relativeY;
+                    const currentPos = neighbor.position();
+                    
+                    // Apply 30% of the movement (soft pull) - physics will handle the rest
+                    const pullFactor = 0.3;
+                    const newX = currentPos.x + (targetX - currentPos.x) * pullFactor;
+                    const newY = currentPos.y + (targetY - currentPos.y) * pullFactor;
+                    
+                    neighbor.position({ x: newX, y: newY });
+                }
+            });
+        } else {
+            // For non-physics layouts (dagre, grid, etc.): Use rigid positioning
+            neighbors.forEach(function(neighbor) {
+                const stored = dragState.neighborPositions.get(neighbor.id());
+                if (stored) {
+                    const newX = draggedPos.x + stored.relativeX;
+                    const newY = draggedPos.y + stored.relativeY;
+                    neighbor.position({ x: newX, y: newY });
+                }
+            });
+        }
     });
     
     cy.on('free', 'node', function(evt) {
         dragState.isDragging = false;
         dragState.draggedNode = null;
         dragState.neighborPositions.clear();
+        
+        // For force-directed layouts, trigger a layout refresh to let physics settle
+        if (layoutSettings.type === 'cose') {
+            // Small layout refresh to let physics smooth out the positions
+            setTimeout(function() {
+                if (cy && !dragState.isDragging) {
+                    cy.layout({
+                        name: 'cose',
+                        fit: false,
+                        animate: true,
+                        animationDuration: 500,
+                        nodeRepulsion: 5000,
+                        edgeElasticity: 50,
+                        idealEdgeLength: Math.min(layoutSettings.physics.linkDistance, 40),
+                        componentSpacing: 20,
+                        gravity: layoutSettings.physics.centerForce * 0.5
+                    }).run();
+                }
+            }, 100);
+        }
     });
 }
 
@@ -960,7 +1166,9 @@ function updateGraph() {
                 source: edge.source,
                 target: edge.target,
                 type: edge.type,
-                label: edge.label
+                label: edge.label,
+                // Store weight/similarity score if available from API
+                weight: edge.weight || edge.similarity_score || edge.priority_score || null
             }
         });
     }
@@ -1009,6 +1217,12 @@ function updateGraph() {
         cy.fit();
         cy.center();
         console.log('Graph layout applied and centered');
+        
+        // Apply dynamic edge coloring after layout settles
+        updateEdgeColorsByWeight();
+        
+        // Build node list in right panel
+        buildNodeList();
         
         // Initialize zoom slider
         const zoomSlider = document.getElementById('zoom-slider');
@@ -1114,29 +1328,30 @@ function applyLayout() {
             };
             break;
         case 'cose':
-            // Built-in CoSE layout (force-directed) with dynamic physics settings
+            // Built-in CoSE layout (force-directed) with smooth animation and proper separation
             // Calculate graph metrics for dynamic repulsion
             const totalNodes = cy.nodes().length;
             const centerPull = Math.min(0.8, totalNodes / 500); // Scale center pull based on graph size
             
-            // High base repulsion force to prevent stacking (much higher than previous values)
-            // The slider value (0.1-10) is multiplied by a large base to get effective repulsion
-            const baseRepelForce = 1500; // High base value to prevent stacking
-            const dynamicRepelForce = baseRepelForce + (layoutSettings.physics.repelForce * 1000);
+            // Aggressive repulsion to prevent stacking - base value is high, slider adds more
+            // Formula: 5000 base + (slider * 500) gives range of 5000-10000 for dense graphs
+            const baseRepelForce = 5000; // Aggressive base value to force separation
+            const dynamicRepelForce = baseRepelForce + (layoutSettings.physics.repelForce * 500);
             
             layoutConfig = {
                 name: 'cose',
-                idealEdgeLength: layoutSettings.physics.linkDistance,
+                // Tighter clustering - bring linked nodes closer together
+                idealEdgeLength: Math.min(layoutSettings.physics.linkDistance, 40), // Cap at 40px for tightness
                 nodeOverlap: 20,
                 refresh: 20,
                 fit: true,
                 padding: 30,
                 randomize: true,  // Better initial distribution
-                componentSpacing: 50,
-                // High repulsion to prevent stacking - scales with slider but starts high
+                componentSpacing: 20,  // Reduced from 50 for tighter spacing between clusters
+                // Aggressive repulsion to prevent stacking (5000-10000 range)
                 nodeRepulsion: dynamicRepelForce,
-                // Edge elasticity controls spring stiffness (attraction)
-                edgeElasticity: layoutSettings.physics.linkForce * 100,
+                // Reduced edge elasticity for springy, less stiff connections (allows "bobbing")
+                edgeElasticity: 50,  // Fixed low value for springy connections, independent of slider
                 nestingFactor: 5,
                 // Dynamic gravity based on graph size
                 gravity: centerPull * layoutSettings.physics.centerForce,
@@ -1144,8 +1359,10 @@ function applyLayout() {
                 initialTemp: 200,
                 coolingFactor: 0.95,
                 minTemp: 1.0,
+                // Smooth animation for "bobbing" effect (like Obsidian)
                 animate: true,
-                animationDuration: 1000
+                animationDuration: 1000,  // 1 second transition for noticeable "bobbing"
+                animationEasing: 'ease-out'  // Slow down as nodes settle (organic feel)
             };
             break;
         case 'breadthfirst':
@@ -1200,6 +1417,8 @@ function applyLayout() {
             layout.one('layoutstop', function() {
                 cy.fit();
                 cy.center();
+                // Apply dynamic edge coloring after layout settles
+                updateEdgeColorsByWeight();
                 resolve();
             });
             
@@ -1207,6 +1426,8 @@ function applyLayout() {
             setTimeout(function() {
                 cy.fit();
                 cy.center();
+                // Apply dynamic edge coloring after layout settles
+                updateEdgeColorsByWeight();
                 resolve();
             }, 2000);
         });
@@ -1342,10 +1563,10 @@ let layoutSettings = {
     type: 'dagre',
     clusteredDrag: true,
     physics: {
-        linkForce: 1.5,      // Increased from 1.0 for stronger attraction
-        linkDistance: 30,    // Reduced from 50 for tighter connections
-        repelForce: 10,     // Increased to prevent stacking
-        centerForce: 0.5     // Increased from 0.3 for stronger center pull
+        linkForce: 1.5,      // Controls edge elasticity (spring stiffness) - not used in CoSE (fixed at 50)
+        linkDistance: 30,    // Ideal distance between linked nodes (tighter clustering)
+        repelForce: 5,      // Aggressive repulsion (5000 + 5*500 = 7500, prevents stacking)
+        centerForce: 0.5     // Center gravity pull
     }
 };
 
@@ -1383,9 +1604,13 @@ function applyVisualSettingsToControls() {
     document.getElementById('node-size-value').textContent = visualSettings.nodeSize + 'px';
     document.getElementById('edge-color').value = visualSettings.edgeColor;
     document.getElementById('edge-width').value = visualSettings.edgeWidth;
-    document.getElementById('edge-width-value').textContent = visualSettings.edgeWidth + 'px';
+    document.getElementById('edge-width-value').textContent = visualSettings.edgeWidth.toFixed(1) + 'px';
     document.getElementById('edge-color-network').value = visualSettings.edgeColorNetwork;
     document.getElementById('edge-color-project').value = visualSettings.edgeColorProject;
+    const weightColoringCheckbox = document.getElementById('weight-based-coloring');
+    if (weightColoringCheckbox) {
+        weightColoringCheckbox.checked = visualSettings.weightBasedColoring !== false; // Default to true
+    }
 }
 
 // Apply visual settings to Cytoscape graph
@@ -1458,6 +1683,55 @@ function applyVisualSettingsToGraph() {
         'line-color': visualSettings.nodeColors.cidr,
         'target-arrow-color': visualSettings.nodeColors.cidr
     });
+    
+    // Apply dynamic edge coloring based on relationship weight (if available)
+    updateEdgeColorsByWeight();
+}
+
+// Update edge colors dynamically based on relationship weight/similarity score
+// This integrates the agent's Vector DB intelligence into the visualization
+function updateEdgeColorsByWeight() {
+    if (!cy || !visualSettings.weightBasedColoring) return;
+    
+    cy.edges().forEach(function(edge) {
+        // Read the relationship weight (0.0 to 1.0) from the edge data
+        // Default to 0.4 (medium-low confidence) if weight is not available
+        const weight = edge.data('weight') || edge.data('similarity_score') || edge.data('priority_score') || 0.4;
+        
+        let edgeColor, edgeStyle, edgeWidth;
+        
+        if (weight >= 0.75) {
+            // HIGH CRITICALITY / High Confidence (e.g., Admin path, high-value asset)
+            edgeColor = '#f59e0b'; // Bright Yellow/Orange
+            edgeStyle = 'solid';
+            edgeWidth = 1.5;
+        } else if (weight >= 0.50) {
+            // MEDIUM CRITICALITY / Standard Relationship (e.g., Common CMS link)
+            edgeColor = '#ec4899'; // Pink/Magenta (matches existing project color)
+            edgeStyle = 'dashed';
+            edgeWidth = 1.0;
+        } else {
+            // LOW CRITICALITY / Tentative Link (e.g., Generic API, low similarity)
+            edgeColor = '#64748b'; // Faded Slate Gray
+            edgeStyle = 'dotted';
+            edgeWidth = 0.5;
+        }
+        
+        // Apply dynamic styling
+        // Preserve edge type colors for structural edges (belongs_to, owned_by) - these are hierarchy, not relationships
+        const edgeType = edge.data('type');
+        if (edgeType !== 'belongs_to' && edgeType !== 'owned_by') {
+            // Apply weight-based coloring to relationship edges (network, project)
+            edge.style({
+                'line-color': edgeColor,
+                'target-arrow-color': edgeColor,
+                'line-style': edgeStyle,
+                'width': edgeWidth,
+                'opacity': weight < 0.50 ? 0.5 : 0.9 // Slight fade for low-confidence edges
+            });
+        }
+        // Structural edges (belongs_to, owned_by) keep their default colors from applyVisualSettingsToGraph()
+    });
 }
 
 // Assign custom color to node type
@@ -1496,9 +1770,10 @@ async function applyVisualSettings() {
     visualSettings.nodeColors.asn = document.getElementById('node-color-asn').value;
     visualSettings.nodeSize = parseInt(document.getElementById('node-size').value);
     visualSettings.edgeColor = document.getElementById('edge-color').value;
-    visualSettings.edgeWidth = parseInt(document.getElementById('edge-width').value);
+    visualSettings.edgeWidth = parseFloat(document.getElementById('edge-width').value);
     visualSettings.edgeColorNetwork = document.getElementById('edge-color-network').value;
     visualSettings.edgeColorProject = document.getElementById('edge-color-project').value;
+    visualSettings.weightBasedColoring = document.getElementById('weight-based-coloring').checked;
     
     // Apply to graph immediately
     applyVisualSettingsToGraph();
@@ -1536,11 +1811,12 @@ function resetVisualSettings() {
             asn: '#f59e0b'
         },
         nodeSize: 30,
-        edgeColor: '#64748b',
-        edgeWidth: 2,
-        edgeColorNetwork: '#8b5cf6',
-        edgeColorProject: '#ec4899'
-    };
+    edgeColor: '#64748b',
+    edgeWidth: 1,
+    edgeColorNetwork: '#8b5cf6',
+    edgeColorProject: '#ec4899',
+    weightBasedColoring: true  // Enable dynamic edge coloring based on relationship weight
+};
     applyVisualSettingsToControls();
     applyVisualSettingsToGraph();
 }
@@ -1610,8 +1886,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     document.getElementById('edge-width').addEventListener('input', function(e) {
-        document.getElementById('edge-width-value').textContent = e.target.value + 'px';
-        visualSettings.edgeWidth = parseInt(e.target.value);
+        const widthValue = parseFloat(e.target.value);
+        document.getElementById('edge-width-value').textContent = widthValue.toFixed(1) + 'px';
+        visualSettings.edgeWidth = widthValue;
         applyVisualSettingsToGraph();
     });
     
@@ -1664,6 +1941,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (clusteredDragCheckbox) {
         clusteredDragCheckbox.addEventListener('change', function(e) {
             layoutSettings.clusteredDrag = e.target.checked;
+        });
+    }
+    
+    // Weight-based edge coloring toggle
+    const weightBasedColoringCheckbox = document.getElementById('weight-based-coloring');
+    if (weightBasedColoringCheckbox) {
+        weightBasedColoringCheckbox.checked = visualSettings.weightBasedColoring;
+        weightBasedColoringCheckbox.addEventListener('change', function(e) {
+            visualSettings.weightBasedColoring = e.target.checked;
+            applyVisualSettingsToGraph(); // Reapply to update edge colors
         });
     }
     

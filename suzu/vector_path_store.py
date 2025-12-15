@@ -164,7 +164,13 @@ class VectorPathStore:
                 qdrant_host = os.getenv('QDRANT_HOST', 'qdrant')
             
             try:
-                self.client = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=10)
+                # Use longer timeout for large uploads and enable connection pooling
+                self.client = QdrantClient(
+                    host=qdrant_host, 
+                    port=qdrant_port, 
+                    timeout=60,  # Increased timeout for large operations
+                    prefer_grpc=False  # Use HTTP instead of gRPC for better compatibility
+                )
                 
                 # Check if collection exists, create if it doesn't
                 try:
@@ -376,12 +382,16 @@ class VectorPathStore:
         uploaded = 0
         failed = 0
         points = []  # For Qdrant batch insert
+        batch_size = 100  # Process and upload in batches to avoid memory issues
+        # Ensure batch_size is always a valid integer
+        if batch_size is None or not isinstance(batch_size, int):
+            batch_size = 100
         
         # Statistics for per-path detection
         cms_stats = {}
         
         # #region agent log
-        import json, time; start_time = time.time(); log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"vector_path_store.py:374","message":"Starting path processing loop","data":{"total_paths":len(paths),"per_path_detection":per_path_detection},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
+        import json, time; start_time = time.time(); log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"vector_path_store.py:374","message":"Starting path processing loop","data":{"total_paths":len(paths),"per_path_detection":per_path_detection,"batch_size":batch_size},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
         # #endregion
         
         for idx, path in enumerate(paths):
@@ -395,6 +405,10 @@ class VectorPathStore:
                     import json, time; det_start = time.time(); log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:380","message":"Calling detect_cms_for_single_path","data":{"path":path,"filename_cms_hint":filename_cms_hint},"timestamp":int(time.time()*1000)}) + '\n'); log_file.close()
                     # #endregion
                     detected_cms, confidence = detect_func(path, filename_cms_hint)
+                    # Ensure confidence is a valid float (safety check)
+                    if confidence is None or not isinstance(confidence, (int, float)):
+                        confidence = 0.0
+                    confidence = float(confidence)
                     # #region agent log
                     import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:382","message":"detect_cms_for_single_path returned","data":{"detected_cms":detected_cms,"detected_cms_type":type(detected_cms).__name__,"confidence":confidence,"confidence_type":type(confidence).__name__,"is_tuple":isinstance((detected_cms,confidence),tuple),"tuple_len":2 if isinstance((detected_cms,confidence),tuple) else None},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
                     # #endregion
@@ -402,6 +416,10 @@ class VectorPathStore:
                     import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:384","message":"Calling calculate_weight_for_single_path","data":{"path":path,"detected_cms":detected_cms,"confidence":confidence,"filename_cms_hint":filename_cms_hint},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
                     # #endregion
                     path_weight = weight_func(path, detected_cms, confidence, filename_cms_hint)
+                    # Ensure path_weight is a valid float (safety check)
+                    if path_weight is None or not isinstance(path_weight, (int, float)):
+                        path_weight = default_weight
+                    path_weight = float(path_weight)
                     # #region agent log
                     import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"vector_path_store.py:386","message":"calculate_weight_for_single_path returned","data":{"path_weight":path_weight,"path_weight_type":type(path_weight).__name__,"is_valid":isinstance(path_weight,(int,float)) and not (isinstance(path_weight,float) and __import__('math').isnan(path_weight))},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
                     # #endregion
@@ -424,7 +442,14 @@ class VectorPathStore:
                 else:
                     # Fallback to file-level CMS and weight
                     final_cms = cms_name or 'general'
-                    final_weight = default_weight
+                    final_weight = default_weight if default_weight is not None else 0.4
+                
+                # Ensure final_weight is always a valid float
+                if final_weight is None or not isinstance(final_weight, (int, float)):
+                    final_weight = 0.4
+                final_weight = float(final_weight)
+                # Clamp weight to valid range
+                final_weight = max(0.0, min(1.0, final_weight))
                 
                 # Generate metadata
                 # #region agent log
@@ -456,9 +481,28 @@ class VectorPathStore:
                         payload=metadata
                     )
                     points.append(point)
+                    
+                    # Upload batch when it reaches batch_size to avoid memory issues
+                    # This processes and uploads incrementally instead of accumulating all paths
+                    # Safety check: ensure batch_size is valid before comparison
+                    if batch_size is None:
+                        batch_size = 100
+                    if len(points) >= batch_size:
+                        try:
+                            self.client.upsert(
+                                collection_name=self.collection_name,
+                                points=points
+                            )
+                            uploaded += len(points)
+                            logger.debug(f"✅ Uploaded batch of {len(points)} paths to Qdrant (total so far: {uploaded})")
+                            points = []  # Clear batch
+                        except Exception as batch_error:
+                            logger.error(f"Error uploading batch: {batch_error}")
+                            failed += len(points)
+                            points = []  # Clear failed batch
                 
                 elif self.vector_db_type == "chroma":
-                    # Chroma uses different format
+                    # Chroma uses different format - upload immediately (no batching for Chroma)
                     self.collection.add(
                         ids=[point_id],
                         embeddings=[hybrid_vector.tolist()],
@@ -475,22 +519,18 @@ class VectorPathStore:
                 failed += 1
                 continue
         
-        # Batch insert for Qdrant
+        # Upload any remaining points in final batch (Qdrant only - Chroma uploads immediately)
         if self.vector_db_type == "qdrant" and points:
             try:
-                # Batch upsert in chunks of 100
-                batch_size = 100
-                for i in range(0, len(points), batch_size):
-                    batch = points[i:i + batch_size]
-                    self.client.upsert(
-                        collection_name=self.collection_name,
-                        points=batch
-                    )
-                uploaded = len(points)
-                logger.info(f"✅ Uploaded {uploaded} paths to Qdrant")
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=points
+                )
+                uploaded += len(points)
+                logger.debug(f"✅ Uploaded final batch of {len(points)} paths to Qdrant")
             except Exception as e:
-                logger.error(f"Error uploading to Qdrant: {e}")
-                failed = len(points)
+                logger.error(f"Error uploading final batch: {e}")
+                failed += len(points)
         
         # Log per-path detection statistics
         if per_path_detection and cms_stats:
@@ -573,33 +613,67 @@ class VectorPathStore:
                 if filter_conditions:
                     search_filter = Filter(must=filter_conditions)
                 
-                # Check paths in batches for efficiency
-                batch_size = 100
+                # Optimized: Use batch query with OR conditions for multiple paths at once
+                # This is much faster than checking paths one by one
+                batch_size = 50  # Smaller batches for OR queries
                 for i in range(0, len(paths), batch_size):
                     batch_paths = paths[i:i + batch_size]
                     
-                    # For each path, check if it exists
-                    for path in batch_paths:
-                        try:
-                            # Build path filter
-                            path_filter_conditions = [FieldCondition(key="path", match=MatchValue(value=path))]
-                            if search_filter:
-                                path_filter_conditions.extend(search_filter.must)
-                            
-                            path_filter = Filter(must=path_filter_conditions)
-                            
-                            # Scroll to check if path exists
-                            results, _ = self.client.scroll(
-                                collection_name=self.collection_name,
-                                scroll_filter=path_filter,
-                                limit=1
+                    try:
+                        # Build OR filter for all paths in batch
+                        path_conditions = [
+                            FieldCondition(key="path", match=MatchValue(value=path))
+                            for path in batch_paths
+                        ]
+                        
+                        # Combine with CMS/wordlist filters if provided
+                        if search_filter:
+                            # Use must for CMS/wordlist, should for path OR
+                            batch_filter = Filter(
+                                must=search_filter.must if search_filter.must else [],
+                                should=path_conditions,
+                                min_should_count=1  # At least one path must match
                             )
-                            
-                            if results:
-                                existing_paths.add(path)
-                        except Exception as e:
-                            logger.debug(f"Error checking path {path}: {e}")
-                            continue
+                        else:
+                            batch_filter = Filter(
+                                should=path_conditions,
+                                min_should_count=1
+                            )
+                        
+                        # Single query for entire batch
+                        results, _ = self.client.scroll(
+                            collection_name=self.collection_name,
+                            scroll_filter=batch_filter,
+                            limit=len(batch_paths)  # Get all matches
+                        )
+                        
+                        # Extract existing paths from results
+                        for result in results:
+                            if hasattr(result, 'payload') and 'path' in result.payload:
+                                existing_paths.add(result.payload['path'])
+                            elif isinstance(result, dict) and 'path' in result:
+                                existing_paths.add(result['path'])
+                                
+                    except Exception as e:
+                        logger.debug(f"Error checking batch of paths: {e}")
+                        # Fallback: check paths individually if batch fails
+                        for path in batch_paths:
+                            try:
+                                path_filter_conditions = [FieldCondition(key="path", match=MatchValue(value=path))]
+                                if search_filter:
+                                    path_filter_conditions.extend(search_filter.must)
+                                
+                                path_filter = Filter(must=path_filter_conditions)
+                                results, _ = self.client.scroll(
+                                    collection_name=self.collection_name,
+                                    scroll_filter=path_filter,
+                                    limit=1
+                                )
+                                if results:
+                                    existing_paths.add(path)
+                            except Exception as e2:
+                                logger.debug(f"Error checking path {path}: {e2}")
+                                continue
                             
             except Exception as e:
                 logger.error(f"Error checking existing paths: {e}")

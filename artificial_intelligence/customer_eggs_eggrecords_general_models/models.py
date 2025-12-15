@@ -7,6 +7,7 @@ These models match the existing database schema.
 
 from django.db import models
 import uuid
+import re
 
 
 class EggRecord(models.Model):
@@ -553,3 +554,309 @@ class DirectoryEnumerationResult(models.Model):
     
     def __str__(self):
         return f"DirectoryEnumerationResult: {self.discovered_path} (priority: {self.priority_score:.2f})"
+
+
+class NucleiTemplate(models.Model):
+    """
+    NucleiTemplate model - stores Nuclei vulnerability scanning template metadata.
+    
+    Created by Oak's template registry service to enable correlation between:
+    - Technology fingerprints and templates
+    - CVE matches and templates
+    - EggRecords and appropriate vulnerability scanning templates
+    
+    This model allows Oak to make intelligent inferences about which templates
+    to use for scanning based on detected technologies and CVEs.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template_id = models.CharField(max_length=500, unique=True, null=False, blank=False, db_index=True)
+    template_path = models.CharField(max_length=1000, null=False, blank=False)
+    template_name = models.CharField(max_length=500, null=True, blank=True)
+    cve_id = models.CharField(max_length=50, null=True, blank=True, db_index=True)  # e.g., "CVE-2025-55182"
+    technology = models.CharField(max_length=200, null=True, blank=True, db_index=True)  # e.g., "wordpress", "apache"
+    tags = models.JSONField(null=False, default=list)  # Array of tags like ["cve", "wordpress", "rce"]
+    severity = models.CharField(max_length=20, null=True, blank=True, db_index=True)  # critical, high, medium, low, info
+    author = models.CharField(max_length=200, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    reference = models.TextField(null=True, blank=True)  # Newline-separated URLs
+    classification = models.JSONField(null=True, blank=True, default=dict)  # Contains cve-id, cwe-id, etc.
+    raw_content = models.TextField(null=True, blank=True)  # Full YAML content
+    created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
+    updated_at = models.DateTimeField(null=True, blank=True, auto_now=True)
+    indexed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        app_label = 'customer_eggs_eggrecords_general_models'
+        db_table = 'enrichment_system_nucleitemplate'
+        managed = False  # Table exists, don't create migrations
+        indexes = [
+            models.Index(fields=['template_id']),
+            models.Index(fields=['cve_id']),
+            models.Index(fields=['technology']),
+            models.Index(fields=['severity']),
+            # Note: GIN index on tags is created via raw SQL in template_registry_service
+        ]
+        verbose_name = 'Nuclei Template'
+        verbose_name_plural = 'Nuclei Templates'
+    
+    def __str__(self):
+        return f"NucleiTemplate: {self.template_id} ({self.template_name or 'Unnamed'})"
+    
+    def get_cve_ids(self) -> list:
+        """
+        Extract all CVE IDs from this template.
+        
+        Returns:
+            List of CVE IDs found in cve_id field, classification, or tags
+        """
+        cve_ids = []
+        
+        # Check direct cve_id field
+        if self.cve_id:
+            cve_ids.append(self.cve_id.upper())
+        
+        # Check classification JSON
+        if self.classification:
+            cve_id_from_class = self.classification.get('cve-id')
+            if cve_id_from_class:
+                if isinstance(cve_id_from_class, list):
+                    cve_ids.extend([cve.upper() for cve in cve_id_from_class if cve])
+                elif isinstance(cve_id_from_class, str):
+                    cve_ids.append(cve_id_from_class.upper())
+        
+        # Check tags for CVE references
+        if self.tags:
+            for tag in self.tags:
+                if isinstance(tag, str):
+                    tag_upper = tag.upper()
+                    if tag_upper.startswith('CVE-') or 'CVE-' in tag_upper:
+                        # Extract CVE from tag
+                        cve_match = re.search(r'CVE[-\s]?(\d{4})[-\s]?(\d{4,})', tag_upper)
+                        if cve_match:
+                            cve_ids.append(f"CVE-{cve_match.group(1)}-{cve_match.group(2)}")
+        
+        # Deduplicate and return
+        return sorted(list(set(cve_ids)))
+    
+    def get_technologies(self) -> list:
+        """
+        Extract all technology names from this template.
+        
+        Returns:
+            List of technology names found in technology field or tags
+        """
+        technologies = []
+        
+        # Check direct technology field
+        if self.technology:
+            technologies.append(self.technology.lower())
+        
+        # Check tags for common technologies
+        if self.tags:
+            common_techs = [
+                'apache', 'nginx', 'iis', 'wordpress', 'drupal', 'joomla',
+                'mysql', 'postgres', 'mongodb', 'redis', 'tomcat', 'jetty',
+                'jenkins', 'grafana', 'kibana', 'elasticsearch', 'nextjs',
+                'react', 'nodejs', 'php', 'python', 'ruby', 'java', 'dotnet'
+            ]
+            for tag in self.tags:
+                if isinstance(tag, str):
+                    tag_lower = tag.lower()
+                    for tech in common_techs:
+                        if tech in tag_lower and tech not in technologies:
+                            technologies.append(tech)
+        
+        return sorted(list(set(technologies)))
+    
+    def get_template_info(self) -> dict:
+        """
+        Get comprehensive template information for correlation.
+        
+        Returns:
+            Dict with template metadata for Oak's inference engine
+        """
+        return {
+            'template_id': self.template_id,
+            'template_name': self.template_name,
+            'cve_ids': self.get_cve_ids(),
+            'technologies': self.get_technologies(),
+            'tags': self.tags or [],
+            'severity': self.severity,
+            'author': self.author,
+            'description': self.description,
+            'classification': self.classification or {},
+            'template_path': self.template_path,
+        }
+    
+    @classmethod
+    def find_by_cve(cls, cve_id: str, severity: str = None) -> models.QuerySet:
+        """
+        Find templates matching a specific CVE ID.
+        
+        Args:
+            cve_id: CVE ID (e.g., "CVE-2025-55182")
+            severity: Optional severity filter
+            
+        Returns:
+            QuerySet of matching templates
+        """
+        cve_upper = cve_id.upper()
+        queryset = cls.objects.filter(
+            models.Q(cve_id__iexact=cve_upper) |
+            models.Q(classification__cve_id__icontains=cve_upper) |
+            models.Q(tags__icontains=cve_upper)
+        )
+        
+        if severity:
+            queryset = queryset.filter(severity__iexact=severity.lower())
+        
+        return queryset.order_by('-severity', 'template_name')
+    
+    @classmethod
+    def find_by_technology(cls, technology: str, severity: str = None) -> models.QuerySet:
+        """
+        Find templates matching a specific technology.
+        
+        Args:
+            technology: Technology name (e.g., "wordpress", "apache")
+            severity: Optional severity filter
+            
+        Returns:
+            QuerySet of matching templates
+        """
+        tech_lower = technology.lower()
+        queryset = cls.objects.filter(
+            models.Q(technology__iexact=tech_lower) |
+            models.Q(tags__icontains=tech_lower)
+        )
+        
+        if severity:
+            queryset = queryset.filter(severity__iexact=severity.lower())
+        
+        return queryset.order_by('-severity', 'template_name')
+    
+    @classmethod
+    def find_by_cve_and_technology(cls, cve_id: str, technology: str, severity: str = None) -> models.QuerySet:
+        """
+        Find templates matching both a CVE ID and technology.
+        
+        Args:
+            cve_id: CVE ID (e.g., "CVE-2025-55182")
+            technology: Technology name (e.g., "nextjs")
+            severity: Optional severity filter
+            
+        Returns:
+            QuerySet of matching templates
+        """
+        cve_upper = cve_id.upper()
+        tech_lower = technology.lower()
+        
+        queryset = cls.objects.filter(
+            (
+                models.Q(cve_id__iexact=cve_upper) |
+                models.Q(classification__cve_id__icontains=cve_upper) |
+                models.Q(tags__icontains=cve_upper)
+            ) &
+            (
+                models.Q(technology__iexact=tech_lower) |
+                models.Q(tags__icontains=tech_lower)
+            )
+        )
+        
+        if severity:
+            queryset = queryset.filter(severity__iexact=severity.lower())
+        
+        return queryset.order_by('-severity', 'template_name')
+    
+    @classmethod
+    def find_for_egg_record(cls, egg_record_id: str, technology_fingerprints: list = None, 
+                           cve_matches: list = None) -> models.QuerySet:
+        """
+        Find recommended templates for an EggRecord based on technology fingerprints and CVE matches.
+        
+        This is the main correlation method used by Oak for inference.
+        
+        Args:
+            egg_record_id: UUID of the EggRecord
+            technology_fingerprints: List of TechnologyFingerprint objects or dicts with 'technology_name'
+            cve_matches: List of CVEFingerprintMatch objects or dicts with 'cve_id'
+            
+        Returns:
+            QuerySet of recommended templates, ordered by relevance
+        """
+        # Import here to avoid circular imports
+        TechnologyFingerprint = cls._get_related_model('TechnologyFingerprint')
+        CVEFingerprintMatch = cls._get_related_model('CVEFingerprintMatch')
+        
+        # If objects not provided, fetch from database
+        if technology_fingerprints is None:
+            technology_fingerprints = list(
+                TechnologyFingerprint.objects.filter(egg_record_id=egg_record_id)
+                .values('technology_name', 'technology_category', 'confidence_score')
+            )
+        
+        if cve_matches is None:
+            cve_matches = list(
+                CVEFingerprintMatch.objects.filter(egg_record_id=egg_record_id)
+                .values('cve_id', 'match_confidence', 'nuclei_template_ids')
+            )
+        
+        # Build query for templates matching technologies or CVEs
+        from django.db.models import Q
+        query = Q()
+        
+        # Add technology matches
+        for tech_fp in technology_fingerprints:
+            tech_name = tech_fp.get('technology_name') if isinstance(tech_fp, dict) else tech_fp.technology_name
+            if tech_name:
+                query |= Q(technology__iexact=tech_name.lower()) | Q(tags__icontains=tech_name.lower())
+        
+        # Add CVE matches
+        for cve_match in cve_matches:
+            cve_id = cve_match.get('cve_id') if isinstance(cve_match, dict) else cve_match.cve_id
+            if cve_id:
+                cve_upper = cve_id.upper()
+                query |= (
+                    Q(cve_id__iexact=cve_upper) |
+                    Q(classification__cve_id__icontains=cve_upper) |
+                    Q(tags__icontains=cve_upper)
+                )
+        
+        if query:
+            return cls.objects.filter(query).distinct().order_by('-severity', 'template_name')
+        else:
+            return cls.objects.none()
+    
+    @classmethod
+    def _get_related_model(cls, model_name: str):
+        """Helper to get related models without circular imports."""
+        from django.apps import apps
+        return apps.get_model('customer_eggs_eggrecords_general_models', model_name)
+    
+    @classmethod
+    def find_by_tags(cls, tags: list, match_all: bool = False) -> models.QuerySet:
+        """
+        Find templates matching specific tags.
+        
+        Args:
+            tags: List of tag strings to search for
+            match_all: If True, template must contain all tags; if False, any tag matches
+            
+        Returns:
+            QuerySet of matching templates
+        """
+        from django.db.models import Q
+        
+        if not tags:
+            return cls.objects.none()
+        
+        query = Q()
+        for tag in tags:
+            tag_lower = tag.lower()
+            tag_query = Q(tags__icontains=tag_lower)
+            if match_all:
+                query &= tag_query
+            else:
+                query |= tag_query
+        
+        return cls.objects.filter(query).distinct().order_by('-severity', 'template_name')

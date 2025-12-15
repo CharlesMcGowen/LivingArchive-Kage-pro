@@ -374,6 +374,26 @@ class OakTargetCurationService:
             results['success'] = True
             results['curation_completed_at'] = timezone.now().isoformat()
             
+            # Always update bugsy_last_curated_at to mark record as curated
+            # This ensures autonomous curation doesn't re-process it immediately
+            try:
+                from django.db import connections, transaction
+                with transaction.atomic(using='eggrecords'):
+                    try:
+                        db = connections['eggrecords']
+                    except KeyError:
+                        db = connections['default']
+                    
+                    with db.cursor() as cursor:
+                        # Update curation timestamp (even if some steps failed)
+                        cursor.execute("""
+                            UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                            SET bugsy_last_curated_at = NOW()
+                            WHERE id = %s
+                        """, [str(egg_record.id)])
+            except Exception as e:
+                self.logger.debug(f"Could not update bugsy_last_curated_at: {e}")
+            
             self.logger.info(f"✅ Oak: Curation complete for {subdomain}")
             self.logger.info(f"   Fingerprints: {results['fingerprints_created']} | CVEs: {results['cve_matches']}")
             self.logger.info(f"   Confidence: {results['confidence_score']:.1f}% | Recommendations: {results['recommendations']}")
@@ -395,6 +415,26 @@ class OakTargetCurationService:
                 self.logger.error(f"❌ Oak: Curation failed for {subdomain}: {error_msg[:200]}")
                 results['success'] = False
                 results['error'] = error_msg[:200]
+                
+                # Still update curation timestamp on failure (to prevent immediate retry)
+                # Only if we got past initial steps
+                if results.get('steps_completed'):
+                    try:
+                        from django.db import connections, transaction
+                        with transaction.atomic(using='eggrecords'):
+                            try:
+                                db = connections['eggrecords']
+                            except KeyError:
+                                db = connections['default']
+                            
+                            with db.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE customer_eggs_eggrecords_general_models_eggrecord
+                                    SET bugsy_last_curated_at = NOW()
+                                    WHERE id = %s
+                                """, [str(egg_record.id)])
+                    except Exception as e:
+                        self.logger.debug(f"Could not update bugsy_last_curated_at on failure: {e}")
         
         return results
     
@@ -496,9 +536,9 @@ class OakTargetCurationService:
                         
                         with db.cursor() as cursor:
                             cursor.execute("""
-                                SELECT id, service_name, service_version, port, protocol, scan_type
+                                SELECT id, service_name, service_version, port, protocol, scan_type, open_ports
                                 FROM customer_eggs_eggrecords_general_models_nmap
-                                WHERE target = %s AND scan_status = 'completed'
+                                WHERE record_id_id = %s AND scan_status = 'completed'
                                 ORDER BY created_at DESC
                             """, [egg_id])
                             return cursor.fetchall()
@@ -513,13 +553,25 @@ class OakTargetCurationService:
                 nmap_scans_data = []
             # Convert to simple objects for processing
             class SimpleNmapScan:
-                def __init__(self, scan_id, service_name, service_version, port, protocol, scan_type):
+                def __init__(self, scan_id, service_name, service_version, port, protocol, scan_type, open_ports=None):
                     self.id = scan_id
                     self.service_name = service_name
                     self.service_version = service_version
                     self.port = port
                     self.protocol = protocol or 'tcp'
                     self.scan_type = scan_type or 'unknown'
+                    # Parse open_ports if it's a JSON string
+                    if open_ports:
+                        if isinstance(open_ports, str):
+                            try:
+                                import json
+                                self.open_ports = json.loads(open_ports)
+                            except:
+                                self.open_ports = []
+                        else:
+                            self.open_ports = open_ports
+                    else:
+                        self.open_ports = []
             
             nmap_scans = [SimpleNmapScan(*row) for row in nmap_scans_data]
             
@@ -1354,15 +1406,25 @@ class OakTargetCurationService:
         
         banner_lower = banner.lower()
         service_patterns = {
-            'apache': ['apache', 'httpd'],
-            'nginx': ['nginx'],
-            'iis': ['iis', 'microsoft-iis'],
-            'ssh': ['ssh', 'openssh'],
-            'ftp': ['ftp', 'vsftpd', 'proftpd'],
-            'mysql': ['mysql'],
-            'postgresql': ['postgresql', 'postgres'],
+            'apache': ['apache', 'httpd', 'apache/'],
+            'nginx': ['nginx', 'nginx/'],
+            'iis': ['iis', 'microsoft-iis', 'microsoft httpapi'],
+            'ssh': ['ssh', 'openssh', 'ssh-2.0', 'ssh-1.99'],
+            'ftp': ['ftp', 'vsftpd', 'proftpd', 'filezilla'],
+            'mysql': ['mysql', 'mariadb'],
+            'postgresql': ['postgresql', 'postgres', 'pg'],
             'mongodb': ['mongodb'],
             'redis': ['redis'],
+            'tomcat': ['tomcat', 'apache-coyote'],
+            'jetty': ['jetty'],
+            'node': ['node.js', 'express'],
+            'python': ['python', 'django', 'flask', 'tornado'],
+            'php': ['php', 'php/'],
+            'ruby': ['ruby', 'rails', 'unicorn'],
+            'java': ['java', 'jboss', 'weblogic', 'websphere'],
+            'iis': ['iis', 'microsoft-iis'],
+            'lighttpd': ['lighttpd'],
+            'caddy': ['caddy'],
         }
         
         for service, patterns in service_patterns.items():

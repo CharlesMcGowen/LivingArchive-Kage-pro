@@ -403,3 +403,5 @@ def map_finding_to_mitre_techniques(finding: Dict[str, Any], finding_type: Optio
     """Convenience function to map a finding to MITRE techniques"""
     mapper = get_mitre_mapper()
     return mapper.map_finding_to_mitre_techniques(finding, finding_type)
+
+

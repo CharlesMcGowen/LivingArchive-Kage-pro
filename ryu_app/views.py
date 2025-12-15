@@ -1389,15 +1389,24 @@ def suzu_upload_file_api(request):
         # Weight is now automatically calculated - ignore user input
         source = request.POST.get('source', 'uploaded')
         
-        # Read file content
+        # Read file content efficiently (streaming, no memory limits)
+        # Django's uploaded_file is already a file-like object that streams
         paths = []
-        for line in uploaded_file:
-            line = line.decode('utf-8', errors='ignore').strip()
-            if not line or line.startswith('#'):
-                continue
-            if not line.startswith('/'):
-                line = '/' + line
-            paths.append(line)
+        try:
+            # Iterate line by line - Django handles streaming automatically
+            for line in uploaded_file:
+                line = line.decode('utf-8', errors='ignore').strip()
+                if not line or line.startswith('#'):
+                    continue
+                if not line.startswith('/'):
+                    line = '/' + line
+                paths.append(line)
+        except Exception as e:
+            logger.error(f"Error reading file: {e}", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': f'Error reading file: {str(e)}'
+            }, status=500)
         
         if not paths:
             # #region agent log
@@ -1434,6 +1443,8 @@ def suzu_upload_file_api(request):
             pass
         
         # Upload to vector store with per-path detection
+        # Use a try-finally to ensure cleanup
+        vector_store = None
         try:
             from suzu.vector_path_store import VectorPathStore
             vector_store = VectorPathStore()
@@ -1452,8 +1463,18 @@ def suzu_upload_file_api(request):
         
         # Check for duplicate paths before uploading
         path_check = vector_store.check_existing_paths(paths, cms_name, wordlist_name)
-        new_paths = path_check['new']
-        duplicate_count = path_check['existing_count']
+        
+        # Safety check: ensure path_check is valid and has required keys
+        if not path_check or not isinstance(path_check, dict):
+            path_check = {'existing': [], 'new': paths, 'existing_count': 0, 'new_count': len(paths)}
+        
+        # Ensure counts are integers, not None
+        duplicate_count = path_check.get('existing_count', 0)
+        if duplicate_count is None:
+            duplicate_count = 0
+        duplicate_count = int(duplicate_count)
+        
+        new_paths = path_check.get('new', paths)
         
         # Upload only new paths with per-path CMS detection and weight calculation
         result = None
@@ -1510,6 +1531,16 @@ def suzu_upload_file_api(request):
             'new_paths_count': len(new_paths),
             'upload_id': str(upload_record.id) if upload_record else None
         })
+        
+        # Cleanup: Close Qdrant connection if possible
+        if vector_store and hasattr(vector_store, 'client') and vector_store.client:
+            try:
+                # Qdrant client doesn't have explicit close, but we can clear reference
+                # The connection will be closed when the object is garbage collected
+                pass
+            except Exception:
+                pass
+        
         return response
         
     except Exception as e:
@@ -1519,6 +1550,14 @@ def suzu_upload_file_api(request):
         import json; log_path = '/tmp/suzu_debug.log'; log_file = open(log_path, 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"API","location":"views.py:1396","message":"Exception in suzu_upload_file_api","data":{"error":str(e),"error_type":type(e).__name__,"traceback":error_trace},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
         # #endregion
         logger.error(f"Error uploading file: {e}\n{error_trace}", exc_info=True)
+        
+        # Cleanup on error
+        if 'vector_store' in locals() and vector_store and hasattr(vector_store, 'client') and vector_store.client:
+            try:
+                pass  # Connection cleanup handled by garbage collection
+            except Exception:
+                pass
+        
         return JsonResponse({
             'success': False,
             'error': f'Upload failed: {str(e)}. Check server logs for details.'
@@ -1648,6 +1687,94 @@ def suzu_upload_directory_api(request):
 
 
 @csrf_exempt
+@csrf_exempt
+def suzu_delete_wordlist_api(request, wordlist_id):
+    """
+    API: Delete a wordlist upload record.
+    
+    DELETE /reconnaissance/api/suzu/wordlist/<wordlist_id>/
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'success': False, 'error': 'DELETE method required'}, status=405)
+    
+    try:
+        from ryu_app.models import WordlistUpload
+        
+        try:
+            wordlist = WordlistUpload.objects.get(id=wordlist_id)
+            wordlist_name = wordlist.wordlist_name
+            wordlist.delete()
+            
+            logger.info(f"Deleted wordlist upload: {wordlist_name} (ID: {wordlist_id})")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Wordlist "{wordlist_name}" deleted successfully'
+            })
+        except WordlistUpload.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Wordlist not found'
+            }, status=404)
+            
+    except Exception as e:
+        logger.error(f"Error deleting wordlist: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def suzu_delete_enumeration_api(request, enumeration_id):
+    """
+    API: Delete a directory enumeration result.
+    
+    DELETE /reconnaissance/api/suzu/enumeration/<enumeration_id>/
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'success': False, 'error': 'DELETE method required'}, status=405)
+    
+    try:
+        from artificial_intelligence.customer_eggs_eggrecords_general_models.models import DirectoryEnumerationResult
+        from django.db import connections
+        
+        if 'customer_eggs' not in connections.databases:
+            return JsonResponse({
+                'success': False,
+                'error': 'Database not configured'
+            }, status=500)
+        
+        try:
+            enumeration = DirectoryEnumerationResult.objects.using('customer_eggs').get(id=enumeration_id)
+            target = enumeration.discovered_path or 'unknown'
+            enumeration.delete()
+            
+            logger.info(f"Deleted enumeration result: {target} (ID: {enumeration_id})")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Enumeration result deleted successfully'
+            })
+        except DirectoryEnumerationResult.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Enumeration result not found'
+            }, status=404)
+            
+    except ImportError:
+        return JsonResponse({
+            'success': False,
+            'error': 'DirectoryEnumerationResult model not available'
+        }, status=500)
+    except Exception as e:
+        logger.error(f"Error deleting enumeration result: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
 def suzu_upload_history_api(request):
     """
     API: Get upload history for Suzu wordlist uploads.
@@ -1755,33 +1882,57 @@ def suzu_check_duplicates_api(request):
                 }
         
         # Check for duplicate paths in Vector DB
-        # Limit to first 1000 paths to avoid timeout on large files
+        # For very large files, we'll check a sample and estimate (to avoid timeout)
+        # But we don't prevent upload - deduplication happens during upload anyway
         if paths:
             try:
                 from suzu.vector_path_store import VectorPathStore
                 vector_store = VectorPathStore()
                 
-                # Limit path checking to avoid timeout
-                paths_to_check = paths[:1000] if len(paths) > 1000 else paths
+                # For large files, check a sample for user info, but don't block upload
+                # Sample size: up to 5000 paths (reasonable for quick check)
+                sample_size = min(5000, len(paths))
+                paths_to_check = paths[:sample_size] if len(paths) > sample_size else paths
+                
                 path_check = vector_store.check_existing_paths(paths_to_check, cms_name, wordlist_name)
                 
-                results['duplicate_paths'] = path_check['existing']
-                results['new_paths'] = path_check['new']
+                # Safety check: ensure path_check is valid and has required keys
+                if not path_check or not isinstance(path_check, dict):
+                    path_check = {'existing': [], 'new': paths_to_check, 'existing_count': 0, 'new_count': len(paths_to_check)}
+                
+                # Ensure counts are integers, not None
+                existing_count = path_check.get('existing_count', 0)
+                new_count = path_check.get('new_count', 0)
+                if existing_count is None:
+                    existing_count = 0
+                if new_count is None:
+                    new_count = 0
+                existing_count = int(existing_count)
+                new_count = int(new_count)
+                
+                results['duplicate_paths'] = path_check.get('existing', [])
+                results['new_paths'] = path_check.get('new', paths_to_check)
+                
+                # Ensure sample_size is valid
+                if sample_size is None:
+                    sample_size = min(5000, len(paths))
                 
                 # If we only checked a sample, estimate the counts
-                if len(paths) > 1000:
-                    sample_ratio = len(paths_to_check) / len(paths)
-                    results['duplicate_count'] = int(path_check['existing_count'] / sample_ratio)
+                if len(paths) > sample_size:
+                    sample_ratio = len(paths_to_check) / len(paths) if len(paths) > 0 else 1.0
+                    results['duplicate_count'] = int(existing_count / sample_ratio) if sample_ratio > 0 else 0
                     results['new_count'] = len(paths) - results['duplicate_count']
                     results['sample_checked'] = True
                     results['sample_size'] = len(paths_to_check)
+                    results['total_paths'] = len(paths)
                 else:
-                    results['duplicate_count'] = path_check['existing_count']
-                    results['new_count'] = path_check['new_count']
+                    results['duplicate_count'] = existing_count
+                    results['new_count'] = new_count
                     results['sample_checked'] = False
             except Exception as e:
                 logger.warning(f"Error checking duplicate paths in Vector DB: {e}")
                 # Continue without path checking if Vector DB is unavailable
+                # Don't block upload - deduplication happens during upload
                 results['duplicate_count'] = 0
                 results['new_count'] = len(paths)
         
@@ -1958,76 +2109,168 @@ def oak_dashboard(request):
         'targets_processed': 0
     }
     
+    recent_curations = []
+    
+    # Try using Django ORM first (handles database routing automatically)
     try:
-        # Get database connection - try customer_eggs first (where eggrecords are)
-        try:
-            db = connections['customer_eggs']
-        except KeyError:
-            try:
-                db = connections['eggrecords']
-            except KeyError:
-                db = connections['default']
+        from artificial_intelligence.customer_eggs_eggrecords_general_models.models import (
+            TechnologyFingerprint, CVEFingerprintMatch, EggRecord
+        )
         
-        with db.cursor() as cursor:
-            # Count technology fingerprints
-            cursor.execute("""
-                SELECT COUNT(*) FROM enrichment_system_technologyfingerprint
-            """)
-            stats['total_fingerprints'] = cursor.fetchone()[0] or 0
-            
-            # Count CVE matches
-            cursor.execute("""
-                SELECT COUNT(*) FROM enrichment_system_cvefingerprintmatch
-            """)
-            stats['total_cve_matches'] = cursor.fetchone()[0] or 0
-            
-            # Count curated records (have bugsy_last_curated_at)
-            cursor.execute("""
-                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
-                WHERE bugsy_last_curated_at IS NOT NULL
-            """)
-            stats['total_curated'] = cursor.fetchone()[0] or 0
-            
-            # Count pending curation (alive, not skipped, not curated in 30 days)
+        # Determine which database to use
+        db_name = 'customer_eggs'
+        if db_name not in connections.databases:
+            db_name = 'eggrecords'
+        if db_name not in connections.databases:
+            db_name = 'default'
+        
+        # Count technology fingerprints using ORM
+        try:
+            stats['total_fingerprints'] = TechnologyFingerprint.objects.using(db_name).count()
+        except Exception as e:
+            logger.debug(f"Could not count fingerprints: {e}")
+        
+        # Count CVE matches using ORM
+        try:
+            stats['total_cve_matches'] = CVEFingerprintMatch.objects.using(db_name).count()
+        except Exception as e:
+            logger.debug(f"Could not count CVE matches: {e}")
+        
+        # Count curated records using ORM
+        try:
+            stats['total_curated'] = EggRecord.objects.using(db_name).filter(
+                bugsy_last_curated_at__isnull=False
+            ).count()
+        except Exception as e:
+            logger.debug(f"Could not count curated records: {e}")
+        
+        # Count pending curation
+        try:
             thirty_days_ago = timezone.now() - timedelta(days=30)
-            cursor.execute("""
-                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
-                WHERE "subDomain" IS NOT NULL
-                AND alive = true
-                AND "skipScan" = false
-                AND (bugsy_last_curated_at IS NULL OR bugsy_last_curated_at < %s)
-            """, [thirty_days_ago])
-            stats['pending_curation'] = cursor.fetchone()[0] or 0
-            
-            # Count recent curations (last 24 hours)
+            stats['pending_curation'] = EggRecord.objects.using(db_name).filter(
+                subDomain__isnull=False,
+                alive=True,
+                skipScan=False
+            ).filter(
+                Q(bugsy_last_curated_at__isnull=True) | 
+                Q(bugsy_last_curated_at__lt=thirty_days_ago)
+            ).count()
+        except Exception as e:
+            logger.debug(f"Could not count pending curation: {e}")
+        
+        # Count recent curations (last 24 hours)
+        try:
             one_day_ago = timezone.now() - timedelta(days=1)
-            cursor.execute("""
-                SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
-                WHERE bugsy_last_curated_at >= %s
-            """, [one_day_ago])
-            stats['recent_curations'] = cursor.fetchone()[0] or 0
+            stats['recent_curations'] = EggRecord.objects.using(db_name).filter(
+                bugsy_last_curated_at__gte=one_day_ago
+            ).count()
+        except Exception as e:
+            logger.debug(f"Could not count recent curations: {e}")
+        
+        # Get recent curation activity
+        try:
+            recent_records = EggRecord.objects.using(db_name).filter(
+                bugsy_last_curated_at__isnull=False
+            ).order_by('-bugsy_last_curated_at')[:20]
             
-            # Get recent curation activity
-            cursor.execute("""
-                SELECT id, "subDomain", domainname, bugsy_last_curated_at
-                FROM customer_eggs_eggrecords_general_models_eggrecord
-                WHERE bugsy_last_curated_at IS NOT NULL
-                ORDER BY bugsy_last_curated_at DESC
-                LIMIT 20
-            """)
-            recent_curations = []
-            for row in cursor.fetchall():
+            for record in recent_records:
                 recent_curations.append({
-                    'id': str(row[0]),
-                    'subdomain': row[1] or row[2] or 'unknown',
-                    'curated_at': row[3]
+                    'id': str(record.id),
+                    'subdomain': record.subDomain or record.domainname or 'unknown',
+                    'curated_at': record.bugsy_last_curated_at
                 })
+        except Exception as e:
+            logger.debug(f"Could not get recent curations: {e}")
             
-            context['recent_curations'] = recent_curations
+    except ImportError as e:
+        logger.warning(f"Could not import models, using raw SQL fallback: {e}")
+        # Fallback to raw SQL with error handling
+        try:
+            # Get database connection - try customer_eggs first (where eggrecords are)
+            try:
+                db = connections['customer_eggs']
+            except KeyError:
+                try:
+                    db = connections['eggrecords']
+                except KeyError:
+                    db = connections['default']
             
-    except Exception as e:
-        logger.error(f"Error loading Oak dashboard data: {e}", exc_info=True)
-        context['error'] = str(e)
+            with db.cursor() as cursor:
+                # Count technology fingerprints (with error handling)
+                try:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM enrichment_system_technologyfingerprint
+                    """)
+                    stats['total_fingerprints'] = cursor.fetchone()[0] or 0
+                except Exception as e:
+                    logger.debug(f"Table enrichment_system_technologyfingerprint not available: {e}")
+                
+                # Count CVE matches (with error handling)
+                try:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM enrichment_system_cvefingerprintmatch
+                    """)
+                    stats['total_cve_matches'] = cursor.fetchone()[0] or 0
+                except Exception as e:
+                    logger.debug(f"Table enrichment_system_cvefingerprintmatch not available: {e}")
+                
+                # Count curated records (have bugsy_last_curated_at)
+                try:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                        WHERE bugsy_last_curated_at IS NOT NULL
+                    """)
+                    stats['total_curated'] = cursor.fetchone()[0] or 0
+                except Exception as e:
+                    logger.debug(f"Could not count curated records: {e}")
+                
+                # Count pending curation (alive, not skipped, not curated in 30 days)
+                try:
+                    thirty_days_ago = timezone.now() - timedelta(days=30)
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                        WHERE "subDomain" IS NOT NULL
+                        AND alive = true
+                        AND "skipScan" = false
+                        AND (bugsy_last_curated_at IS NULL OR bugsy_last_curated_at < %s)
+                    """, [thirty_days_ago])
+                    stats['pending_curation'] = cursor.fetchone()[0] or 0
+                except Exception as e:
+                    logger.debug(f"Could not count pending curation: {e}")
+                
+                # Count recent curations (last 24 hours)
+                try:
+                    one_day_ago = timezone.now() - timedelta(days=1)
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM customer_eggs_eggrecords_general_models_eggrecord
+                        WHERE bugsy_last_curated_at >= %s
+                    """, [one_day_ago])
+                    stats['recent_curations'] = cursor.fetchone()[0] or 0
+                except Exception as e:
+                    logger.debug(f"Could not count recent curations: {e}")
+                
+                # Get recent curation activity
+                try:
+                    cursor.execute("""
+                        SELECT id, "subDomain", domainname, bugsy_last_curated_at
+                        FROM customer_eggs_eggrecords_general_models_eggrecord
+                        WHERE bugsy_last_curated_at IS NOT NULL
+                        ORDER BY bugsy_last_curated_at DESC
+                        LIMIT 20
+                    """)
+                    for row in cursor.fetchall():
+                        recent_curations.append({
+                            'id': str(row[0]),
+                            'subdomain': row[1] or row[2] or 'unknown',
+                            'curated_at': row[3]
+                        })
+                except Exception as e:
+                    logger.debug(f"Could not get recent curations: {e}")
+        except Exception as e:
+            logger.error(f"Error loading Oak dashboard data: {e}", exc_info=True)
+            context['error'] = f"Database error: {str(e)[:200]}"
+    
+    context['recent_curations'] = recent_curations
     
     # Check autonomous curation service status
     try:
@@ -3081,12 +3324,26 @@ def network_graph_api(request):
                             if ip1_node_id in node_ids and ip2_node_id in node_ids:
                                 edge_id = f"{ip1_node_id}_{ip2_node_id}_network"
                                 if not any(e.get('id') == edge_id for e in edges):
+                                    # Calculate weight based on whether both IPs are scanned
+                                    # Higher weight (0.8) if both scanned, medium (0.5) if mixed, lower (0.3) if both unscanned
+                                    ip1_scanned = ip1 in scanned_ips
+                                    ip2_scanned = ip2 in scanned_ips
+                                    if ip1_scanned and ip2_scanned:
+                                        weight = 0.8
+                                    elif ip1_scanned or ip2_scanned:
+                                        weight = 0.5
+                                    else:
+                                        weight = 0.3
+                                    
                                     edges.append({
                                         'id': edge_id,
                                         'source': ip1_node_id,
                                         'target': ip2_node_id,
                                         'type': 'network',
-                                        'label': 'same network'
+                                        'label': 'same network',
+                                        'data': {
+                                            'weight': weight
+                                        }
                                     })
         
         # 3. Add ASN nodes

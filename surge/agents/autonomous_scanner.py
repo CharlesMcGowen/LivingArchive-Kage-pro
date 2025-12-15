@@ -57,33 +57,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import Surge components (with graceful fallback for database imports)
+# Import Surge Django ORM integration
 try:
-    # Try relative imports first (new structure)
-    from ..database.sqlalchemy_integration import surge_db
+    from ..database.django_integration import surge_db
     _database_available = True
-except ImportError:
-    try:
-        # Fallback to EgoLlama database if available
-        from database import SessionLocal
-        from sqlalchemy import text
-        # Try to import surge_db from EgoLlama if it exists
-        try:
-            from surge_sqlalchemy_integration import surge_db
-        except ImportError:
-            surge_db = None
-        _database_available = True
-    except ImportError as e:
-        logger.warning(f"Database modules not available (this is OK for standalone mode): {e}")
-        _database_available = False
-        surge_db = None
-        SessionLocal = None
-
-# Import SQLAlchemy text for queries
-try:
-    from sqlalchemy import text
-except ImportError:
-    text = None
+except ImportError as e:
+    logger.warning(f"Surge database integration not available (this is OK for standalone mode): {e}")
+    _database_available = False
+    surge_db = None
 
 
 class SurgeAutonomousScanner:
@@ -120,42 +101,49 @@ class SurgeAutonomousScanner:
         logger.info(f"   Scan type: {self.scan_type}")
         logger.info(f"   Continuous mode: {self.continuous}")
     
-    def _fetch_global_template_pool(self, db, limit: int = 50) -> List[str]:
+    def _fetch_global_template_pool(self, limit: int = 50) -> List[str]:
         """
         Fetch a global pool of high-performing templates to use as a fallback when Bugsy
         has no per-target recommendations ready yet.
+        Uses Django ORM with raw SQL for custom queries.
         """
         limit = max(limit, 1)
         templates: List[str] = []
         try:
-            query = text("""
-                SELECT template_id
-                FROM enrichment_system_templateeffectiveness
-                WHERE template_id IS NOT NULL
-                ORDER BY success_rate DESC NULLS LAST,
-                         total_scans DESC NULLS LAST,
-                         last_used DESC NULLS LAST
-                LIMIT :limit
-            """)
-            result = db.execute(query, {'limit': limit})
-            templates = [row[0] for row in result if row and row[0]]
+            from django.db import connections
+            connection = connections['eggrecords']
+            with connection.cursor() as cursor:
+                # Try template effectiveness table first
+                cursor.execute("""
+                    SELECT template_id
+                    FROM enrichment_system_templateeffectiveness
+                    WHERE template_id IS NOT NULL
+                    ORDER BY success_rate DESC NULLS LAST,
+                             total_scans DESC NULLS LAST,
+                             last_used DESC NULLS LAST
+                    LIMIT %s
+                """, [limit])
+                templates = [row[0] for row in cursor.fetchall() if row and row[0]]
         except Exception as exc:
             logger.debug(f"Template effectiveness fallback query failed: {exc}")
             templates = []
         
         if not templates:
             try:
-                fallback_query = text("""
-                    SELECT template_id
-                    FROM nuclei_templates
-                    WHERE is_active = true
-                    ORDER BY success_rate DESC NULLS LAST,
-                             usage_count DESC NULLS LAST,
-                             updated_at DESC NULLS LAST
-                    LIMIT :limit
-                """)
-                result = db.execute(fallback_query, {'limit': limit})
-                templates = [row[0] for row in result if row and row[0]]
+                from django.db import connections
+                connection = connections['eggrecords']
+                with connection.cursor() as cursor:
+                    # Fallback to nuclei_templates table
+                    cursor.execute("""
+                        SELECT template_id
+                        FROM nuclei_templates
+                        WHERE is_active = true
+                        ORDER BY success_rate DESC NULLS LAST,
+                                 usage_count DESC NULLS LAST,
+                                 updated_at DESC NULLS LAST
+                        LIMIT %s
+                    """, [limit])
+                    templates = [row[0] for row in cursor.fetchall() if row and row[0]]
             except Exception as exc:
                 logger.debug(f"Global template fallback query failed: {exc}")
                 templates = []
@@ -238,132 +226,23 @@ class SurgeAutonomousScanner:
             logger.warning("⚠️  No event loop available, returning empty list")
             return []
         
-        # Check if database is available
-        if not _database_available or SessionLocal is None:
-            logger.warning("⚠️  Database not available, using Django ORM fallback")
-            try:
-                # Use asyncio.to_thread instead of sync_to_async to avoid deadlock
-                # when running in a background thread with its own event loop
-                return await asyncio.to_thread(self._get_eggs_via_django)
-            except RuntimeError as e:
-                if "cannot schedule new futures" in str(e) or "interpreter shutdown" in str(e) or "deadlock" in str(e).lower():
-                    logger.warning("⚠️  Interpreter shutting down or deadlock detected, returning empty list")
-                    return []
-                raise
+        # Use Django ORM exclusively
+        if not _database_available:
+            logger.warning("⚠️  Database not available, returning empty list")
+            return []
         
-        # Wrap SQLAlchemy operations in asyncio.to_thread since we're in async context
-        # Use to_thread instead of sync_to_async to avoid deadlock in background threads
-        
-        def _fetch_eggs_sync():
-            db = SessionLocal()
-            try:
-                min_scan_time = datetime.now() - timedelta(seconds=self.min_scan_age)
-                additional_filters = ""
-                params = {'limit': self.batch_size}
-                if self.min_scan_age != 0:
-                    additional_filters = """
-                        AND (
-                            er."lastScan" IS NULL 
-                            OR er."lastScan" < :min_scan_time
-                        )
-                    """
-                    params['min_scan_time'] = min_scan_time
-                
-                query = text(f"""
-                        SELECT 
-                        er.id AS id,
-                        er."subDomain" AS subdomain,
-                        er.domainname AS domainname,
-                        e."eisystem_in_thorm" AS customer_name,
-                        er."lastScan" AS last_scan,
-                        e."kontrol_tier" AS kontrol_tier,
-                        er."total_scan_count" AS total_scan_count,
-                        COALESCE(er.bugsy_priority_score, 0) AS bugsy_priority,
-                        er.bugsy_last_curated_at AS bugsy_last_curated_at,
-                        er.bugsy_curation_metadata AS bugsy_curation_metadata,
-                        rec.recommended_templates AS bugsy_templates,
-                        rec.expected_success_rate AS bugsy_expected_success,
-                        rec.recommendation_type AS bugsy_recommendation_type
-                        FROM customer_eggs_eggrecords_general_models_eggrecord er
-                        JOIN customer_eggs_eggrecords_general_models_eggs e ON e.id = er."egg_id_id"
-                    LEFT JOIN LATERAL (
-                        SELECT 
-                            recommended_templates,
-                            expected_success_rate,
-                            recommendation_type,
-                            created_at
-                        FROM enrichment_system_cvescanrecommendation
-                        WHERE egg_record_id = er.id
-                          AND LOWER(status) IN ('pending', 'queued', 'recommended', 'new')
-                        ORDER BY expected_success_rate DESC NULLS LAST,
-                                 created_at DESC NULLS LAST
-                        LIMIT 1
-                    ) rec ON TRUE
-                        WHERE 
-                            er.alive = true
-                            AND er."skipScan" = false
-                        {additional_filters}
-                        ORDER BY 
-                        COALESCE(rec.expected_success_rate, 0) DESC,
-                        COALESCE(er.bugsy_priority_score, 0) DESC,
-                        er.bugsy_last_curated_at DESC NULLS LAST,
-                            e."kontrol_tier" DESC,
-                        er."lastScan" ASC NULLS FIRST,
-                        er.created_at ASC
-                        LIMIT :limit
-                    """)
-                
-                result = db.execute(query, params).mappings()
-                eggs: List[Dict[str, Any]] = []
-                now = datetime.now()
-                if not self._global_template_cache or (now - self._global_template_cache_refreshed).total_seconds() > 900:
-                    if db is not None:
-                        self._global_template_cache = self._fetch_global_template_pool(db, limit=80)
-                        self._global_template_cache_refreshed = now
-                
-                for row in result:
-                    recommended_templates = self._parse_template_list(row.get('bugsy_templates'))
-                    if not recommended_templates:
-                        recommended_templates = self._global_template_cache[:40]
-                    
-                    metadata = row.get('bugsy_curation_metadata')
-                    if isinstance(metadata, (str, bytes)):
-                        try:
-                            metadata = json.loads(metadata)
-                        except Exception:
-                            metadata = None
-                    
-                    eggs.append({
-                        'id': str(row['id']),
-                        'domain': row['subdomain'],
-                        'domainname': row['domainname'],
-                        'customer_name': row['customer_name'],
-                        'last_egg_scan': row['last_scan'],
-                        'priority': row['kontrol_tier'],
-                        'scan_count': row['total_scan_count'],
-                        'bugsy_priority_score': float(row['bugsy_priority']) if row['bugsy_priority'] is not None else 0.0,
-                        'bugsy_curated_at': row.get('bugsy_last_curated_at'),
-                        'bugsy_recommendation': {
-                            'type': row.get('bugsy_recommendation_type'),
-                            'expected_success_rate': row.get('bugsy_expected_success'),
-                            'metadata': metadata,
-                        },
-                        'templates': recommended_templates or [],
-                    })
-                
-                logger.info(f"📊 Found {len(eggs)} subdomains ready for scanning")
-                return eggs
-                
-            except Exception as e:
-                logger.error(f"❌ Error fetching egg records: {e}")
+        # Use asyncio.to_thread instead of sync_to_async to avoid deadlock
+        # when running in a background thread with its own event loop
+        try:
+            return await asyncio.to_thread(self._get_eggs_via_django)
+        except RuntimeError as e:
+            if "cannot schedule new futures" in str(e) or "interpreter shutdown" in str(e) or "deadlock" in str(e).lower():
+                logger.warning("⚠️  Interpreter shutting down or deadlock detected, returning empty list")
                 return []
-            finally:
-                db.close()
-        
-        return await asyncio.to_thread(_fetch_eggs_sync)
+            raise
     
     def _get_eggs_via_django(self) -> List[Dict[str, Any]]:
-        """Fallback method to get eggs using Django ORM when SQLAlchemy is not available."""
+        """Get eggs using Django ORM (primary method)."""
         try:
             from django.db import connections
             from django.utils import timezone
@@ -431,8 +310,19 @@ class SurgeAutonomousScanner:
                             'expected_success_rate': None,
                             'metadata': json.loads(row[9]) if row[9] else None,
                         },
-                        'templates': self._global_template_cache[:40] if self._global_template_cache else [],
+                        'templates': [],
                     })
+                
+                # Refresh template cache if needed
+                now = datetime.now()
+                if not self._global_template_cache or (now - self._global_template_cache_refreshed).total_seconds() > 900:
+                    self._global_template_cache = self._fetch_global_template_pool(limit=80)
+                    self._global_template_cache_refreshed = now
+                
+                # Add templates to each egg (use global cache as fallback)
+                for egg in eggs:
+                    if not egg.get('templates'):
+                        egg['templates'] = self._global_template_cache[:40] if self._global_template_cache else []
                 
                 logger.info(f"📊 Found {len(eggs)} subdomains ready for scanning (via Django)")
                 return eggs
@@ -441,37 +331,7 @@ class SurgeAutonomousScanner:
             return []
     
     def update_egg_scan_timestamp(self, egg_id: str) -> bool:
-        """Update egg record scan timestamp and increment scan count."""
-        # Check if database is available
-        if not _database_available or SessionLocal is None:
-            # This is a sync method, but when called from async context via to_thread,
-            # we can call the sync Django method directly
-            return self._update_egg_scan_timestamp_via_django(egg_id)
-        
-        db = SessionLocal()
-        try:
-            query = text("""
-                UPDATE customer_eggs_eggrecords_general_models_eggrecord
-                SET 
-                    \"lastScan\" = CURRENT_DATE,
-                    \"total_scan_count\" = \"total_scan_count\" + 1,
-                    updated_at = NOW()
-                WHERE id = :egg_id
-            """)
-            
-            db.execute(query, {'egg_id': egg_id})
-            db.commit()
-            return True
-            
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Error updating egg record timestamp: {e}")
-            return False
-        finally:
-            db.close()
-    
-    def _update_egg_scan_timestamp_via_django(self, egg_id: str) -> bool:
-        """Fallback method to update egg scan timestamp using Django ORM."""
+        """Update egg record scan timestamp and increment scan count using Django ORM."""
         try:
             from django.db import connections
             
@@ -635,34 +495,16 @@ class SurgeAutonomousScanner:
                 # Update scan with actual templates used (before completing)
                 if templates_used and _database_available:
                     try:
-                        # Try to get SessionLocal from database module
-                        if SessionLocal is None:
-                            try:
-                                from database import SessionLocal
-                            except ImportError:
-                                SessionLocal = None
-                        
-                        if SessionLocal is not None:
-                            db = SessionLocal()
-                            try:
-                                from vulnerability_models import NucleiScan
-                                scan_record = db.query(NucleiScan).filter(NucleiScan.id == scan_id).first()
-                                if scan_record:
-                                    scan_record.templates_used = templates_used
-                                    db.commit()
-                                    logger.info(f"✅ Updated scan {scan_id} with {len(templates_used)} templates: {templates_used[:5]}...")
-                            except Exception as e:
-                                logger.warning(f"Could not update templates_used: {e}")
-                                import traceback
-                                logger.debug(traceback.format_exc())
-                            finally:
-                                db.close()
-                        else:
-                            logger.debug("SessionLocal not available, skipping template update")
+                        from ..models import NucleiScan
+                        scan_record = NucleiScan.objects.filter(id=scan_id).first()
+                        if scan_record:
+                            scan_record.templates_used = templates_used
+                            scan_record.save(update_fields=['templates_used'])
+                            logger.info(f"✅ Updated scan {scan_id} with {len(templates_used)} templates: {templates_used[:5]}...")
                     except Exception as e:
                         logger.warning(f"Could not update templates_used: {e}")
-                elif templates_used:
-                    logger.warning(f"⚠️ No templates_used to update for scan {scan_id} (database not available)")
+                        import traceback
+                        logger.debug(traceback.format_exc())
                 
                 # Complete scan
                 surge_db.complete_scan(scan_id, success=True)
@@ -898,13 +740,14 @@ async def main():
     # Test database connection
     logger.info("🔌 Testing database connection...")
     try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
+        from django.db import connections
+        connection = connections['eggrecords']
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
         logger.info("✅ Database connection successful\n")
     except Exception as e:
         logger.error(f"❌ Database connection failed: {e}")
-        logger.error("   Please check EGOLLAMA_DATABASE_URL environment variable")
+        logger.error("   Please check Django database configuration")
         return 1
     
     # Create and run scanner

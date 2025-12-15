@@ -19,6 +19,7 @@ app_name = 'ryu_app'
 urlpatterns = [
     path('', views.general_dashboard, name='index'),
     path('general/', views.general_dashboard, name='general_dashboard'),
+    path('oak/', views.oak_dashboard, name='oak_dashboard'),
     path('kage/', views.kage_dashboard, name='kage_dashboard'),
     path('kaze/', views.kaze_dashboard, name='kaze_dashboard'),
     path('kumo/', views.kumo_dashboard, name='kumo_dashboard'),
@@ -47,6 +48,8 @@ urlpatterns = [
     path('api/suzu/paths/similar/', csrf_exempt(views.suzu_similar_paths_api), name='suzu_similar_paths_api'),
     path('api/suzu/paths/weighted/', views.suzu_weighted_paths_api, name='suzu_weighted_paths_api'),
     path('api/suzu/upload-history/', views.suzu_upload_history_api, name='suzu_upload_history_api'),
+    path('api/suzu/wordlist/<uuid:wordlist_id>/', views.suzu_delete_wordlist_api, name='suzu_delete_wordlist_api'),
+    path('api/suzu/enumeration/<uuid:enumeration_id>/', views.suzu_delete_enumeration_api, name='suzu_delete_enumeration_api'),
     path('api/suzu/check-duplicates/', csrf_exempt(views.suzu_check_duplicates_api), name='suzu_check_duplicates_api'),
     # Suzu Progress API endpoints
     path('api/suzu/progress/', views.suzu_get_progress, name='suzu_get_progress'),

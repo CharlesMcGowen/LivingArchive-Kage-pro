@@ -24,6 +24,20 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+# Lazy import for Django ORM models
+def _get_nuclei_template_model():
+    """Get NucleiTemplate Django ORM model."""
+    try:
+        from artificial_intelligence.customer_eggs_eggrecords_general_models.models import NucleiTemplate
+        return NucleiTemplate
+    except ImportError:
+        try:
+            from customer_eggs_eggrecords_general_models.models import NucleiTemplate
+            return NucleiTemplate
+        except ImportError:
+            logger.warning("NucleiTemplate model not available")
+            return None
+
 # Lazy import to avoid circular dependencies
 _template_registry = None
 
@@ -196,6 +210,8 @@ class OakNmapCoordinationService:
         - Open ports/services
         - Scan recommendations
         
+        Uses Django ORM NucleiTemplate model for intelligent correlation.
+        
         Args:
             egg_record: The EggRecord to select templates for
             max_templates: Maximum number of templates to return
@@ -221,8 +237,9 @@ class OakNmapCoordinationService:
             # Step 4: Get existing scan recommendations
             scan_recommendations = self._get_scan_recommendations(egg_record_id)
             
-            # Step 5: Select templates based on all data
+            # Step 5: Select templates based on all data (using Django ORM)
             selected_templates = self._select_templates(
+                egg_record_id=egg_record_id,
                 fingerprints=fingerprints,
                 cve_matches=cve_matches,
                 open_ports=open_ports,
@@ -401,11 +418,14 @@ class OakNmapCoordinationService:
             self.logger.debug(f"Error getting scan recommendations: {e}")
             return []
     
-    def _select_templates(self, fingerprints: List[Dict], cve_matches: List[Dict],
+    def _select_templates(self, egg_record_id: str, fingerprints: List[Dict], cve_matches: List[Dict],
                          open_ports: List[Dict], scan_recommendations: List[Dict],
                          max_templates: int) -> List[Dict]:
         """
         Select Nuclei templates based on all available intelligence.
+        
+        Uses Django ORM NucleiTemplate.find_for_egg_record() for intelligent correlation,
+        with fallback to template registry service if ORM is unavailable.
         
         Priority:
         1. Templates from CVE matches (highest priority)
@@ -416,26 +436,80 @@ class OakNmapCoordinationService:
         selected = []
         template_ids_seen = set()
         
-        # Priority 1: Templates from CVE matches
-        # First try CVE matches from CVEFingerprintMatch (if they have template IDs)
-        for cve_match in cve_matches:
-            if cve_match.get('has_nuclei_template') and cve_match.get('nuclei_template_ids'):
-                for template_id in cve_match['nuclei_template_ids']:
+        # Try Django ORM first (preferred method)
+        NucleiTemplate = _get_nuclei_template_model()
+        if NucleiTemplate:
+            try:
+                # Use the powerful find_for_egg_record() method that correlates everything
+                templates_qs = NucleiTemplate.find_for_egg_record(
+                    egg_record_id=egg_record_id,
+                    technology_fingerprints=fingerprints,
+                    cve_matches=cve_matches
+                )
+                
+                # Convert QuerySet to list of dicts with priority scoring
+                for template in templates_qs[:max_templates]:
+                    template_id = template.template_id
                     if template_id and template_id not in template_ids_seen:
+                        # Determine priority based on source
+                        priority = 'medium'
+                        source = 'correlation'
+                        source_id = ''
+                        reasoning = f"Correlated match: {template.template_name or template_id}"
+                        
+                        # Check if this template matches a CVE
+                        template_cves = template.get_cve_ids()
+                        for cve_match in cve_matches:
+                            cve_id = cve_match.get('cve_id', '').upper()
+                            if cve_id in template_cves:
+                                priority = 'high'
+                                source = 'cve_match'
+                                source_id = cve_id
+                                reasoning = f"CVE {cve_id} ({cve_match.get('severity', 'UNKNOWN')}) - {template.template_name or template_id}"
+                                break
+                        
+                        # If not CVE match, check technology match
+                        if priority == 'medium':
+                            template_techs = template.get_technologies()
+                            for fingerprint in fingerprints:
+                                tech_name = fingerprint.get('technology_name', '').lower()
+                                if tech_name in template_techs:
+                                    source = 'fingerprint'
+                                    source_id = fingerprint.get('id', '')
+                                    reasoning = f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')} - {template.template_name or template_id}"
+                                    break
+                        
                         selected.append({
                             'template_id': template_id,
-                            'source': 'cve_match',
-                            'source_id': cve_match['cve_id'],
-                            'priority': 'high',
-                            'reasoning': f"CVE {cve_match['cve_id']} ({cve_match['severity']}) - {cve_match['technology']}",
-                            'cvss_score': cve_match['cvss_score']
+                            'template_path': template.template_path,
+                            'template_name': template.template_name,
+                            'source': source,
+                            'source_id': source_id,
+                            'priority': priority,
+                            'reasoning': reasoning,
+                            'severity': template.severity or 'info',
+                            'cve_ids': template_cves,
+                            'technologies': template.get_technologies(),
+                            'tags': template.tags or []
                         })
                         template_ids_seen.add(template_id)
+                        
                         if len(selected) >= max_templates:
                             return selected
+                
+                # If we got templates from ORM, return them (even if less than max)
+                if selected:
+                    self.logger.info(f"✅ Found {len(selected)} templates via Django ORM correlation")
+                    return selected
+                    
+            except Exception as e:
+                self.logger.warning(f"Error using Django ORM for template selection: {e}, falling back to registry")
         
-        # Also query template registry for CVE matches
+        # Fallback: Use template registry service (raw SQL)
+        self.logger.debug("Using template registry service as fallback")
         registry = _get_template_registry()
+        
+        # Priority 1: Templates from CVE matches
         if registry:
             for cve_match in cve_matches:
                 cve_id = cve_match.get('cve_id', '')
@@ -447,74 +521,73 @@ class OakNmapCoordinationService:
                             selected.append({
                                 'template_id': template_id,
                                 'template_path': template.get('template_path'),
+                                'template_name': template.get('template_name'),
                                 'source': 'cve_match',
                                 'source_id': cve_id,
                                 'priority': 'high',
                                 'reasoning': f"CVE {cve_id} ({cve_match.get('severity', 'UNKNOWN')}) - Template: {template.get('template_name', template_id)}",
                                 'cvss_score': cve_match.get('cvss_score', 0.0),
                                 'severity': template.get('severity', 'info')
-                        })
-                        template_ids_seen.add(template_id)
-                        if len(selected) >= max_templates:
-                            return selected
+                            })
+                            template_ids_seen.add(template_id)
+                            if len(selected) >= max_templates:
+                                return selected
         
         # Priority 2: Templates from scan recommendations
         for rec in scan_recommendations:
             if rec.get('type') == 'nuclei' and rec.get('high_priority'):
                 # Extract template IDs from reasoning if available
-                # (This would need to be stored in the recommendation)
-                # For now, skip - templates should come from CVE matches
                 pass
         
         # Priority 3: Templates based on technology fingerprints
-        registry = _get_template_registry()
-        for fingerprint in fingerprints:
-            tech_name = fingerprint.get('technology_name', '')
-            category = fingerprint.get('category', '').lower()
-            
-            # Try template registry first (if available)
-            if registry:
-                # Query registry for templates matching this technology
-                templates = registry.find_templates_by_technology(tech_name, severity=None)
+        if registry:
+            for fingerprint in fingerprints:
+                tech_name = fingerprint.get('technology_name', '')
+                if tech_name:
+                    templates = registry.find_templates_by_technology(tech_name, severity=None)
+                    
+                    # Prioritize by severity (critical/high first)
+                    templates.sort(key=lambda x: {
+                        'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4
+                    }.get(x.get('severity', 'info'), 4))
+                    
+                    for template in templates[:10]:  # Limit to top 10 per technology
+                        template_id = template.get('template_id')
+                        if template_id and template_id not in template_ids_seen:
+                            selected.append({
+                                'template_id': template_id,
+                                'template_path': template.get('template_path'),
+                                'template_name': template.get('template_name'),
+                                'source': 'fingerprint',
+                                'source_id': fingerprint['id'],
+                                'priority': 'medium',
+                                'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')} - {template.get('template_name', template_id)}",
+                                'confidence': fingerprint.get('confidence', 0.0),
+                                'severity': template.get('severity', 'info')
+                            })
+                            template_ids_seen.add(template_id)
+                            if len(selected) >= max_templates:
+                                return selected
+        else:
+            # Fallback to hardcoded patterns if registry not available
+            for fingerprint in fingerprints:
+                tech_name = fingerprint.get('technology_name', '')
+                category = fingerprint.get('category', '').lower()
+                template_patterns = self._get_template_patterns_for_technology(tech_name, category)
                 
-                # Prioritize by severity (critical/high first)
-                templates.sort(key=lambda x: {
-                    'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4
-                }.get(x.get('severity', 'info'), 4))
-                
-                for template in templates[:10]:  # Limit to top 10 per technology
-                    template_id = template.get('template_id')
-                    if template_id and template_id not in template_ids_seen:
+                for pattern in template_patterns:
+                    if pattern not in template_ids_seen:
                         selected.append({
-                            'template_id': template_id,
-                            'template_path': template.get('template_path'),
+                            'template_id': pattern,
                             'source': 'fingerprint',
                             'source_id': fingerprint['id'],
                             'priority': 'medium',
-                            'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')} - {template.get('template_name', template_id)}",
-                            'confidence': fingerprint.get('confidence', 0.0),
-                            'severity': template.get('severity', 'info')
-                        })
-                        template_ids_seen.add(template_id)
-                        if len(selected) >= max_templates:
-                            return selected
-            else:
-                # Fallback to hardcoded patterns if registry not available
-            template_patterns = self._get_template_patterns_for_technology(tech_name, category)
-            
-            for pattern in template_patterns:
-                if pattern not in template_ids_seen:
-                    selected.append({
-                        'template_id': pattern,
-                        'source': 'fingerprint',
-                        'source_id': fingerprint['id'],
-                        'priority': 'medium',
                             'reasoning': f"Technology: {fingerprint['technology_name']} v{fingerprint.get('technology_version', '')}",
                             'confidence': fingerprint.get('confidence', 0.0)
-                    })
-                    template_ids_seen.add(pattern)
-                    if len(selected) >= max_templates:
-                        return selected
+                        })
+                        template_ids_seen.add(pattern)
+                        if len(selected) >= max_templates:
+                            return selected
         
         # Priority 4: Templates based on open ports/services
         for port_info in open_ports:
