@@ -86,9 +86,16 @@ class KazeDaemon:
         try:
             from kaze.nmap_scanner import get_kaze_scanner
             self.scanner = get_kaze_scanner(parallel_enabled=True)
-            logger.info("✅ Kaze Nmap scanner initialized")
+            if self.scanner:
+                logger.info("✅ Kaze Nmap scanner initialized")
+            else:
+                logger.error("❌ Failed to initialize scanner: get_kaze_scanner returned None")
+                self.scanner = None
+        except ImportError as e:
+            logger.error(f"❌ Failed to import kaze scanner module: {e}", exc_info=True)
+            self.scanner = None
         except Exception as e:
-            logger.error(f"❌ Failed to initialize scanner: {e}")
+            logger.error(f"❌ Failed to initialize scanner: {e}", exc_info=True)
             self.scanner = None
     
     def _get_eggrecords(self):

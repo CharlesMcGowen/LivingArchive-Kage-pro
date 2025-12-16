@@ -405,3 +405,8 @@ def map_finding_to_mitre_techniques(finding: Dict[str, Any], finding_type: Optio
     return mapper.map_finding_to_mitre_techniques(finding, finding_type)
 
 
+
+
+
+
+

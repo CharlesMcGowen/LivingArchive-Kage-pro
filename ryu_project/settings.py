@@ -204,7 +204,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # File upload settings - allow large wordlist files
 # Remove limits to allow files of any size
 DATA_UPLOAD_MAX_MEMORY_SIZE = None  # No limit - stream to disk for large files
-FILE_UPLOAD_MAX_MEMORY_SIZE = None  # No limit - stream to disk for large files
+# File upload settings - set to a large value to allow large wordlist files
+# 100MB in bytes (104857600) - files larger than this will be streamed to disk
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB - allows large wordlist files in memory
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None  # No limit on form fields
 DATA_UPLOAD_MAX_NUMBER_FILES = None  # No limit on number of files
 

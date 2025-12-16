@@ -48,9 +48,55 @@
 
 <h3 style="margin-bottom: 15px; color: #f59e0b;">📊 Recent Nmap Scans</h3>
 
+<!-- Filter EggRecords Panel -->
+<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+    <h3 style="color: #f59e0b; margin-bottom: 15px; font-size: 1.1rem;">🔍 Filter EggRecords</h3>
+    <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 15px;">
+        Filter eggrecords by egg
+    </p>
+    
+    <form method="GET" action="" style="display: flex; gap: 15px; align-items: end; flex-wrap: wrap;">
+        <!-- Preserve existing scan filters -->
+        {% if filters.target %}<input type="hidden" name="target" value="{{ filters.target }}">{% endif %}
+        {% if filters.port %}<input type="hidden" name="port" value="{{ filters.port }}">{% endif %}
+        {% if filters.service %}<input type="hidden" name="service" value="{{ filters.service }}">{% endif %}
+        {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+        {% if filters.date_from %}<input type="hidden" name="date_from" value="{{ filters.date_from }}">{% endif %}
+        {% if filters.date_to %}<input type="hidden" name="date_to" value="{{ filters.date_to }}">{% endif %}
+        
+        <div style="flex: 1; min-width: 200px;">
+            <label for="filter-egg" style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Egg</label>
+            <select id="filter-egg" name="egg" style="width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 0.9rem;">
+                <option value="">All Eggs</option>
+                {% for egg in unique_eggs|default:"" %}
+                <option value="{{ egg.id }}" {% if filter_egg_id == egg.id|stringformat:"s" %}selected{% endif %}>{{ egg.eggName }} ({{ egg.eisystem_in_thorm }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" style="padding: 8px 20px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">🔍 Filter</button>
+            <a href="?" style="padding: 8px 20px; background: #64748b; color: white; border: none; border-radius: 4px; text-decoration: none; text-align: center; font-weight: 500;">Clear</a>
+        </div>
+    </form>
+    
+    <div style="margin-top: 15px; padding: 10px; background: #0f172a; border-radius: 4px; color: #94a3b8; font-size: 0.85rem;">
+        {% if filter_egg_id %}
+            Showing {{ total_count }} of {{ total_eggrecords }} eggrecords for selected egg
+        {% else %}
+            Showing {{ total_count }} of {{ total_eggrecords }} eggrecords (most recent)
+        {% endif %}
+        {% if alive_eggrecords %}
+            <span style="color: #10b981; margin-left: 10px;">• {{ alive_eggrecords }} alive</span>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Search and Filter Form -->
 <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
     <form method="GET" action="" id="filterForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+        <!-- Preserve egg filter if set -->
+        {% if filter_egg_id %}<input type="hidden" name="egg" value="{{ filter_egg_id }}">{% endif %}
         <div>
             <label style="display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">Target</label>
             <input type="text" name="target" value="{{ filters.target }}" placeholder="Filter by target..." 

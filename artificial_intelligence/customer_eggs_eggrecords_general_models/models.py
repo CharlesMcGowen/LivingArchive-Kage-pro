@@ -172,9 +172,19 @@ class RequestMetaData(models.Model):
     
     Created by Kumo's HTTP spidering service.
     Converted from SQLAlchemy to Django ORM.
+    
+    Related to EggRecord via ForeignKey for proper ORM relationships.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    record_id_id = models.UUIDField(null=True, blank=True, db_index=True)
+    # ForeignKey relationship to EggRecord (using db_column to match existing table structure)
+    record_id = models.ForeignKey(
+        'EggRecord',
+        on_delete=models.CASCADE,
+        db_column='record_id_id',
+        related_name='request_metadata',
+        null=True,
+        blank=True
+    )
     request_id = models.CharField(max_length=255, null=False, blank=False)
     session_id = models.CharField(max_length=255, null=False, blank=False)
     target_url = models.CharField(max_length=2048, null=False, blank=False)

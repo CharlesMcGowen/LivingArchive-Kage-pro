@@ -26,17 +26,49 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
-# Setup Django
+# Setup Django (only if not already initialized)
+# Check if Django is already configured before attempting setup
 try:
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
     import django
-    django.setup()
-except Exception:
-    # Fallback to EgoQT settings
-    sys.path.insert(0, '/mnt/webapps-nvme')
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
-    import django
-    django.setup()
+    from django.apps import apps
+    # Check if Django apps are already populated
+    if apps.ready:
+        # Django is already initialized, skip setup
+        pass
+    else:
+        # Django not initialized, try to set it up
+        try:
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+            django.setup()
+        except RuntimeError as e:
+            if "reentrant" in str(e).lower() or "populate" in str(e).lower():
+                # Django is already being initialized, skip
+                pass
+            else:
+                raise
+except (ImportError, AttributeError):
+    # Django not available or not imported yet, try to set it up
+    try:
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+        import django
+        django.setup()
+    except RuntimeError as e:
+        if "reentrant" in str(e).lower() or "populate" in str(e).lower():
+            # Django is already initialized, skip
+            pass
+        else:
+            # Fallback to EgoQT settings
+            try:
+                sys.path.insert(0, '/mnt/webapps-nvme')
+                os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+                import django
+                django.setup()
+            except RuntimeError as e2:
+                if "reentrant" in str(e2).lower() or "populate" in str(e2).lower():
+                    # Django already initialized, skip
+                    pass
+                else:
+                    raise
 
 from django.apps import apps
 from django.db import connections

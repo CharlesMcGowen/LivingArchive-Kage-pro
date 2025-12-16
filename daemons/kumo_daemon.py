@@ -13,18 +13,47 @@ import logging
 import requests
 import json
 from pathlib import Path
+from datetime import datetime
 
 # Add project root to path (for isolated repo)
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [KUMO] %(levelname)s: %(message)s',
+# Configure logging to both file and console
+project_root = Path(__file__).parent.parent
+logs_dir = project_root / 'logs' / 'kumo'
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / f'kumo_daemon_{datetime.now().strftime("%Y%m%d")}.log'
+
+# Create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove existing handlers to avoid duplicates
+logger.handlers.clear()
+
+# File handler with rotation (keep last 7 days)
+file_handler = logging.FileHandler(log_file, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_formatter = logging.Formatter(
+    '%(asctime)s [KUMO] %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger(__name__)
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter(
+    '%(asctime)s [KUMO] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# Prevent propagation to root logger
+logger.propagate = False
 
 # Load agent configuration
 from daemons.config_loader import AgentConfig
@@ -207,6 +236,14 @@ class KumoDaemon:
                         # Perform spidering (pass eggrecord data to avoid Django model lookup)
                         # Set write_to_db=False so we submit via API for consistent timestamping
                         result = self.spider.spider_egg_record(eggrecord_id, write_to_db=False, eggrecord_data=eggrecord)
+                        
+                        # Validate result has request_metadata before submitting (always required when write_to_db=False)
+                        if 'request_metadata' not in result:
+                            logger.error(f"❌ CRITICAL: result missing request_metadata for {target_url} - adding empty list")
+                            logger.error(f"   Result keys: {list(result.keys())}")
+                            result['request_metadata'] = []
+                        else:
+                            logger.debug(f"✅ Result has request_metadata with {len(result.get('request_metadata', []))} entries")
                         
                         if result.get('success'):
                             # Submit result to API

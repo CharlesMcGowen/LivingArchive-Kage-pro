@@ -68,13 +68,17 @@ services:
       - DJANGO_API_BASE=http://django-server:9000
       - KAGE_SCAN_INTERVAL=30
       - KAGE_MAX_SCANS=5
+    volumes:
+      # Mount kage module directory
+      - ../kage:/app/kage:ro
+      # Mount logs directory for persistent logging
+      - ../logs/kage:/app/logs/kage:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kage/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    # No volumes needed for isolated version
     pid: host  # Use host PID namespace for better signal handling
 
   # Kaze Daemon - High-Speed Port Scanner
@@ -93,6 +97,11 @@ services:
       - DJANGO_API_BASE=http://django-server:9000
       - KAZE_SCAN_INTERVAL=15
       - KAZE_MAX_SCANS=10
+    volumes:
+      # Mount kaze module directory
+      - ../kaze:/app/kaze:ro
+      # Mount logs directory for persistent logging
+      - ../logs/kaze:/app/logs/kaze:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kaze/health/"]
       interval: 30s
@@ -117,14 +126,18 @@ services:
       - DJANGO_API_BASE=http://django-server:9000
       - KUMO_SPIDER_INTERVAL=45
       - KUMO_MAX_SPIDERS=3
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+      # Mount kumo module directory
+      - ../kumo:/app/kumo:ro
+      # Mount logs directory for persistent logging
+      - ../logs/kumo:/app/logs/kumo:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/kumo/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    volumes:
-      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
     pid: host
 
   # Ryu Daemon - Threat Assessment
@@ -145,14 +158,18 @@ services:
       - RYU_ASSESSMENT_INTERVAL=60
       - RYU_MAX_SCANS=5
       - RYU_MAX_ASSESSMENTS=2
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+      # Mount kage module directory (Ryu uses kage scanner)
+      - ../kage:/app/kage:ro
+      # Mount logs directory for persistent logging
+      - ../logs/ryu:/app/logs/ryu:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/ryu/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    volumes:
-      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
     pid: host
 
   # Suzu Daemon - Directory Enumeration
@@ -174,14 +191,18 @@ services:
       - SUZU_MAX_ENUMS=2
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+    volumes:
+      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
+      # Mount suzu module directory
+      - ../suzu:/app/suzu:ro
+      # Mount logs directory for persistent logging
+      - ../logs/suzu:/app/logs/suzu:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://django-server:9000/reconnaissance/api/daemon/suzu/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    volumes:
-      - /mnt/webapps-nvme:/mnt/webapps-nvme:ro
     pid: host
 
   # Qdrant Vector Database - For Suzu path storage

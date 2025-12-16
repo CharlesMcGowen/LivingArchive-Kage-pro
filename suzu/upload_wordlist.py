@@ -171,36 +171,100 @@ def detect_cms_for_single_path(path: str, filename_cms_hint: Optional[str] = Non
         if score > 0:
             cms_scores[cms_name] = score
     
-    # Boost filename CMS hint if it matches
-    if filename_cms_hint and filename_cms_hint in cms_scores:
-        cms_scores[filename_cms_hint] *= 1.5
-        logger.debug(f"🔍 Boosted {filename_cms_hint} detection for path {path} (filename hint)")
+    # Filter out None/invalid scores FIRST before any operations
+    valid_cms_scores = {k: v for k, v in cms_scores.items() if v is not None and isinstance(v, (int, float))}
     
-    if not cms_scores:
+    if not valid_cms_scores:
         # No CMS detected - return hint with low confidence or None
         if filename_cms_hint:
             return (filename_cms_hint, 0.2)  # Low confidence hint
         return (None, 0.0)
     
+    # Boost filename CMS hint if it matches (only on valid scores)
+    if filename_cms_hint and filename_cms_hint in valid_cms_scores:
+        boost_value = valid_cms_scores[filename_cms_hint]
+        if boost_value is not None and isinstance(boost_value, (int, float)):
+            valid_cms_scores[filename_cms_hint] = boost_value * 1.5
+            logger.debug(f"🔍 Boosted {filename_cms_hint} detection for path {path} (filename hint)")
+        else:
+            # Remove invalid entry if boost fails
+            del valid_cms_scores[filename_cms_hint]
+    
+    # Re-validate after boost to ensure no None values were introduced
+    valid_cms_scores = {k: v for k, v in valid_cms_scores.items() if v is not None and isinstance(v, (int, float))}
+    
+    if not valid_cms_scores:
+        # All scores became invalid after boost - return hint with low confidence
+        if filename_cms_hint:
+            return (filename_cms_hint, 0.2)  # Low confidence hint
+        return (None, 0.0)
+    
+    # ULTIMATE VALIDATION: Final aggressive filter right before max() operation
+    # This ensures absolutely no None values can reach the comparison operation
+    valid_cms_scores = {
+        k: float(v) for k, v in valid_cms_scores.items() 
+        if v is not None 
+        and isinstance(v, (int, float)) 
+        and not (isinstance(v, float) and __import__('math').isnan(v))
+        and v > 0.0
+    }
+    
+    if not valid_cms_scores:
+        # All scores were filtered out - return hint with low confidence
+        if filename_cms_hint:
+            return (filename_cms_hint, 0.2)  # Low confidence hint
+        return (None, 0.0)
+    
     # Find CMS with highest score
-    best_cms, best_score = max(cms_scores.items(), key=lambda x: x[1])
+    # At this point, valid_cms_scores is guaranteed to contain only positive floats/ints
+    # No None values can possibly exist here
+    try:
+        best_cms, best_score = max(valid_cms_scores.items(), key=lambda x: x[1])
+        # Final safety check on the result
+        if best_score is None or not isinstance(best_score, (int, float)):
+            raise ValueError(f"max() returned invalid score: {best_score}")
+    except (ValueError, TypeError) as e:
+        logger.error(f"Error in max() operation: {e}, valid_cms_scores: {valid_cms_scores}")
+        # Fallback: return hint with low confidence
+        if filename_cms_hint:
+            return (filename_cms_hint, 0.2)
+        return (None, 0.0)
+    # #region agent log
+    import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:186","message":"AFTER max() call, BEFORE min() comparison","data":{"best_cms":best_cms,"best_score":best_score,"best_score_type":type(best_score).__name__,"best_score_is_none":best_score is None},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+    # #endregion
     
     # Normalize confidence score (0.0-1.0)
     # Higher scores indicate more specific matches
     # Scale: 0.1-0.3 = low confidence, 0.3-0.6 = medium, 0.6+ = high
-    confidence = min(best_score / 0.6, 1.0)  # Normalize to 0.0-1.0
+    # #region agent log
+    import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:191","message":"BEFORE min() call with best_score","data":{"best_score":best_score,"best_score_type":type(best_score).__name__,"about_to_call_min":True},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+    # #endregion
+    confidence = min(best_score / 0.6, 1.0) if best_score is not None and isinstance(best_score, (int, float)) else 0.0  # Normalize to 0.0-1.0
     
     # If multiple CMSs have similar scores, reduce confidence (ambiguous)
-    sorted_scores = sorted(cms_scores.values(), reverse=True)
-    if len(sorted_scores) > 1 and sorted_scores[0] - sorted_scores[1] < 0.1:
-        # Close scores = ambiguous, reduce confidence
-        confidence *= 0.7
+    # Use valid_cms_scores instead of cms_scores to avoid None values
+    sorted_scores = sorted(valid_cms_scores.values(), reverse=True)
+    # #region agent log
+    import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:195","message":"BEFORE sorted_scores comparison","data":{"sorted_scores":sorted_scores,"sorted_scores_len":len(sorted_scores),"score0":sorted_scores[0] if len(sorted_scores) > 0 else None,"score0_type":type(sorted_scores[0]).__name__ if len(sorted_scores) > 0 else None,"score1":sorted_scores[1] if len(sorted_scores) > 1 else None,"score1_type":type(sorted_scores[1]).__name__ if len(sorted_scores) > 1 else None},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+    # #endregion
+    if len(sorted_scores) > 1:
+        score0 = sorted_scores[0] if sorted_scores[0] is not None else 0.0
+        score1 = sorted_scores[1] if sorted_scores[1] is not None else 0.0
+        if isinstance(score0, (int, float)) and isinstance(score1, (int, float)) and score0 - score1 < 0.1:
+            # Close scores = ambiguous, reduce confidence
+            confidence *= 0.7
     
     # Handle generic paths that match multiple CMSs
     generic_keywords = ['admin', 'api', 'config', 'themes', 'modules']
-    if best_score < 0.2 and any(kw in path_lower for kw in generic_keywords):
+    # #region agent log
+    import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:201","message":"BEFORE best_score < 0.2 comparison","data":{"best_score":best_score,"best_score_type":type(best_score).__name__,"best_score_is_none":best_score is None,"confidence":confidence,"confidence_type":type(confidence).__name__},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+    # #endregion
+    if best_score is not None and isinstance(best_score, (int, float)) and best_score < 0.2 and any(kw in path_lower for kw in generic_keywords):
         # Generic match - return as 'general' with low confidence
-        result = ('general', min(confidence, 0.3))
+        # #region agent log
+        import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:203","message":"BEFORE min(confidence, 0.3) call","data":{"confidence":confidence,"confidence_type":type(confidence).__name__,"confidence_is_none":confidence is None},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+        # #endregion
+        result = ('general', min(confidence, 0.3) if confidence is not None and isinstance(confidence, (int, float)) else 0.3)
         # #region agent log
         import json; log_file = open('/tmp/suzu_debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"upload_wordlist.py:180","message":"Generic path detected","data":{"result":result,"best_score":best_score},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
         # #endregion
@@ -267,8 +331,13 @@ def detect_cms_from_paths(paths: List[str], filename_cms: str = None) -> tuple:
     if not cms_counts:
         return (filename_cms, 0) if filename_cms else (None, 0)
     
+    # Filter out None counts before finding max
+    valid_cms_counts = {k: v for k, v in cms_counts.items() if v is not None and isinstance(v, (int, float))}
+    if not valid_cms_counts:
+        return (filename_cms, 0) if filename_cms else (None, 0)
+    
     # Return CMS with highest count
-    detected_cms = max(cms_counts.items(), key=lambda x: x[1])
+    detected_cms = max(valid_cms_counts.items(), key=lambda x: x[1])
     return (detected_cms[0], detected_cms[1])
 
 
@@ -308,14 +377,23 @@ def calculate_automatic_weight(paths: List[str], filename_cms: str = None, detec
     
     # Apply boost if density is high
     if high_value_density >= 0.05:  # If 5% of paths are high-value
-        weight = min(weight + 0.1, 0.85)
+        if weight is not None and isinstance(weight, (int, float)):
+            weight = min(weight + 0.1, 0.85)
+        else:
+            weight = 0.85
     elif high_value_density >= 0.02:  # If 2% of paths are high-value
-        weight = min(weight + 0.05, 0.8)
+        if weight is not None and isinstance(weight, (int, float)):
+            weight = min(weight + 0.05, 0.8)
+        else:
+            weight = 0.8
     
     # --- 3. Final Bounding and Return ---
     # Max confidence for automatically calculated weight should be 0.9, leaving
     # room for human/learned overrides to reach 1.0
-    final_weight = max(0.3, min(weight, 0.9))
+    if weight is not None and isinstance(weight, (int, float)):
+        final_weight = max(0.3, min(weight, 0.9))
+    else:
+        final_weight = 0.4
     
     logger.info(f"⚖️  Calculated automatic weight: {final_weight:.2f} (CMS: {detected_cms or 'none'}, high-value density: {high_value_density:.2%})")
     
@@ -358,7 +436,10 @@ def calculate_weight_for_single_path(
         confidence = 0.0
     confidence = float(confidence)
     # Clamp confidence to valid range
-    confidence = max(0.0, min(1.0, confidence))
+    if confidence is not None and isinstance(confidence, (int, float)):
+        confidence = max(0.0, min(1.0, confidence))
+    else:
+        confidence = 0.0
     
     base_weight = 0.4
     weight = base_weight
@@ -406,8 +487,14 @@ def calculate_weight_for_single_path(
         weight = base_weight
     
     # Final bounding with safety checks
+    # #region agent log
+    import json; log_file = open('/home/ego/github_public/.cursor/debug.log', 'a'); log_file.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"upload_wordlist.py:427","message":"BEFORE final max/min bounding","data":{"weight":weight,"weight_type":type(weight).__name__,"weight_is_none":weight is None,"base_weight":base_weight},"timestamp":int(__import__('time').time()*1000)}) + '\n'); log_file.close()
+    # #endregion
     try:
-        final_weight = max(0.3, min(weight, 0.9))
+        if weight is not None and isinstance(weight, (int, float)):
+            final_weight = max(0.3, min(weight, 0.9))
+        else:
+            final_weight = base_weight
     except (TypeError, ValueError):
         final_weight = base_weight
     

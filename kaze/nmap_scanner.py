@@ -59,18 +59,49 @@ except ImportError:
 import sys
 import os
 
-# Setup Django
+# Setup Django (check if already initialized to avoid reentrant error)
 try:
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
     import django
-    django.setup()
-except Exception:
-    # Fallback to EgoQT settings
-    sys.path.insert(0, '/mnt/webapps-nvme')
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
-    import django
-    django.setup()
-django.setup()
+    from django.apps import apps
+    # Check if Django apps are already populated
+    if not apps.ready:
+        # Django not initialized, try to set it up
+        try:
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+            django.setup()
+        except RuntimeError as e:
+            if "reentrant" in str(e).lower() or "populate" in str(e).lower():
+                # Django is already being initialized, skip but try to import
+                pass
+            else:
+                # Fallback to EgoQT settings
+                try:
+                    sys.path.insert(0, '/mnt/webapps-nvme')
+                    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+                    django.setup()
+                except RuntimeError:
+                    # Django already initialized, continue
+                    pass
+except (ImportError, AttributeError, ModuleNotFoundError):
+    # Django not available or not imported yet, try to set it up
+    try:
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ryu_project.settings')
+        import django
+        django.setup()
+    except RuntimeError as e:
+        if "reentrant" in str(e).lower() or "populate" in str(e).lower():
+            # Django already initialized, continue
+            pass
+        else:
+            # Fallback to EgoQT settings
+            try:
+                sys.path.insert(0, '/mnt/webapps-nvme')
+                os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'EgoQT.src.django_bridge.settings')
+                import django
+                django.setup()
+            except (ImportError, ModuleNotFoundError, RuntimeError):
+                # Django not available or already initialized
+                pass
 
 from django.apps import apps
 from django.db import connections

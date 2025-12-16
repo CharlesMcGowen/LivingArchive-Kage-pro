@@ -53,18 +53,14 @@ secrets/
 
 # Logs
 # Ignore log files but keep directory structure
-logs/**/*.log
-logs/**/*.log.*
 *.log
-# Keep .gitkeep files to maintain directory structure in git
-!.gitkeep
-!logs/**/.gitkeep
-# Log files (but keep directory structure)
 logs/**/*.log
 logs/**/*.log.*
 logs/**/*.txt
+# Keep .gitkeep files and README to maintain directory structure in git
+!.gitkeep
 !logs/.gitkeep
-!logs/*/.gitkeep
+!logs/**/.gitkeep
 !logs/README.md
 
 # OS
@@ -94,3 +90,4 @@ temp/
 # Development documentation and scripts - local only
 DocsDev/
 ColdStorage/
+surge/nuclei-source/

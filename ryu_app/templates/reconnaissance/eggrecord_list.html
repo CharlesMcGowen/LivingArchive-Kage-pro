@@ -804,7 +804,7 @@ async function generateProjectEggForGenerate() {
 function applyServerFilter() {
     const eggFilter = document.getElementById('filter-egg') ? document.getElementById('filter-egg').value : '';
     const url = new URL(window.location);
-    
+        
     if (eggFilter) {
         url.searchParams.set('egg', eggFilter);
     } else {

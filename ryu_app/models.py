@@ -83,3 +83,42 @@ class WordlistUpload(models.Model):
     def __str__(self):
         return f"{self.wordlist_name} ({self.uploaded_count} paths) - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
 
+
+class CMSDefinition(models.Model):
+    """Custom CMS definitions that users can add"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    cms_name = models.CharField(max_length=100, unique=True, db_index=True)
+    display_name = models.CharField(max_length=200, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    
+    # Detection patterns
+    filename_patterns = models.JSONField(default=list, help_text="List of filename patterns (e.g., ['wordpress', 'wp-'])")
+    path_patterns = models.JSONField(default=list, help_text="List of path patterns (e.g., ['/wp-admin/', '/wp-content/'])")
+    content_patterns = models.JSONField(default=list, help_text="List of content patterns for file content detection")
+    
+    # Metadata
+    CMS_TYPE_CHOICES = [
+        ('cms', 'CMS'),
+        ('framework', 'Framework'),
+        ('server', 'Server'),
+        ('e-commerce', 'E-Commerce'),
+        ('api-framework', 'API Framework'),
+        ('enterprise', 'Enterprise'),
+    ]
+    cms_type = models.CharField(max_length=50, default='cms', choices=CMS_TYPE_CHOICES)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.CharField(max_length=100, null=True, blank=True)
+    
+    class Meta:
+        ordering = ['cms_name']
+        verbose_name = 'CMS Definition'
+        verbose_name_plural = 'CMS Definitions'
+        indexes = [
+            models.Index(fields=['cms_name', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return self.display_name or self.cms_name
+

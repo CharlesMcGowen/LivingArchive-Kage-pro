@@ -126,3 +126,5 @@ class Command(BaseCommand):
         self.stdout.write(f'  Processed: {stats["processed"]}')
         self.stdout.write(f'  CVE matches created: {stats["cve_matches_created"]}')
         self.stdout.write(f'  Failed: {stats["failed"]}')
+
+

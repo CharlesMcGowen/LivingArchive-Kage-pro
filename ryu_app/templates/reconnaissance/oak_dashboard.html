@@ -129,6 +129,80 @@
     </div>
 </div>
 
+<h3 style="margin-bottom: 15px; margin-top: 30px; color: #10b981;">📤 Upload Curation Data</h3>
+
+<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <!-- Nuclei Templates Upload -->
+        <div style="border: 1px solid #334155; border-radius: 6px; padding: 15px;">
+            <h4 style="color: #10b981; margin-bottom: 10px; font-size: 1rem;">📄 Nuclei Templates</h4>
+            <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 12px;">
+                Upload YAML template files, directories, or ZIP archives for Oak to index and correlate.
+            </p>
+            <form id="upload-templates-form" enctype="multipart/form-data" style="margin-bottom: 10px;">
+                <input type="file" id="templates-file" name="template" accept=".yaml,.yml,.zip" 
+                       style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; margin-bottom: 8px;"
+                       multiple>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: #94a3b8;">
+                    <input type="checkbox" id="auto-index-templates" checked>
+                    Auto-index after upload
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: #94a3b8;">
+                    <input type="checkbox" id="force-rescan-templates">
+                    Force rescan existing templates
+                </label>
+                <button type="submit" 
+                        style="width: 100%; padding: 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+                    📤 Upload Templates
+                </button>
+            </form>
+            <div id="templates-upload-status" style="font-size: 0.85rem; color: #94a3b8; margin-top: 8px;"></div>
+        </div>
+        
+        <!-- CVE Data Upload -->
+        <div style="border: 1px solid #334155; border-radius: 6px; padding: 15px;">
+            <h4 style="color: #10b981; margin-bottom: 10px; font-size: 1rem;">🔒 CVE Data</h4>
+            <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 12px;">
+                Upload CVE information in JSON or CSV format. Requires egg_record_id in data or form.
+            </p>
+            <form id="upload-cves-form" enctype="multipart/form-data" style="margin-bottom: 10px;">
+                <input type="file" id="cves-file" name="cves" accept=".json,.csv" 
+                       style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; margin-bottom: 8px;">
+                <input type="text" id="cve-egg-record-id" name="egg_record_id" placeholder="EggRecord ID (if not in file)" 
+                       style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; margin-bottom: 8px; font-size: 0.85rem;">
+                <button type="submit" 
+                        style="width: 100%; padding: 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+                    📤 Upload CVEs
+                </button>
+            </form>
+            <div id="cves-upload-status" style="font-size: 0.85rem; color: #94a3b8; margin-top: 8px;"></div>
+        </div>
+        
+        <!-- Technology Fingerprints Upload -->
+        <div style="border: 1px solid #334155; border-radius: 6px; padding: 15px;">
+            <h4 style="color: #10b981; margin-bottom: 10px; font-size: 1rem;">🔍 Technology Fingerprints</h4>
+            <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 12px;">
+                Upload technology fingerprint data in JSON format to enrich target intelligence.
+            </p>
+            <form id="upload-fingerprints-form" enctype="multipart/form-data" style="margin-bottom: 10px;">
+                <input type="file" id="fingerprints-file" name="fingerprints" accept=".json" 
+                       style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; margin-bottom: 8px;">
+                <input type="text" id="egg-record-id" name="egg_record_id" placeholder="EggRecord ID (optional)" 
+                       style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; margin-bottom: 8px; font-size: 0.85rem;">
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: #94a3b8;">
+                    <input type="checkbox" id="auto-curate-fingerprints">
+                    Auto-trigger curation after upload
+                </label>
+                <button type="submit" 
+                        style="width: 100%; padding: 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+                    📤 Upload Fingerprints
+                </button>
+            </form>
+            <div id="fingerprints-upload-status" style="font-size: 0.85rem; color: #94a3b8; margin-top: 8px;"></div>
+        </div>
+    </div>
+</div>
+
 <h3 style="margin-bottom: 15px; margin-top: 30px; color: #10b981;">📊 API Endpoints</h3>
 
 <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px;">
@@ -144,10 +218,25 @@
             <span style="color: #60a5fa; margin-left: 10px;">POST /api/oak/refresh-templates/</span>
             <span style="color: #94a3b8; margin-left: 10px;">- Refresh template registry</span>
         </li>
-        <li style="padding: 8px 0;">
+        <li style="padding: 8px 0; border-bottom: 1px solid #334155;">
             <span style="color: #10b981;">🎯</span>
             <span style="color: #60a5fa; margin-left: 10px;">POST /api/oak/curate-sample/</span>
             <span style="color: #94a3b8; margin-left: 10px;">- Curate sample target</span>
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid #334155;">
+            <span style="color: #10b981;">📤</span>
+            <span style="color: #60a5fa; margin-left: 10px;">POST /api/oak/upload-templates/</span>
+            <span style="color: #94a3b8; margin-left: 10px;">- Upload Nuclei templates</span>
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid #334155;">
+            <span style="color: #10b981;">📤</span>
+            <span style="color: #60a5fa; margin-left: 10px;">POST /api/oak/upload-cves/</span>
+            <span style="color: #94a3b8; margin-left: 10px;">- Upload CVE data</span>
+        </li>
+        <li style="padding: 8px 0;">
+            <span style="color: #10b981;">📤</span>
+            <span style="color: #60a5fa; margin-left: 10px;">POST /api/oak/upload-fingerprints/</span>
+            <span style="color: #94a3b8; margin-left: 10px;">- Upload technology fingerprints</span>
         </li>
     </ul>
 </div>
@@ -194,6 +283,156 @@ function refreshTemplates() {
         btn.style.opacity = '1';
     });
 }
+
+// Upload Templates Handler
+document.getElementById('upload-templates-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const status = document.getElementById('templates-upload-status');
+    const formData = new FormData();
+    const fileInput = document.getElementById('templates-file');
+    const autoIndex = document.getElementById('auto-index-templates').checked;
+    const forceRescan = document.getElementById('force-rescan-templates').checked;
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        status.textContent = '❌ Please select a file to upload';
+        status.style.color = '#ef4444';
+        return;
+    }
+    
+    // Add all selected files
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('templates[]', fileInput.files[i]);
+    }
+    
+    status.textContent = '⏳ Uploading templates...';
+    status.style.color = '#3b82f6';
+    
+    try {
+        const url = `/reconnaissance/api/oak/upload-templates/?auto_index=${autoIndex}&force_rescan=${forceRescan}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            status.textContent = `✅ Uploaded ${data.uploaded} template(s). Indexed: ${data.indexed}, Updated: ${data.updated}, Skipped: ${data.skipped}${data.error_count > 0 ? `, Errors: ${data.error_count}` : ''}`;
+            status.style.color = '#10b981';
+            fileInput.value = ''; // Clear file input
+        } else {
+            status.textContent = `❌ Error: ${data.error || 'Upload failed'}`;
+            status.style.color = '#ef4444';
+        }
+    } catch (error) {
+        status.textContent = `❌ Error: ${error.message}`;
+        status.style.color = '#ef4444';
+        console.error('Upload templates error:', error);
+    }
+});
+
+// Upload CVEs Handler
+document.getElementById('upload-cves-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const status = document.getElementById('cves-upload-status');
+    const formData = new FormData();
+    const fileInput = document.getElementById('cves-file');
+    const eggRecordId = document.getElementById('cve-egg-record-id').value;
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        status.textContent = '❌ Please select a file to upload';
+        status.style.color = '#ef4444';
+        return;
+    }
+    
+    formData.append('cves', fileInput.files[0]);
+    if (eggRecordId) {
+        formData.append('egg_record_id', eggRecordId);
+    }
+    
+    status.textContent = '⏳ Uploading CVE data...';
+    status.style.color = '#3b82f6';
+    
+    try {
+        const response = await fetch('/reconnaissance/api/oak/upload-cves/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            status.textContent = `✅ Processed ${data.processed} CVE(s)${data.error_count > 0 ? `, Errors: ${data.error_count}` : ''}`;
+            status.style.color = '#10b981';
+            fileInput.value = ''; // Clear file input
+            document.getElementById('cve-egg-record-id').value = ''; // Clear egg record ID
+        } else {
+            status.textContent = `❌ Error: ${data.error || 'Upload failed'}`;
+            status.style.color = '#ef4444';
+        }
+    } catch (error) {
+        status.textContent = `❌ Error: ${error.message}`;
+        status.style.color = '#ef4444';
+        console.error('Upload CVEs error:', error);
+    }
+});
+
+// Upload Fingerprints Handler
+document.getElementById('upload-fingerprints-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const status = document.getElementById('fingerprints-upload-status');
+    const formData = new FormData();
+    const fileInput = document.getElementById('fingerprints-file');
+    const eggRecordId = document.getElementById('egg-record-id').value;
+    const autoCurate = document.getElementById('auto-curate-fingerprints').checked;
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        status.textContent = '❌ Please select a file to upload';
+        status.style.color = '#ef4444';
+        return;
+    }
+    
+    formData.append('fingerprints', fileInput.files[0]);
+    if (eggRecordId) {
+        formData.append('egg_record_id', eggRecordId);
+    }
+    if (autoCurate) {
+        formData.append('auto_curate', 'true');
+    }
+    
+    status.textContent = '⏳ Uploading fingerprints...';
+    status.style.color = '#3b82f6';
+    
+    try {
+        const response = await fetch('/reconnaissance/api/oak/upload-fingerprints/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            let message = `✅ Processed ${data.processed} fingerprint(s)`;
+            if (data.curation && data.curation.queued) {
+                message += ', Curation queued';
+            }
+            if (data.error_count > 0) {
+                message += `, Errors: ${data.error_count}`;
+            }
+            status.textContent = message;
+            status.style.color = '#10b981';
+            fileInput.value = ''; // Clear file input
+            document.getElementById('egg-record-id').value = ''; // Clear egg record ID
+        } else {
+            status.textContent = `❌ Error: ${data.error || 'Upload failed'}`;
+            status.style.color = '#ef4444';
+        }
+    } catch (error) {
+        status.textContent = `❌ Error: ${error.message}`;
+        status.style.color = '#ef4444';
+        console.error('Upload fingerprints error:', error);
+    }
+});
 </script>
 
 {% endblock %}

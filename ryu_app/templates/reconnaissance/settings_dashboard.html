@@ -174,10 +174,17 @@
             <div class="version-card">
                 <div class="label">Current Version</div>
                 <div class="value" id="current-version">{{ current_version|default:"unknown" }}</div>
+                {% if version_source and version_source != "unknown" %}
+                <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Source: {{ version_source }}</div>
+                {% endif %}
             </div>
             <div class="version-card">
                 <div class="label">Current Commit</div>
                 <div class="value" id="current-commit">{{ current_commit|default:"unknown" }}</div>
+            </div>
+            <div class="version-card">
+                <div class="label">Git Branch</div>
+                <div class="value" id="git-branch">{{ git_branch|default:"unknown" }}</div>
             </div>
             <div class="version-card">
                 <div class="label">Repository</div>
@@ -186,6 +193,11 @@
                         {{ repository_owner }}/{{ repository_name }}
                     </a>
                 </div>
+                {% if git_remote_url %}
+                <div style="font-size: 0.7rem; color: #64748b; margin-top: 5px; font-family: monospace;">
+                    {{ git_remote_url }}
+                </div>
+                {% endif %}
             </div>
         </div>
         

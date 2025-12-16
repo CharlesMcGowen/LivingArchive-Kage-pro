@@ -1,185 +1,285 @@
 """
-Django ORM Models for Surge Nuclei Scanner
-==========================================
+Surge Django Models
+===================
 
-Models for storing Nuclei scan results and vulnerabilities.
-Replaces SQLAlchemy models with native Django ORM.
+Django ORM models for Surge vulnerability scanning, including:
+- Nuclei template usage tracking
+- Learning system for adaptive scanning
+- Performance metrics
+- Agent control and adaptation
 """
 
 from django.db import models
 from django.utils import timezone
+import uuid
 
 
-class ScanStatus(models.TextChoices):
-    """Scan execution status choices"""
-    PENDING = 'pending', 'Pending'
-    RUNNING = 'running', 'Running'
-    COMPLETED = 'completed', 'Completed'
-    FAILED = 'failed', 'Failed'
-
-
-class ScanSeverity(models.TextChoices):
-    """Vulnerability severity levels"""
-    CRITICAL = 'critical', 'Critical'
-    HIGH = 'high', 'High'
-    MEDIUM = 'medium', 'Medium'
-    LOW = 'low', 'Low'
-    INFO = 'info', 'Info'
-    UNKNOWN = 'unknown', 'Unknown'
-
-
-class NucleiScan(models.Model):
-    """Represents a Nuclei vulnerability scan"""
+class NucleiTemplateUsage(models.Model):
+    """
+    Tracks Nuclei template usage for learning and optimization.
+    Enables adaptive template selection based on historical performance.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
-    # Target information
-    target = models.CharField(max_length=2048, db_index=True, help_text="Target URL or IP address")
-    target_domain = models.CharField(max_length=255, null=True, blank=True, db_index=True, help_text="Extracted domain name")
-    scan_type = models.CharField(max_length=50, help_text="Scan type: comprehensive, quick, stealth")
+    # Template identification
+    template_id = models.CharField(max_length=500, db_index=True)
+    template_path = models.CharField(max_length=1000, null=True, blank=True)
     
-    # Scan configuration
-    templates_used = models.JSONField(default=list, blank=True, help_text="List of Nuclei template IDs used")
-    scan_parameters = models.JSONField(default=dict, blank=True, help_text="Additional scan parameters")
-    pokemon_deployed = models.JSONField(default=list, blank=True, help_text="List of agents deployed (legacy field name, contains agent names)")
+    # Usage statistics
+    usage_count = models.IntegerField(default=0, db_index=True)
+    success_count = models.IntegerField(default=0)
+    failure_count = models.IntegerField(default=0)
     
-    # Scan execution
-    status = models.CharField(
-        max_length=20,
-        choices=ScanStatus.choices,
-        default=ScanStatus.PENDING,
-        db_index=True,
-        help_text="Current scan status"
-    )
-    started_at = models.DateTimeField(default=timezone.now, db_index=True, help_text="When the scan started")
-    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the scan completed")
-    scan_duration = models.FloatField(null=True, blank=True, help_text="Scan duration in seconds")
+    # Performance metrics
+    average_response_time = models.FloatField(null=True, blank=True, help_text="Average response time in seconds")
+    average_match_time = models.FloatField(null=True, blank=True, help_text="Average time to match in seconds")
+    success_rate = models.FloatField(default=0.0, db_index=True, help_text="Success rate (0.0-1.0)")
     
-    # Results summary
-    total_vulnerabilities = models.IntegerField(default=0, help_text="Total vulnerabilities found")
-    critical_count = models.IntegerField(default=0, help_text="Number of critical vulnerabilities")
-    high_count = models.IntegerField(default=0, help_text="Number of high severity vulnerabilities")
-    medium_count = models.IntegerField(default=0, help_text="Number of medium severity vulnerabilities")
-    low_count = models.IntegerField(default=0, help_text="Number of low severity vulnerabilities")
-    info_count = models.IntegerField(default=0, help_text="Number of informational findings")
+    # Effectiveness scoring
+    effectiveness_score = models.FloatField(default=0.0, db_index=True, help_text="Overall effectiveness score")
+    false_positive_rate = models.FloatField(default=0.0, help_text="False positive rate")
     
-    # Output files
-    output_file = models.CharField(max_length=1024, null=True, blank=True, help_text="Path to scan output file")
-    log_file = models.CharField(max_length=1024, null=True, blank=True, help_text="Path to scan log file")
+    # Context tracking
+    technologies_detected = models.JSONField(default=list, help_text="Technologies this template works well with")
+    cve_ids = models.JSONField(default=list, help_text="CVE IDs this template detects")
+    severity_distribution = models.JSONField(default=dict, help_text="Distribution of severities found")
     
-    # Integration with Agent AI
-    egg_id = models.CharField(max_length=36, null=True, blank=True, db_index=True, help_text="Related Kontrol AI egg ID")
-    
-    # Metadata
-    created_at = models.DateTimeField(auto_now_add=True, help_text="When the scan record was created")
-    updated_at = models.DateTimeField(auto_now=True, help_text="When the scan record was last updated")
-    
-    class Meta:
-        db_table = 'nuclei_scans'
-        indexes = [
-            models.Index(fields=['status', 'started_at']),
-            models.Index(fields=['target']),
-            models.Index(fields=['egg_id']),
-        ]
-        ordering = ['-started_at']
-        verbose_name = 'Nuclei Scan'
-        verbose_name_plural = 'Nuclei Scans'
-    
-    def __str__(self):
-        return f"NucleiScan({self.id}): {self.target} - {self.status}"
-
-
-class NucleiVulnerability(models.Model):
-    """Represents a vulnerability found by Nuclei"""
-    
-    scan = models.ForeignKey(
-        NucleiScan,
-        on_delete=models.CASCADE,
-        related_name='vulnerabilities',
-        db_index=True,
-        help_text="The scan that found this vulnerability"
-    )
-    
-    # Vulnerability identification
-    template_id = models.CharField(max_length=255, db_index=True, help_text="Nuclei template ID")
-    template_name = models.CharField(max_length=500, null=True, blank=True, help_text="Human-readable template name")
-    vulnerability_name = models.CharField(max_length=500, help_text="Name of the vulnerability")
-    
-    # Severity and classification
-    severity = models.CharField(
-        max_length=20,
-        choices=ScanSeverity.choices,
-        default=ScanSeverity.UNKNOWN,
-        db_index=True,
-        help_text="Vulnerability severity level"
-    )
-    vulnerability_type = models.CharField(max_length=100, null=True, blank=True, db_index=True, help_text="Type/category of vulnerability")
-    cve_id = models.CharField(max_length=50, null=True, blank=True, db_index=True, help_text="CVE identifier if applicable")
-    cwe_id = models.CharField(max_length=50, null=True, blank=True, help_text="CWE identifier if applicable")
-    cvss_score = models.FloatField(null=True, blank=True, help_text="CVSS score if available")
-    
-    # Technical details
-    matched_at = models.CharField(max_length=2048, help_text="URL or endpoint where vulnerability was found")
-    matcher_name = models.CharField(max_length=255, null=True, blank=True, help_text="Nuclei matcher that triggered")
-    matcher_status = models.CharField(max_length=50, null=True, blank=True, help_text="Matcher status code")
-    extracted_results = models.JSONField(default=list, blank=True, help_text="Extracted data from matchers")
-    
-    # Vulnerability details
-    description = models.TextField(null=True, blank=True, help_text="Detailed description of the vulnerability")
-    reference = models.TextField(null=True, blank=True, help_text="References and links")
-    tags = models.JSONField(default=list, blank=True, help_text="Tags associated with the vulnerability")
-    
-    # Request/Response data
-    request_data = models.TextField(null=True, blank=True, help_text="HTTP request that triggered the vulnerability")
-    response_data = models.TextField(null=True, blank=True, help_text="HTTP response from the server")
-    curl_command = models.TextField(null=True, blank=True, help_text="cURL command to reproduce")
-    
-    # Metadata from Nuclei
-    info = models.JSONField(default=dict, blank=True, help_text="Template info metadata")
-    vuln_metadata = models.JSONField(default=dict, blank=True, help_text="Additional vulnerability metadata")
+    # Learning metadata
+    last_used = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_success = models.DateTimeField(null=True, blank=True)
+    adaptation_count = models.IntegerField(default=0, help_text="Number of times template was adapted")
     
     # Timestamps
-    discovered_at = models.DateTimeField(default=timezone.now, db_index=True, help_text="When the vulnerability was discovered")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        db_table = 'nuclei_vulnerabilities'
+        db_table = 'surge_nuclei_template_usage'
         indexes = [
-            models.Index(fields=['scan', 'severity']),
-            models.Index(fields=['template_id']),
-            models.Index(fields=['cve_id']),
-            models.Index(fields=['discovered_at']),
+            models.Index(fields=['template_id', 'success_rate']),
+            models.Index(fields=['effectiveness_score', '-last_used']),
+            models.Index(fields=['usage_count', 'success_rate']),
         ]
-        ordering = ['-discovered_at']
-        verbose_name = 'Nuclei Vulnerability'
-        verbose_name_plural = 'Nuclei Vulnerabilities'
+        verbose_name = 'Nuclei Template Usage'
+        verbose_name_plural = 'Nuclei Template Usages'
     
     def __str__(self):
-        return f"{self.vulnerability_name} ({self.severity})"
-
-
-class SurgeKontrolDeployment(models.Model):
-    """Tracks Kontrol team deployments for scans"""
+        return f"{self.template_id} (usage: {self.usage_count}, success: {self.success_rate:.2%})"
     
-    scan = models.ForeignKey(
-        NucleiScan,
-        on_delete=models.CASCADE,
-        related_name='kontrol_deployments',
-        db_index=True,
-        help_text="The scan this Kontrol was deployed for"
-    )
-    kontrol_name = models.CharField(max_length=100, help_text="Name of the Kontrol agent")
-    kontrol_role = models.CharField(max_length=100, null=True, blank=True, help_text="Role of the Kontrol agent")
-    kontrol_type = models.CharField(max_length=50, default='electric', help_text="Type of Kontrol (electric, etc.)")
-    findings_count = models.IntegerField(default=0, help_text="Number of findings from this Kontrol")
-    performance_metrics = models.JSONField(default=dict, blank=True, help_text="Performance metrics for this deployment")
-    deployed_at = models.DateTimeField(default=timezone.now, help_text="When the Kontrol was deployed")
+    def update_success(self, response_time=None, match_time=None):
+        """Update statistics after successful template execution."""
+        self.success_count += 1
+        self.usage_count += 1
+        self.last_success = timezone.now()
+        self.last_used = timezone.now()
+        
+        if response_time:
+            if self.average_response_time:
+                self.average_response_time = (self.average_response_time + response_time) / 2
+            else:
+                self.average_response_time = response_time
+        
+        if match_time:
+            if self.average_match_time:
+                self.average_match_time = (self.average_match_time + match_time) / 2
+            else:
+                self.average_match_time = match_time
+        
+        self.success_rate = self.success_count / self.usage_count if self.usage_count > 0 else 0.0
+        self.save(update_fields=['success_count', 'usage_count', 'last_success', 'last_used',
+                                'average_response_time', 'average_match_time', 'success_rate'])
+    
+    def update_failure(self):
+        """Update statistics after failed template execution."""
+        self.failure_count += 1
+        self.usage_count += 1
+        self.last_used = timezone.now()
+        
+        self.success_rate = self.success_count / self.usage_count if self.usage_count > 0 else 0.0
+        self.save(update_fields=['failure_count', 'usage_count', 'last_used', 'success_rate'])
+
+
+class NucleiScanSession(models.Model):
+    """
+    Tracks individual Nuclei scan sessions for learning and adaptation.
+    Enables on-the-fly scan adjustments based on real-time feedback.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Scan identification
+    scan_id = models.CharField(max_length=100, unique=True, db_index=True)
+    egg_record_id = models.UUIDField(null=True, blank=True, db_index=True)
+    target = models.CharField(max_length=500, db_index=True)
+    
+    # Scan configuration (stored as JSON for flexibility)
+    scan_config = models.JSONField(default=dict, help_text="Scan configuration parameters")
+    templates_used = models.JSONField(default=list, help_text="List of template IDs used")
+    
+    # Real-time state
+    status = models.CharField(max_length=50, default='queued', db_index=True,
+                             choices=[
+                                 ('queued', 'Queued'),
+                                 ('running', 'Running'),
+                                 ('paused', 'Paused'),
+                                 ('completed', 'Completed'),
+                                 ('failed', 'Failed'),
+                                 ('cancelled', 'Cancelled'),
+                             ])
+    
+    # Progress tracking
+    total_requests = models.IntegerField(default=0)
+    completed_requests = models.IntegerField(default=0)
+    successful_requests = models.IntegerField(default=0)
+    failed_requests = models.IntegerField(default=0)
+    
+    # Results
+    vulnerabilities_found = models.IntegerField(default=0)
+    vulnerabilities_data = models.JSONField(default=list, help_text="Vulnerability findings")
+    
+    # Adaptation tracking
+    adaptations_applied = models.JSONField(default=list, help_text="List of adaptations made during scan")
+    adaptation_reasons = models.JSONField(default=dict, help_text="Reasons for each adaptation")
+    
+    # Performance metrics
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.FloatField(null=True, blank=True)
+    
+    # Learning data
+    learning_insights = models.JSONField(default=dict, help_text="Insights for future scans")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        db_table = 'surge_kontrol_deployments'
-        unique_together = [['scan', 'kontrol_name']]
+        db_table = 'surge_nuclei_scan_session'
         indexes = [
-            models.Index(fields=['scan', 'kontrol_name']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['egg_record_id', '-created_at']),
+            models.Index(fields=['target', '-created_at']),
         ]
-        verbose_name = 'Surge Kontrol Deployment'
-        verbose_name_plural = 'Surge Kontrol Deployments'
+        verbose_name = 'Nuclei Scan Session'
+        verbose_name_plural = 'Nuclei Scan Sessions'
     
     def __str__(self):
-        return f"{self.kontrol_name} on scan {self.scan_id}"
+        return f"Scan {self.scan_id} - {self.target} ({self.status})"
+    
+    def apply_adaptation(self, adaptation_type, reason, config_changes):
+        """Record an adaptation made during the scan."""
+        self.adaptations_applied.append({
+            'type': adaptation_type,
+            'timestamp': timezone.now().isoformat(),
+            'config_changes': config_changes,
+        })
+        self.adaptation_reasons[adaptation_type] = reason
+        self.save(update_fields=['adaptations_applied', 'adaptation_reasons'])
+
+
+class NucleiAdaptationRule(models.Model):
+    """
+    Learning rules for adaptive Nuclei scanning.
+    Defines when and how to adapt scans based on conditions.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Rule identification
+    rule_name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    
+    # Conditions (stored as JSON for flexibility)
+    conditions = models.JSONField(default=dict, help_text="Conditions that trigger this adaptation")
+    
+    # Actions
+    adaptation_type = models.CharField(max_length=100, choices=[
+        ('adjust_rate_limit', 'Adjust Rate Limit'),
+        ('change_concurrency', 'Change Concurrency'),
+        ('switch_templates', 'Switch Templates'),
+        ('pause_scan', 'Pause Scan'),
+        ('prioritize_templates', 'Prioritize Templates'),
+        ('skip_target', 'Skip Target'),
+    ])
+    action_config = models.JSONField(default=dict, help_text="Configuration for the adaptation action")
+    
+    # Learning metrics
+    trigger_count = models.IntegerField(default=0)
+    success_count = models.IntegerField(default=0)
+    effectiveness_score = models.FloatField(default=0.0)
+    
+    # Status
+    is_active = models.BooleanField(default=True, db_index=True)
+    priority = models.IntegerField(default=0, db_index=True, help_text="Higher priority rules evaluated first")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_triggered = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'surge_nuclei_adaptation_rule'
+        indexes = [
+            models.Index(fields=['is_active', '-priority']),
+            models.Index(fields=['adaptation_type', 'is_active']),
+        ]
+        verbose_name = 'Nuclei Adaptation Rule'
+        verbose_name_plural = 'Nuclei Adaptation Rules'
+    
+    def __str__(self):
+        return f"{self.rule_name} ({self.adaptation_type})"
+
+
+class NucleiAgentControl(models.Model):
+    """
+    Real-time control interface for Nuclei agents.
+    Enables on-the-fly scan adjustments and agent coordination.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Agent identification
+    agent_name = models.CharField(max_length=100, db_index=True, choices=[
+        ('surge', 'Surge'),
+        ('koga', 'Koga'),
+        ('bugsy', 'Bugsy'),
+    ])
+    scan_session_id = models.UUIDField(null=True, blank=True, db_index=True)
+    
+    # Control commands
+    command = models.CharField(max_length=100, choices=[
+        ('pause', 'Pause Scan'),
+        ('resume', 'Resume Scan'),
+        ('adjust_rate', 'Adjust Rate Limit'),
+        ('change_concurrency', 'Change Concurrency'),
+        ('switch_templates', 'Switch Templates'),
+        ('prioritize', 'Prioritize Templates'),
+        ('skip', 'Skip Target'),
+        ('cancel', 'Cancel Scan'),
+    ])
+    command_params = models.JSONField(default=dict, help_text="Parameters for the command")
+    
+    # Status
+    status = models.CharField(max_length=50, default='pending', choices=[
+        ('pending', 'Pending'),
+        ('executing', 'Executing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ])
+    
+    # Results
+    execution_result = models.JSONField(default=dict, help_text="Result of command execution")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'surge_nuclei_agent_control'
+        indexes = [
+            models.Index(fields=['agent_name', 'status', '-created_at']),
+            models.Index(fields=['scan_session_id', 'status']),
+        ]
+        verbose_name = 'Nuclei Agent Control'
+        verbose_name_plural = 'Nuclei Agent Controls'
+    
+    def __str__(self):
+        return f"{self.agent_name} - {self.command} ({self.status})"

@@ -245,6 +245,12 @@ def _parse_with_python(
     normalize_paths: bool
 ) -> Dict[str, Any]:
     """Python fallback parser"""
+    # Safety check: ensure batch_size and max_paths are valid
+    if batch_size is None or not isinstance(batch_size, int):
+        batch_size = 1000
+    if max_paths is None or not isinstance(max_paths, int):
+        max_paths = 0
+    
     stats = {
         'total_lines': 0,
         'valid_paths': 0,
@@ -306,6 +312,12 @@ def _parse_with_python_stream(
     normalize_paths: bool
 ) -> Dict[str, Any]:
     """Python fallback parser for streams"""
+    # Safety check: ensure batch_size and max_paths are valid
+    if batch_size is None or not isinstance(batch_size, int):
+        batch_size = 1000
+    if max_paths is None or not isinstance(max_paths, int):
+        max_paths = 0
+    
     stats = {
         'total_lines': 0,
         'valid_paths': 0,

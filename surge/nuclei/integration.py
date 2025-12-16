@@ -143,153 +143,125 @@ class SurgeNucleiIntegration:
     
     async def scan_domain(self, domain: str, scan_type: str = "comprehensive", egg_record: Optional[Dict] = None) -> Dict[str, Any]:
         """
-        Scan a domain using Nuclei with intelligent template selection.
-        
+        Scan domain using the new class-based API (NO subprocess calls).
+
         Args:
-            domain: Domain to scan
-            scan_type: Scan type (comprehensive, critical_only, web_only, intelligent)
-            egg_record: Optional egg record dict with tech fingerprinting data
-            
+            domain: The target URL/domain to scan.
+            scan_type: Defines the template configuration (e.g., "comprehensive").
+            egg_record: Optional data about the target from the ORM.
+        
         Returns:
-            Scan results dict
+            A dictionary containing scan results and statistics.
         """
+        # 1. Imports from the new API structure
+        from .class_based_api import NucleiEngine, ScanConfig, Severity
+        
         # Ensure domain has protocol (https://)
         url = self._ensure_url_with_protocol(domain)
-        self.logger.info(f"🔍 Nuclei scanning: {url}")
+        self.logger.info(f"🔍 Nuclei scanning: {url} (using class-based API)")
         
-        # Intelligent template selection based on technology detection
-        if scan_type == "intelligent" and egg_record:
-            severity_flags = ["-s", "critical,high,medium,low,info"]
-            template_flags = self._get_intelligent_templates(url, egg_record)
-        elif scan_type == "comprehensive":
-            severity_flags = ["-s", "critical,high,medium,low,info"]
-            template_flags = ["-t", "http/cves/", "-t", "http/exposures/", "-t", "http/vulnerabilities/"]
+        # 2. Configure Scan
+        # Map scan_type to template tags
+        template_tags = self._get_template_tags_for_scan_type(scan_type, egg_record)
+        
+        # Determine severity levels based on scan type
+        if scan_type == "comprehensive":
+            severity_levels = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
         elif scan_type == "critical_only":
-            severity_flags = ["-s", "critical,high"]
-            template_flags = ["-t", "http/cves/", "-t", "http/vulnerabilities/"]
-        elif scan_type == "web_only":
-            severity_flags = ["-s", "critical,high,medium,low,info"]
-            template_flags = ["-t", "http/exposures/", "-t", "http/vulnerabilities/", "-t", "http/technologies/"]
+            severity_levels = [Severity.CRITICAL, Severity.HIGH]
         else:
-            severity_flags = ["-s", "critical,high,medium"]
-            template_flags = ["-t", "http/cves/", "-t", "http/vulnerabilities/"]
+            severity_levels = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM]
         
-        try:
-            # Build Nuclei command WITHOUT timeout flag - let Nuclei run to completion
-            # Use -jsonl for stdout streaming instead of -jle which doesn't write until completion
-            cmd = [
-                self.nuclei_path,
-                "-u", url,  # Use URL with protocol
-                "-jsonl",  # JSONL output to stdout for streaming
-                "-nc",  # No color (remove ANSI codes)
-                # Removed: "-timeout", "30" - let Nuclei CLI handle its own timeouts if needed
-                "-retries", "1",
-                "-rate-limit", "10",
-                "-concurrency", "5",
-                # Removed "-silent" - it suppresses JSONL output!
-            ] + severity_flags + template_flags
-            
-            self.logger.info(f"Running: {' '.join(cmd)}")
-            
-            # Run Nuclei scan with working directory set to where templates live
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd='/home/ego'  # Templates are relative to /home/ego/nuclei-templates
-            )
-            
-            # Read stdout with timeout
-            try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600.0)
-            except asyncio.TimeoutError:
-                self.logger.error(f"Nuclei scan timeout after 10 minutes for {url}")
-                process.kill()
-                await process.wait()
-                raise Exception("Nuclei scan timeout after 10 minutes")
-            
-            # Debug: Log stdout/stderr sizes
-            stdout_len = len(stdout) if stdout else 0
-            stderr_len = len(stderr) if stderr else 0
-            self.logger.debug(f"📊 Nuclei output for {url}: stdout={stdout_len} bytes, stderr={stderr_len} bytes")
-            
-            # Log stderr if there are warnings/errors
-            if stderr:
-                stderr_text = stderr.decode('utf-8', errors='ignore')
-                if 'ERR' in stderr_text or 'WRN' in stderr_text or 'FTL' in stderr_text:
-                    self.logger.warning(f"⚠️ Nuclei stderr for {url}: {stderr_text[:500]}")
-            
-            # Parse results from stdout (JSONL format, one JSON object per line)
-            vulnerabilities = []
-            json_parse_failures = 0
-            non_empty_lines = 0
-            
-            if stdout:
-                stdout_text = stdout.decode('utf-8', errors='ignore')
-                lines = stdout_text.splitlines()
-                self.logger.debug(f"📝 Parsing {len(lines)} lines from stdout for {url}")
-                
-                for line_num, line in enumerate(lines, 1):
-                    line = line.strip()
-                    if line:
-                        non_empty_lines += 1
-                        try:
-                            vuln = json.loads(line)
-                            parsed_vuln = self._parse_nuclei_result(vuln)
-                            vulnerabilities.append(parsed_vuln)
-                            
-                            # Log each successfully parsed vulnerability
-                            vuln_id = parsed_vuln.get('template-id', 'unknown')
-                            vuln_severity = parsed_vuln.get('info', {}).get('severity', 'unknown')
-                            self.logger.info(f"🎯 Found vulnerability: {vuln_id} ({vuln_severity}) on {url}")
-                            
-                        except json.JSONDecodeError as e:
-                            json_parse_failures += 1
-                            # Log first few parse failures for debugging
-                            if json_parse_failures <= 3:
-                                self.logger.warning(f"⚠️ JSON parse error on line {line_num} for {url}: {str(e)[:100]}")
-                                self.logger.debug(f"   Failed line content: {line[:200]}")
-                            continue
-            else:
-                self.logger.warning(f"⚠️ Empty stdout from Nuclei for {url}")
-            
-            # Log parsing statistics
-            if json_parse_failures > 0:
-                self.logger.warning(f"⚠️ {json_parse_failures} JSON parse failures for {url} (out of {non_empty_lines} non-empty lines)")
+        config = ScanConfig(
+            template_tags=template_tags,
+            severity_levels=severity_levels,
+            rate_limit=10,
+            use_thread_safe=True
+        )
+        
+        engine = NucleiEngine(config=config)
+        vulnerabilities = []
+        severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+        
+        # 3. Setup Callback
+        def on_vulnerability(finding):
+            # Parse vulnerability using existing helper method
+            parsed_vuln = self._parse_nuclei_result({
+                'template_id': finding.template_id,
+                'template': finding.template_name,
+                'info': finding.metadata,
+                'matched-at': finding.matched_at,
+            })
+            vulnerabilities.append(parsed_vuln)
             
             # Count by severity
-            severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
-            for vuln in vulnerabilities:
-                severity = vuln.get('info', {}).get('severity', 'info').lower()
-                if severity in severity_counts:
-                    severity_counts[severity] += 1
+            severity = finding.severity.value.lower()
+            if severity in severity_counts:
+                severity_counts[severity] += 1
             
-            result = {
-                'domain': url,  # Store URL with protocol
-                'scan_type': scan_type,
-                'scan_time': datetime.now().isoformat(),
-                'total_vulnerabilities': len(vulnerabilities),
-                'vulnerabilities_by_severity': severity_counts,
-                'vulnerabilities': vulnerabilities,
-                'nuclei_version': self._get_nuclei_version(),
-                'status': 'completed'
+            # Log each vulnerability
+            self.logger.info(f"🎯 Found vulnerability: {finding.template_id} ({finding.severity.value}) on {url}")
+        
+        engine.on_vulnerability.append(on_vulnerability)
+        
+        # 4. Execute Scan
+        scan_id = engine.scan([url])
+        
+        # 5. Wait for Completion
+        # Use a loop to wait for the engine to signal completion
+        while engine.status.value not in ['completed', 'failed']:
+            await asyncio.sleep(0.1)
+        
+        engine.close()
+        
+        # 6. Return Structured Result
+        result = {
+            'domain': url,
+            'scan_type': scan_type,
+            'scan_id': scan_id,
+            'scan_time': datetime.now().isoformat(),
+            'total_vulnerabilities': len(vulnerabilities),
+            'vulnerabilities_by_severity': severity_counts,
+            'vulnerabilities': vulnerabilities,
+            'status': engine.status.value,
+        }
+        
+        # Get metrics if available
+        try:
+            state = engine.get_state()
+            result['metrics'] = {
+                'total_requests': state.get('total_requests', 0),
+                'completed_requests': state.get('completed_requests', 0),
+                'vulnerabilities_found': state.get('vulnerabilities_found', 0),
             }
+        except:
+            pass
+        
+        self.logger.info(f"✅ Nuclei scan completed: {len(vulnerabilities)} vulnerabilities found")
+        return result
+    
+    def _get_template_tags_for_scan_type(self, scan_type: str, egg_record: Optional[Dict] = None) -> List[str]:
+        """
+        Get template tags based on scan type and optional egg record data.
+        
+        Args:
+            scan_type: Type of scan (comprehensive, critical_only, web_only, intelligent)
+            egg_record: Optional egg record with technology fingerprinting data
             
-            self.logger.info(f"✅ Nuclei scan completed: {len(vulnerabilities)} vulnerabilities found")
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Nuclei scan failed for {url}: {e}")
-            return {
-                'domain': url,  # Store URL with protocol
-                'scan_type': scan_type,
-                'scan_time': datetime.now().isoformat(),
-                'total_vulnerabilities': 0,
-                'vulnerabilities_by_severity': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0},
-                'vulnerabilities': [],
-                'error': str(e),
-                'status': 'failed'
-            }
+        Returns:
+            List of template tags
+        """
+        if scan_type == "intelligent" and egg_record:
+            # Use intelligent template selection based on technology detection
+            return self._get_intelligent_templates("", egg_record)
+        elif scan_type == "comprehensive":
+            return ['cve', 'exposures', 'vulnerabilities']
+        elif scan_type == "critical_only":
+            return ['cve', 'vulnerabilities']
+        elif scan_type == "web_only":
+            return ['exposures', 'vulnerabilities', 'technologies']
+        else:
+            return ['cve', 'vulnerabilities']
     
     def _parse_nuclei_result(self, nuclei_result: Dict[str, Any]) -> Dict[str, Any]:
         """Parse Nuclei JSON result into standardized format compatible with store_vulnerabilities."""
@@ -348,14 +320,14 @@ class SurgeNucleiIntegration:
         """
         Get intelligent template recommendations based on technology detection.
         
-        Simplified Bugsy-style integration without Django dependencies.
+        Returns template tags (not CLI flags) for use with ScanConfig.
         
         Args:
             domain: Domain being scanned
             egg_record: Egg record dict with domainname, customer info
             
         Returns:
-            List of -t template flags for Nuclei
+            List of template tags (e.g., ['cve', 'wordpress', 'rce'])
         """
         try:
             # Extract technology hints from domain name
@@ -363,19 +335,18 @@ class SurgeNucleiIntegration:
             technologies = []
             
             # Simple keyword matching from domain
-            for tech, templates in self.technology_templates.items():
-                if tech in domain_lower:
-                    technologies.extend(templates)
+            if hasattr(self, 'technology_templates'):
+                for tech, templates in self.technology_templates.items():
+                    if tech in domain_lower:
+                        technologies.append(tech)
             
-            # Always include CVEs and vulnerabilities as baseline
-            result = ["-t", "http/cves/", "-t", "http/vulnerabilities/"]
+            # Always include CVEs and vulnerabilities as baseline (return tags, not CLI flags)
+            result = ['cve', 'vulnerabilities']
             
-            # Add technology-specific templates if detected
+            # Add technology-specific tags if detected
             if technologies:
-                for template in set(technologies):  # Deduplicate
-                    result.extend(["-t", template])
-                
-                self.logger.info(f"🎯 Intelligent templates for {domain}: {len(technologies)} tech-specific templates added")
+                result.extend(technologies)
+                self.logger.info(f"🎯 Intelligent templates for {domain}: {len(technologies)} tech-specific tags added")
             else:
                 self.logger.debug(f"No technology-specific templates for {domain}, using comprehensive scan")
             
@@ -383,8 +354,8 @@ class SurgeNucleiIntegration:
             
         except Exception as e:
             self.logger.error(f"Error generating intelligent templates: {e}")
-            # Fallback to comprehensive scan
-            return ["-t", "http/cves/", "-t", "http/exposures/", "-t", "http/vulnerabilities/"]
+            # Fallback to comprehensive scan (return tags)
+            return ['cve', 'exposures', 'vulnerabilities']
     
     def get_scan_statistics(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Get statistics from scan results."""

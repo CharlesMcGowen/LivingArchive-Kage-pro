@@ -1,1 +1,1 @@
-# Django management commands for reconnaissance app
+# Django management commands for reconnaissance personalities

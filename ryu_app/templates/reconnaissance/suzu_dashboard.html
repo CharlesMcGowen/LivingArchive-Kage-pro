@@ -89,8 +89,11 @@
                 <div id="selected-files-list" style="max-height: 150px; overflow-y: auto; margin-top: 10px;"></div>
             </div>
             <div style="margin-bottom: 15px;">
-                <label style="display: block; color: #94a3b8; margin-bottom: 5px; font-size: 0.9rem;">CMS Name (optional, auto-inferred from filename and path content):</label>
-                <input type="text" id="file-cms-name" placeholder="e.g., wordpress, drupal" style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <label style="display: block; color: #94a3b8; font-size: 0.9rem; flex: 1;">CMS Name (optional, auto-inferred from filename and path content):</label>
+                    <button type="button" onclick="showAddCMSModal()" id="add-cms-btn" style="padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">+ Add CMS</button>
+                </div>
+                <input type="text" id="file-cms-name" placeholder="e.g., wordpress, drupal (autocomplete available)" style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;">
                 <div id="detected-cms-info" style="margin-top: 8px; padding: 8px; background: #1e293b; border-radius: 4px; border: 1px solid #334155; display: none;">
                     <div style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 5px;">🔍 Detected CMSs:</div>
                     <div id="detected-cms-list" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
@@ -521,7 +524,82 @@ const enumerationData = [
 <script>
 let currentJsonData = null;
 
+// Global CMS patterns - loaded dynamically from backend
+let cmsPatterns = {};
+let cmsPatternsLoaded = false;
+
+// Load CMS patterns from backend on page load
+async function loadCMSPatterns() {
+    try {
+        const response = await fetch('/reconnaissance/api/suzu/cms-patterns/');
+        const data = await response.json();
+        
+        if (data.success && data.cms_patterns) {
+            cmsPatterns = data.cms_patterns;
+            cmsPatternsLoaded = true;
+            
+            console.log(`✅ Loaded ${data.total_cms} CMS patterns:`, {
+                discovered: data.discovered_cms.length,
+                seclist: data.seclist_cms.length,
+                custom: data.custom_cms.length
+            });
+            
+            // Update UI with discovered CMSs
+            updateCMSDropdown();
+        } else {
+            console.warn('Failed to load CMS patterns, using fallback');
+            loadFallbackCMSPatterns();
+        }
+    } catch (error) {
+        console.error('Error loading CMS patterns:', error);
+        loadFallbackCMSPatterns();
+    }
+}
+
+// Fallback to hardcoded patterns if API fails
+function loadFallbackCMSPatterns() {
+    cmsPatterns = {
+        'wordpress': { filename_patterns: ['wordpress', 'wp-'], path_patterns: ['wp-admin'], content_patterns: ['wp-content'] },
+        'drupal': { filename_patterns: ['drupal'], path_patterns: ['sites/default'], content_patterns: ['drupal'] },
+        'joomla': { filename_patterns: ['joomla'], path_patterns: ['administrator'], content_patterns: ['joomla'] },
+    };
+    cmsPatternsLoaded = true;
+}
+
+// Update CMS dropdown/autocomplete
+function updateCMSDropdown() {
+    const cmsInput = document.getElementById('file-cms-name');
+    if (!cmsInput || !cmsPatternsLoaded) return;
+    
+    // Create datalist for autocomplete
+    let datalist = document.getElementById('cms-datalist');
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'cms-datalist';
+        cmsInput.setAttribute('list', 'cms-datalist');
+        cmsInput.parentElement.appendChild(datalist);
+    }
+    
+    // Clear and populate
+    datalist.innerHTML = '';
+    const sortedCMS = Object.keys(cmsPatterns).sort();
+    
+    for (const cmsName of sortedCMS) {
+        const option = document.createElement('option');
+        const displayName = cmsPatterns[cmsName].display_name || cmsName;
+        const wordlistCount = cmsPatterns[cmsName].wordlist_count || 0;
+        option.value = cmsName;
+        option.textContent = wordlistCount > 0 
+            ? `${displayName} (${wordlistCount} wordlists)`
+            : displayName;
+        datalist.appendChild(option);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Load CMS patterns first
+    loadCMSPatterns();
+    
     // Load upload history on page load
     loadUploadHistory();
     
@@ -745,30 +823,22 @@ function handleFiles(files) {
                     const text = await file.slice(0, 5000).text(); // Read first 5KB
                     const textLower = text.toLowerCase();
                     
-                    // Check for CMS patterns in content
-                    const cmsPatterns = {
-                        'wordpress': ['wp-admin', 'wp-content', 'wp-includes', 'wp-login', 'wp-config'],
-                        'drupal': ['sites/default', 'drupal', '/node/', 'core/', 'modules/'],
-                        'joomla': ['administrator', 'components', 'templates/', 'index.php?option='],
-                        'magento': ['magento', 'pub/static', 'frontend/', 'backend/'],
-                        'shopify': ['shopify', 'cdn.shopify.com', '/collections/', '/products/'],
-                        'django': ['django', '/admin/', '/static/', 'settings.py'],
-                        'laravel': ['laravel', '/vendor/laravel', '/storage/'],
-                        'aspnet': ['.aspx', 'web.config', '__viewstate'],
-                        'coldfusion': ['cf-', 'coldfusion', '.cfm'],
-                        'box-cms': ['box-cms', 'boxcms'],
-                        'symfony': ['symfony', '/app/', '/src/', '/vendor/symfony'],
-                    };
-                    
-                    for (const [cms, patterns] of Object.entries(cmsPatterns)) {
-                        if (patterns.some(pattern => textLower.includes(pattern))) {
-                            fileCMSMap.set(file.name, cms);
-                            // Update counts if not already counted
-                            if (!cmsCounts[cms]) {
-                                cmsCounts[cms] = 0;
+                    // Check for CMS patterns in content using loaded patterns
+                    if (cmsPatternsLoaded) {
+                        for (const [cmsName, patterns] of Object.entries(cmsPatterns)) {
+                            const contentPatterns = patterns.content_patterns || [];
+                            const pathPatterns = patterns.path_patterns || [];
+                            const allPatterns = [...contentPatterns, ...pathPatterns];
+                            
+                            if (allPatterns.some(pattern => textLower.includes(pattern.toLowerCase()))) {
+                                fileCMSMap.set(file.name, cmsName);
+                                // Update counts if not already counted
+                                if (!cmsCounts[cmsName]) {
+                                    cmsCounts[cmsName] = 0;
+                                }
+                                cmsCounts[cmsName]++;
+                                break; // Found CMS for this file, move to next
                             }
-                            cmsCounts[cms]++;
-                            break; // Found CMS for this file, move to next
                         }
                     }
                 } catch (e) {
@@ -996,57 +1066,37 @@ async function sampleFilesForCMS(files) {
 }
 
 function inferCMSFromFilename(filename, filePath = '') {
+    if (!cmsPatternsLoaded) {
+        // If patterns not loaded yet, use minimal fallback
+        const lower = filename.toLowerCase();
+        if (lower.includes('wordpress') || lower.includes('wp-')) return 'wordpress';
+        if (lower.includes('drupal')) return 'drupal';
+        if (lower.includes('joomla')) return 'joomla';
+        return null;
+    }
+    
     const lower = filename.toLowerCase();
     const pathLower = filePath.toLowerCase();
     
-    // Comprehensive CMS mappings matching backend
-    const cmsPatterns = {
-        'wordpress': ['wordpress', 'wp-', 'wp_', 'wp.', 'wpadmin', 'wp-content', 'wp-includes'],
-        'drupal': ['drupal', 'drupal-', 'drupal_'],
-        'joomla': ['joomla', 'joomla-', 'joomla_'],
-        'magento': ['magento', 'magento-', 'magento_'],
-        'shopify': ['shopify', 'shopify-', 'shopify_'],
-        'sitecore': ['sitecore', 'sitecore-', 'sitecore_'],
-        'vbulletin': ['vbulletin', 'vb-', 'vb_', 'vbulletin-'],
-        'aem': ['aem', 'adobe', 'adobe-'],
-        'django': ['django', 'django-', 'django_'],
-        'laravel': ['laravel', 'laravel-', 'laravel_'],
-        'aspnet': ['asp.net', 'aspnet', 'aspx', 'asp-', 'asp_'],
-        'coldfusion': ['coldfusion', 'cf-', 'cf_', 'coldfusion-'],
-        'box-cms': ['box-cms', 'boxcms', 'box-cms-', 'box_cms'],
-        'sap': ['sap', 'sap-', 'sap_'],
-        'typo3': ['typo3', 'typo3-', 'typo3_'],
-        'prestashop': ['prestashop', 'prestashop-', 'prestashop_'],
-        'ghost': ['ghost', 'ghost-', 'ghost_'],
-        'moodle': ['moodle', 'moodle-', 'moodle_'],
-        'liferay': ['liferay', 'liferay-', 'liferay_'],
-        'kentico': ['kentico', 'kentico-', 'kentico_'],
-        'tikiwiki': ['tikiwiki', 'tiki-wiki', 'tiki_wiki', 'tiki-'],
-        'blogger': ['blogger', 'blogger-', 'blogger_'],
-        'apache': ['apache', 'apache-', 'apache_', 'httpd'],
-        'nginx': ['nginx', 'nginx-', 'nginx_'],
-    };
-    
-    // Check filename first
-    for (const [cms, patterns] of Object.entries(cmsPatterns)) {
-        for (const pattern of patterns) {
-            if (lower.includes(pattern)) {
-                return cms;
+    // Check against all loaded CMS patterns
+    for (const [cmsName, patterns] of Object.entries(cmsPatterns)) {
+        const filenamePatterns = patterns.filename_patterns || [];
+        
+        // Check filename
+        for (const pattern of filenamePatterns) {
+            if (lower.includes(pattern.toLowerCase())) {
+                return cmsName;
             }
         }
-    }
-    
-    // Check file path (directory name) - useful for files in CMS folders
-    if (pathLower) {
-        // Check if path contains CMS directory
-        if (pathLower.includes('/cms/')) {
-            // Files in CMS directory - try to infer from path segments
-            const pathParts = pathLower.split('/');
-            for (const part of pathParts) {
-                for (const [cms, patterns] of Object.entries(cmsPatterns)) {
-                    for (const pattern of patterns) {
-                        if (part.includes(pattern)) {
-                            return cms;
+        
+        // Check file path (directory name)
+        if (pathLower) {
+            if (pathLower.includes('/cms/')) {
+                const pathParts = pathLower.split('/');
+                for (const part of pathParts) {
+                    for (const pattern of filenamePatterns) {
+                        if (part.includes(pattern.toLowerCase())) {
+                            return cmsName;
                         }
                     }
                 }
@@ -1791,6 +1841,146 @@ async function deleteEnumeration(enumerationId, path) {
 }
 
 // Weight is now automatically calculated - no event listeners needed
+
+// Add CMS creation UI
+function showAddCMSModal() {
+    const modal = document.createElement('div');
+    modal.id = 'add-cms-modal';
+    modal.style.cssText = `
+        position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: #1e293b; border: 2px solid #f59e0b; border-radius: 12px; padding: 30px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;">
+            <h3 style="color: #f59e0b; margin-bottom: 20px;">Add Custom CMS</h3>
+            <form id="add-cms-form">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">CMS Name (lowercase, no spaces):</label>
+                    <input type="text" id="new-cms-name" required 
+                           style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;"
+                           placeholder="e.g., custom-cms">
+                    <p style="color: #64748b; font-size: 0.8rem; margin-top: 4px;">Will be converted to lowercase and spaces replaced with hyphens</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">Display Name:</label>
+                    <input type="text" id="new-cms-display" 
+                           style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;"
+                           placeholder="e.g., Custom CMS">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">Description (optional):</label>
+                    <textarea id="new-cms-description" rows="2"
+                           style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; resize: vertical;"
+                           placeholder="Brief description of this CMS"></textarea>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">Filename Patterns (comma-separated):</label>
+                    <input type="text" id="new-cms-filename" required
+                           style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;"
+                           placeholder="e.g., custom, custom-cms, custom_">
+                    <p style="color: #64748b; font-size: 0.8rem; margin-top: 4px;">Patterns to match in filenames (e.g., "wordpress", "wp-")</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">Path Patterns (comma-separated, optional):</label>
+                    <input type="text" id="new-cms-paths"
+                           style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;"
+                           placeholder="e.g., /custom/admin/, /custom/api/">
+                    <p style="color: #64748b; font-size: 0.8rem; margin-top: 4px;">Patterns to match in file paths/content</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #94a3b8; margin-bottom: 5px;">CMS Type:</label>
+                    <select id="new-cms-type" style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;">
+                        <option value="cms">CMS</option>
+                        <option value="framework">Framework</option>
+                        <option value="server">Server</option>
+                        <option value="e-commerce">E-Commerce</option>
+                        <option value="api-framework">API Framework</option>
+                        <option value="enterprise">Enterprise</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" onclick="closeAddCMSModal()" 
+                            style="padding: 10px 20px; background: #64748b; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        Create CMS
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('add-cms-form').onsubmit = async (e) => {
+        e.preventDefault();
+        await createCustomCMS();
+    };
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) closeAddCMSModal();
+    };
+}
+
+async function createCustomCMS() {
+    const cmsName = document.getElementById('new-cms-name').value.trim().toLowerCase().replace(/\s+/g, '-');
+    const displayName = document.getElementById('new-cms-display').value.trim();
+    const description = document.getElementById('new-cms-description').value.trim();
+    const filenamePatterns = document.getElementById('new-cms-filename').value.split(',').map(p => p.trim()).filter(p => p);
+    const pathPatterns = document.getElementById('new-cms-paths').value.split(',').map(p => p.trim()).filter(p => p);
+    const cmsType = document.getElementById('new-cms-type').value;
+    
+    if (!cmsName) {
+        alert('❌ CMS name is required');
+        return;
+    }
+    
+    if (filenamePatterns.length === 0) {
+        alert('❌ At least one filename pattern is required');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/reconnaissance/api/suzu/cms/create/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                cms_name: cmsName,
+                display_name: displayName || cmsName,
+                description: description || null,
+                filename_patterns: filenamePatterns,
+                path_patterns: pathPatterns,
+                content_patterns: pathPatterns, // Use path patterns as content patterns too
+                cms_type: cmsType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✅ CMS "${data.cms.cms_name}" created successfully!`);
+            closeAddCMSModal();
+            // Reload patterns
+            await loadCMSPatterns();
+            updateCMSDropdown();
+        } else {
+            alert(`❌ Error: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`❌ Error creating CMS: ${error.message}`);
+    }
+}
+
+function closeAddCMSModal() {
+    const modal = document.getElementById('add-cms-modal');
+    if (modal) modal.remove();
+}
 </script>
 {% endblock %}
 

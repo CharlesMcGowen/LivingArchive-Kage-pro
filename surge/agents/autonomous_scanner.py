@@ -353,46 +353,74 @@ class SurgeAutonomousScanner:
     
     async def _run_nuclei_scan(self, domain: str, scan_config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
-        Run real Nuclei scan on domain.
+        Run Nuclei scan using new class-based API (NO subprocess).
         
-        Uses memory-integrated bridge exclusively for in-memory Nuclei execution.
+        Uses the internal Go bridge for direct code-level control and real-time callbacks.
         
         Args:
             domain: Domain to scan
+            scan_config: Optional scan configuration dictionary
             
         Returns:
             List of vulnerability dictionaries
         """
-        config_payload = dict(scan_config or {})
-        config_payload.setdefault('scan_type', self.scan_type)
-        # Memory bridge execution path
         try:
-            from ..nuclei.memory_integration import SurgeMemoryNucleiIntegration
-            memory_nuclei = SurgeMemoryNucleiIntegration(surge_personality=self)
-            if memory_nuclei.bridge_available():
-                logger.info("🧠 Attempting memory-integrated scan...")
-                result = await memory_nuclei.scan_domain_memory(domain, config=config_payload)
-                if result and result.get('status') == 'streaming':
-                    logger.info("✅ Memory bridge scan started successfully")
-                    # Get initial vulnerabilities from scan state
-                    # Note: Real-time events stream via eventChannel, but we need to poll GetScanState
-                    # For now, return empty list and let events stream in background
-                    # TODO: Implement event polling or callback mechanism
-                    return result.get('vulnerabilities', [])
-                else:
-                    status = result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
-                    error_details = result.get('error') if isinstance(result, dict) else None
-                    if error_details:
-                        logger.error(f"❌ Memory bridge scan failed (status={status}): {error_details}")
-                    else:
-                        logger.error(f"❌ Memory bridge scan failed with status={status}")
-            else:
-                logger.error("❌ Memory bridge not available; unable to execute scan")
+            # Import from the new API structure
+            from ..nuclei.class_based_api import NucleiEngine, ScanConfig, Severity
+            
+            # 1. Prepare Configuration
+            config_payload = dict(scan_config or {})
+            config_payload.setdefault('scan_type', self.scan_type)
+            
+            # Convert scan_config to ScanConfig, enforcing thread-safe mode for concurrency
+            config = ScanConfig(
+                template_tags=config_payload.get('tags', ['cve', 'rce']),
+                severity_levels=[Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM],
+                rate_limit=config_payload.get('rate_limit', 10),
+                use_thread_safe=True
+            )
+            
+            # 2. Initialize Engine
+            engine = NucleiEngine(config=config)
+            
+            # 3. Setup Callback
+            vulnerabilities = []
+            
+            def on_vulnerability(finding):
+                # Data structure mapping from finding dataclass back to agent's expected dict format
+                vulnerabilities.append({
+                    'template-id': finding.template_id,
+                    'template': finding.template_name,
+                    'info': {
+                        'severity': finding.severity.value,
+                        'name': finding.template_name,
+                    },
+                    'matched-at': finding.matched_at,
+                    'target': finding.target,
+                })
+                logger.info(f"🎯 Found vulnerability: {finding.template_id} ({finding.severity.value}) on {domain}")
+            
+            # Attach the callback function
+            engine.on_vulnerability.append(on_vulnerability)
+            
+            # 4. Execute Scan
+            logger.info(f"🚀 Starting Nuclei scan for {domain} using class-based API")
+            scan_id = engine.scan([domain])
+            
+            # 5. Wait for Completion (using asyncio)
+            while engine.status.value not in ['completed', 'failed']:
+                # Yield control to the event loop
+                await asyncio.sleep(0.1)
+            
+            # 6. Cleanup and Return
+            engine.close()
+            logger.info(f"✅ Nuclei scan completed: {len(vulnerabilities)} vulnerabilities found")
+            return vulnerabilities
+            
         except Exception as e:
-            logger.error(f"❌ Memory bridge error: {e}")
+            logger.error(f"❌ Nuclei scan error for {domain}: {e}")
             import traceback
             logger.debug(traceback.format_exc())
-        
             return []
     
     async def scan_egg(self, egg: Dict[str, Any]) -> Dict[str, Any]:
@@ -454,35 +482,20 @@ class SurgeAutonomousScanner:
             else:
                 logger.warning("⚠️  surge_db not available, skipping database scan creation")
             
-            # Run real Nuclei scan
+            # Run real Nuclei scan using unified API
             logger.info(f"🔍 Running real Nuclei scan on {egg['domain']}")
             scan_config = {'scan_type': self.scan_type}
             if template_list:
                 scan_config['templates'] = template_list
                 scan_config['max_templates'] = min(max(len(template_list) * 4, 40), 240)
             
-            # Get full scan result to extract template metadata
-            from ..nuclei.memory_integration import SurgeMemoryNucleiIntegration
-            memory_nuclei = SurgeMemoryNucleiIntegration(surge_personality=self)
-            scan_result = None
-            if memory_nuclei.bridge_available():
-                scan_result = await memory_nuclei.scan_domain_memory(egg['domain'], config=scan_config)
-                real_vulnerabilities = scan_result.get('vulnerabilities', []) if isinstance(scan_result, dict) else []
-            else:
-                real_vulnerabilities = await self._run_nuclei_scan(egg['domain'], scan_config)
+            # Use the new unified API - directly call _run_nuclei_scan which uses the class-based API
+            real_vulnerabilities = await self._run_nuclei_scan(egg['domain'], scan_config)
             
-            # Extract template IDs from scan result
+            # Extract template IDs from vulnerabilities
             templates_used = template_list.copy()  # Default to requested templates
-            if scan_result and isinstance(scan_result, dict):
-                # Try to get templates from template_metadata in config payload
-                template_metadata = scan_result.get('template_metadata') or scan_config.get('template_metadata', [])
-                if template_metadata:
-                    templates_used = [m.get('template_id') for m in template_metadata if m.get('template_id')]
-                # Also check active_templates from scan state
-                if not templates_used and 'active_templates' in scan_result:
-                    templates_used = scan_result.get('active_templates', [])
-            elif isinstance(real_vulnerabilities, list) and real_vulnerabilities:
-                # Extract unique template IDs from vulnerabilities as fallback
+            if isinstance(real_vulnerabilities, list) and real_vulnerabilities:
+                # Extract unique template IDs from vulnerabilities
                 templates_used = list(set([
                     v.get('template-id') for v in real_vulnerabilities 
                     if isinstance(v, dict) and v.get('template-id')

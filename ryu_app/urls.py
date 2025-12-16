@@ -33,6 +33,7 @@ urlpatterns = [
     path('mitre-soc2/', views.mitre_soc2_dashboard, name='mitre_soc2_dashboard'),
     path('eggrecords/', views.eggrecord_list, name='eggrecord_list'),
     path('eggrecords/<uuid:eggrecord_id>/', views.eggrecord_detail, name='eggrecord_detail'),
+    path('api/eggrecords/<uuid:eggrecord_id>/summary/', views.eggrecord_summary_api, name='eggrecord_summary_api'),
     path('settings/', views.settings_dashboard, name='settings_dashboard'),
     path('api/check-empty/', views.check_empty, name='check_empty'),
     path('api/seed-entries/', views.seed_initial_entries, name='seed_entries'),
@@ -52,6 +53,9 @@ urlpatterns = [
     path('api/suzu/wordlist/<uuid:wordlist_id>/', views.suzu_delete_wordlist_api, name='suzu_delete_wordlist_api'),
     path('api/suzu/enumeration/<uuid:enumeration_id>/', views.suzu_delete_enumeration_api, name='suzu_delete_enumeration_api'),
     path('api/suzu/check-duplicates/', csrf_exempt(views.suzu_check_duplicates_api), name='suzu_check_duplicates_api'),
+    # Suzu CMS API endpoints
+    path('api/suzu/cms-patterns/', views.suzu_cms_patterns_api, name='suzu_cms_patterns_api'),
+    path('api/suzu/cms/create/', csrf_exempt(views.suzu_cms_create_api), name='suzu_cms_create_api'),
     # Suzu Progress API endpoints
     path('api/suzu/progress/', views.suzu_get_progress, name='suzu_get_progress'),
     path('api/daemon/suzu/progress/', csrf_exempt(suzu_update_progress), name='suzu_update_progress'),
@@ -73,11 +77,15 @@ urlpatterns = [
     path('api/oak/nuclei-templates/<uuid:egg_record_id>/', views.oak_nuclei_templates_api, name='oak_nuclei_templates_api'),
     path('api/oak/refresh-templates/', views.oak_refresh_templates_api, name='oak_refresh_templates_api'),
     path('api/oak/curate-sample/', views.oak_curate_sample_api, name='oak_curate_sample_api'),
+    # Oak upload API endpoints (for curation data)
+    path('api/oak/upload-templates/', csrf_exempt(views.oak_upload_templates_api), name='oak_upload_templates_api'),
+    path('api/oak/upload-cves/', csrf_exempt(views.oak_upload_cves_api), name='oak_upload_cves_api'),
+    path('api/oak/upload-fingerprints/', csrf_exempt(views.oak_upload_fingerprints_api), name='oak_upload_fingerprints_api'),
     # Personality control API endpoints
     path('api/<str:personality>/status/', views.personality_status_api, name='personality_status_api'),
     path('api/<str:personality>/logs/', views.personality_logs_api, name='personality_logs_api'),  # Must come before generic action route
     path('api/<str:personality>/<str:action>/', views.personality_control_api, name='personality_control_api'),
-    path('api/eggs/<int:egg_id>/queue-status/', views.check_egg_queue_status_api, name='check_egg_queue_status_api'),
+    path('api/eggs/<uuid:egg_id>/queue-status/', views.check_egg_queue_status_api, name='check_egg_queue_status_api'),
     # Terminal Execution API endpoints (AI Agent Bridge)
     path('api/terminal/execute/', csrf_exempt(views.terminal_execute_api), name='terminal_execute_api'),
     path('api/terminal/approve/<str:request_id>/', csrf_exempt(views.terminal_approve_api), name='terminal_approve_api'),

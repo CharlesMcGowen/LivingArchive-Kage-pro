@@ -914,15 +914,20 @@
     
     // Populate dropdown from eggs array
     function populateDropdownFromEggs(eggs, select) {
-        select.innerHTML = '<option value="">Select an egg...</option>';
+        select.innerHTML = '<option value="">🔍 Search or select an Egg (parent)...</option>';
         
         if (eggs && eggs.length > 0) {
             eggs.forEach(egg => {
                 const option = document.createElement('option');
                 option.value = egg.id;
-                // Just show domainname (project name) - no ID clutter
-                option.textContent = egg.domainname || 'Unknown';
-                option.dataset.domainname = egg.domainname;
+                // Show eggName and eisystem_in_thorm (like eggrecord_list filter does)
+                const displayText = egg.eggName 
+                    ? `${egg.eggName} (${egg.eisystem_in_thorm || 'N/A'})` 
+                    : (egg.eisystem_in_thorm || 'Unknown');
+                option.textContent = displayText;
+                // Store both for reference
+                option.dataset.eggName = egg.eggName || '';
+                option.dataset.eisystem_in_thorm = egg.eisystem_in_thorm || '';
                 select.appendChild(option);
             });
             console.log(`✅ Populated dropdown with ${eggs.length} eggs`);
@@ -951,9 +956,12 @@
         // Try cache first
         const cachedEggs = loadEggsFromCache();
         if (cachedEggs) {
-            const filtered = cachedEggs.filter(egg => 
-                egg.domainname && egg.domainname.toLowerCase().includes(query.toLowerCase())
-            );
+            const filtered = cachedEggs.filter(egg => {
+                const eggName = (egg.eggName || '').toLowerCase();
+                const eisystem = (egg.eisystem_in_thorm || '').toLowerCase();
+                const queryLower = query.toLowerCase();
+                return eggName.includes(queryLower) || eisystem.includes(queryLower);
+            });
             if (filtered.length > 0) {
                 populateDropdownFromEggs(filtered, select);
                 return;
@@ -973,9 +981,12 @@
                     // Try cache as fallback
                     const cached = loadEggsFromCache();
                     if (cached) {
-                        const filtered = cached.filter(egg => 
-                            egg.domainname && egg.domainname.toLowerCase().includes(query.toLowerCase())
-                        );
+                        const filtered = cached.filter(egg => {
+                            const eggName = (egg.eggName || '').toLowerCase();
+                            const eisystem = (egg.eisystem_in_thorm || '').toLowerCase();
+                            const queryLower = query.toLowerCase();
+                            return eggName.includes(queryLower) || eisystem.includes(queryLower);
+                        });
                         populateDropdownFromEggs(filtered, select);
                     } else {
                         console.error('API error:', data.error);
@@ -987,9 +998,12 @@
                 // Try cache as fallback
                 const cached = loadEggsFromCache();
                 if (cached) {
-                    const filtered = cached.filter(egg => 
-                        egg.domainname && egg.domainname.toLowerCase().includes(query.toLowerCase())
-                    );
+                    const filtered = cached.filter(egg => {
+                        const eggName = (egg.eggName || '').toLowerCase();
+                        const eisystem = (egg.eisystem_in_thorm || '').toLowerCase();
+                        const queryLower = query.toLowerCase();
+                        return eggName.includes(queryLower) || eisystem.includes(queryLower);
+                    });
                     populateDropdownFromEggs(filtered, select);
                 } else {
                     select.innerHTML = '<option value="">Error searching: ' + error.message + '</option>';
@@ -1053,7 +1067,9 @@
             return;
         }
         
-        const domainname = select.options[select.selectedIndex].dataset.domainname;
+        // Get egg name for display (optional)
+        const selectedOption = select.options[select.selectedIndex];
+        const eggName = selectedOption.dataset.eggName || selectedOption.textContent;
         
         // Queue for all personalities
         const personalities = ['kage', 'kaze', 'kumo', 'suzu', 'ryu'];

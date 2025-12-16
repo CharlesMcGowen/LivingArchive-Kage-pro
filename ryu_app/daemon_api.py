@@ -249,8 +249,10 @@ def daemon_submit_scan(request, personality):
             return JsonResponse({'success': False, 'error': 'eggrecord_id required'}, status=400)
         
         open_ports = result.get('open_ports', [])
-        if not open_ports:
-            return JsonResponse({'success': False, 'error': 'No open ports in result'}, status=400)
+        # Note: Empty open_ports is valid - it means no ports were found open
+        # We should still store the scan result to record that the scan was performed
+        if open_ports is None:
+            open_ports = []  # Normalize None to empty list
         
         conn = connections['customer_eggs']
         try:
@@ -318,6 +320,11 @@ def daemon_submit_scan(request, personality):
                             'banner': port_info.get('service_info', '')
                         })
                 
+                # Determine scan status based on whether ports were found
+                scan_status = 'completed'
+                if not open_ports:
+                    scan_status = 'completed_no_ports'  # Indicate scan completed but no ports found
+                
                 # Insert into database
                 cursor.execute("""
                 INSERT INTO customer_eggs_eggrecords_general_models_nmap (
@@ -333,7 +340,7 @@ def daemon_submit_scan(request, personality):
                 target,
                 scan_type,
                 'completed',
-                'completed',
+                scan_status,
                 str(open_ports[0]['port']) if open_ports else '',
                 open_ports[0].get('service_name', '') if open_ports else '',
                 open_ports[0].get('service_version', '') if open_ports else '',
@@ -350,7 +357,9 @@ def daemon_submit_scan(request, personality):
             
             return JsonResponse({
                 'success': True,
-                'message': f'Scan result submitted for {target}'
+                'message': f'Scan result submitted for {target}',
+                'open_ports_found': len(open_ports),
+                'scan_status': scan_status
             })
         finally:
             # Ensure connection is closed after use
@@ -395,17 +404,30 @@ def daemon_submit_spider(request):
         if not request_metadata:
             return JsonResponse({'success': False, 'error': 'No request_metadata in result'}, status=400)
         
+        # Extract JavaScript analysis and secrets from all metadata entries
+        js_secrets_found = []
+        for metadata in request_metadata:
+            js_analysis = metadata.get('javascript_analysis', {})
+            if js_analysis.get('secrets_found'):
+                js_secrets_found.extend(js_analysis['secrets_found'])
+        
         conn = connections['customer_eggs']
         try:
             with conn.cursor() as cursor:
-                # Insert request metadata
+                # Insert request metadata with JavaScript analysis
                 for metadata in request_metadata:
+                    js_analysis = metadata.get('javascript_analysis', {})
+                    
+                    # Store JavaScript analysis in response_body as JSON
+                    response_body_data = json.dumps(js_analysis) if js_analysis else None
+                    
                     cursor.execute("""
                         INSERT INTO customer_eggs_eggrecords_general_models_requestmetadata (
                             id, record_id_id, target_url, request_method, response_status,
-                            response_time_ms, user_agent, timestamp, created_at, updated_at
+                            response_time_ms, user_agent, timestamp, created_at, updated_at,
+                            response_body
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                     """, [
                         str(uuid.uuid4()),
@@ -417,14 +439,74 @@ def daemon_submit_spider(request):
                         metadata.get('user_agent', 'Kumo/1.0'),
                         timezone.now(),
                         timezone.now(),
-                        timezone.now()
+                        timezone.now(),
+                        response_body_data
                     ])
+                
+                # If secrets found, create vulnerability entries in RyuAssessment
+                if js_secrets_found:
+                    # Check if RyuAssessment exists
+                    cursor.execute("""
+                        SELECT id, vulnerabilities
+                        FROM customer_eggs_eggrecords_general_models_jadeassessment
+                        WHERE record_id_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """, [eggrecord_id])
+                    
+                    row = cursor.fetchone()
+                    vulnerabilities = []
+                    if row and row[1]:
+                        try:
+                            vulnerabilities = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                        except (json.JSONDecodeError, TypeError):
+                            vulnerabilities = []
+                    
+                    # Add new vulnerability entries for secrets
+                    for secret in js_secrets_found:
+                        vuln_entry = {
+                            'type': 'exposed_secret',
+                            'severity': 'high',
+                            'category': 'javascript_secret',
+                            'secret_type': secret.get('type', 'unknown'),
+                            'value_preview': secret.get('value', '')[:20] + '...',  # Don't store full secret
+                            'location': metadata.get('target_url', target_url),
+                            'context': secret.get('context', '')[:200],
+                            'discovered_by': 'kumo',
+                            'discovered_at': timezone.now().isoformat()
+                        }
+                        vulnerabilities.append(vuln_entry)
+                    
+                    # Update or create RyuAssessment
+                    if row:
+                        cursor.execute("""
+                            UPDATE customer_eggs_eggrecords_general_models_jadeassessment
+                            SET vulnerabilities = %s::jsonb, updated_at = %s
+                            WHERE id = %s
+                        """, [json.dumps(vulnerabilities), timezone.now(), row[0]])
+                    else:
+                        cursor.execute("""
+                            INSERT INTO customer_eggs_eggrecords_general_models_jadeassessment (
+                                id, record_id_id, risk_level, vulnerabilities, created_at, updated_at
+                            ) VALUES (
+                                %s, %s, %s, %s::jsonb, %s, %s
+                            )
+                        """, [
+                            str(uuid.uuid4()),
+                            eggrecord_id,
+                            'high',  # Default risk level when secrets found
+                            json.dumps(vulnerabilities),
+                            timezone.now(),
+                            timezone.now()
+                        ])
+            
             conn.commit()
             
             return JsonResponse({
                 'success': True,
                 'message': f'Spider result submitted for {target_url}',
-                'requests_inserted': len(request_metadata)
+                'requests_inserted': len(request_metadata),
+                'secrets_found': len(js_secrets_found)
             })
         finally:
             # Ensure connection is closed after use

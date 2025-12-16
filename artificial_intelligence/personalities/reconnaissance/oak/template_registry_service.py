@@ -236,6 +236,11 @@ class OakTemplateRegistryService:
             
             # Extract template metadata
             template_id = template_data.get('id', '')
+            # Ensure template_id is always a string
+            if template_id is not None:
+                template_id = str(template_id)
+            else:
+                template_id = ''
             info = template_data.get('info', {})
             
             # Extract CVE ID from various fields
@@ -317,7 +322,7 @@ class OakTemplateRegistryService:
                     db = connections['default']
                 
                 with db.cursor() as cursor:
-                    template_id = template_data['template_id']
+                    template_id = str(template_data['template_id'])  # Ensure it's a string
                     
                     # Find which directory this template belongs to
                     all_dirs = [self.templates_dir] + self.additional_dirs

@@ -237,14 +237,9 @@
     </div>
     
     <div class="control-group">
-        <label>Egg Name:</label>
-        <select id="eggname-select">
+        <label>🔍 Filter Egg:</label>
+        <select id="egg-select">
             <option value="">All Eggs</option>
-        </select>
-        
-        <label>Project Egg:</label>
-        <select id="projectegg-select">
-            <option value="">All Projects</option>
         </select>
         
         <label>View Level:</label>
@@ -636,46 +631,33 @@ async function loadDropdownOptions() {
         console.log('Dropdown options data:', data);
         
         if (data.success) {
-            const eggnameSelect = document.getElementById('eggname-select');
-            const projecteggSelect = document.getElementById('projectegg-select');
+            const eggSelect = document.getElementById('egg-select');
             
-            if (!eggnameSelect || !projecteggSelect) {
-                console.error('Dropdown elements not found!');
+            if (!eggSelect) {
+                console.error('Egg dropdown element not found!');
                 return;
             }
             
             // Clear existing options (except "All" option)
-            while (eggnameSelect.children.length > 1) {
-                eggnameSelect.removeChild(eggnameSelect.lastChild);
-            }
-            while (projecteggSelect.children.length > 1) {
-                projecteggSelect.removeChild(projecteggSelect.lastChild);
+            while (eggSelect.children.length > 1) {
+                eggSelect.removeChild(eggSelect.lastChild);
             }
             
-            // Populate eggname dropdown
-            if (data.eggnames && data.eggnames.length > 0) {
-                data.eggnames.forEach(eggname => {
+            // Populate Egg dropdown using Django ORM data (like eggrecord_list)
+            if (data.eggs && data.eggs.length > 0) {
+                data.eggs.forEach(egg => {
                     const option = document.createElement('option');
-                    option.value = eggname;
-                    option.textContent = eggname;
-                    eggnameSelect.appendChild(option);
+                    option.value = egg.id;
+                    // Display format: "EggName (EISystem)" - same as eggrecord_list
+                    const displayText = egg.eggName 
+                        ? (egg.eisystem_in_thorm ? `${egg.eggName} (${egg.eisystem_in_thorm})` : egg.eggName)
+                        : `Egg ${egg.id}`;
+                    option.textContent = displayText;
+                    eggSelect.appendChild(option);
                 });
-                console.log(`Loaded ${data.eggnames.length} eggnames`);
+                console.log(`Loaded ${data.eggs.length} eggs from Django ORM`);
             } else {
-                console.log('No eggnames found');
-            }
-            
-            // Populate projectegg dropdown
-            if (data.projecteggs && data.projecteggs.length > 0) {
-                data.projecteggs.forEach(projectegg => {
-                    const option = document.createElement('option');
-                    option.value = projectegg;
-                    option.textContent = projectegg;
-                    projecteggSelect.appendChild(option);
-                });
-                console.log(`Loaded ${data.projecteggs.length} projecteggs`);
-            } else {
-                console.log('No projecteggs found');
+                console.log('No eggs found');
             }
         } else {
             console.error('API returned success=false:', data.error);
@@ -1223,8 +1205,7 @@ async function loadGraph() {
     const level = document.getElementById('level-select').value;
     const asnFilter = document.getElementById('asn-filter').value;
     const onlyScannedEggs = document.getElementById('only-scanned-eggs').checked;
-    const eggname = document.getElementById('eggname-select').value;
-    const projectegg = document.getElementById('projectegg-select').value;
+    const eggId = document.getElementById('egg-select').value;  // Use Egg ID (Django ORM)
     
     // Get filter_cidr from URL query string if present
     const urlParams = new URLSearchParams(window.location.search);
@@ -1241,11 +1222,9 @@ async function loadGraph() {
     if (asnFilter) {
         params.append('filter_asn', asnFilter);
     }
-    if (eggname) {
-        params.append('eggname', eggname);
-    }
-    if (projectegg) {
-        params.append('projectegg', projectegg);
+    // Use egg_id filter (Django ORM) - primary filter
+    if (eggId) {
+        params.append('egg_id', eggId);
     }
     
     try {
@@ -2177,8 +2156,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     loadDropdownOptions().then(() => {
         // Add change handlers to reload graph when dropdowns change
-        document.getElementById('eggname-select').addEventListener('change', loadGraph);
-        document.getElementById('projectegg-select').addEventListener('change', loadGraph);
+        document.getElementById('egg-select').addEventListener('change', loadGraph);
         document.getElementById('level-select').addEventListener('change', loadGraph);
         document.getElementById('asn-filter').addEventListener('change', loadGraph);
         document.getElementById('only-scanned-eggs').addEventListener('change', loadGraph);
